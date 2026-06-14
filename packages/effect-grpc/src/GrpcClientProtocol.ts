@@ -1,6 +1,7 @@
 import type { CallOptions } from "@connectrpc/connect";
 import { createGrpcTransport } from "@connectrpc/connect-node";
 import { Effect, Layer, Scope } from "effect";
+import type * as Tracer from "effect/Tracer";
 import * as RpcClient from "effect/unstable/rpc/RpcClient";
 import type { FromClientEncoded } from "effect/unstable/rpc/RpcMessage";
 
@@ -8,10 +9,12 @@ import type {
   GrpcMethodEntry,
   GrpcMethodRegistry,
 } from "./GrpcMethodRegistry.js";
+import type { GrpcStatusCode } from "./GrpcStatusCode.js";
 import * as GrpcStatusError from "./GrpcStatusError.js";
 import { getClient } from "./internal/connect.js";
 import { readTimeoutMs, stripInternalHeaders } from "./internal/metadata.js";
 import { failureExit, successExit } from "./internal/status.js";
+import * as GrpcTracing from "./internal/tracing.js";
 
 export interface GrpcClientProtocolOptions {
   readonly baseUrl: URL;
@@ -90,16 +93,35 @@ const make = (
         const key = callKey(clientId, request.id);
         activeCalls.set(key, controller);
 
-        return Effect.promise(async (signal) => {
-          const abort = () => controller.abort();
-          signal.addEventListener("abort", abort, { once: true });
-          try {
-            await invoke(entry, request, clientId, controller.signal);
-          } finally {
-            signal.removeEventListener("abort", abort);
-            activeCalls.delete(key);
+        return Effect.gen(function* () {
+          const span = yield* Effect.currentSpan.pipe(Effect.orDie);
+          const status = yield* Effect.promise(async (signal) => {
+            const abort = () => controller.abort();
+            signal.addEventListener("abort", abort, { once: true });
+            try {
+              return await invoke(
+                entry,
+                request,
+                clientId,
+                controller.signal,
+                span,
+              );
+            } finally {
+              signal.removeEventListener("abort", abort);
+              activeCalls.delete(key);
+            }
+          });
+          GrpcTracing.annotateSpanStatus(span, status);
+          if (status !== "ok") {
+            yield* Effect.fail(status);
           }
-        });
+        }).pipe(
+          Effect.withSpan(
+            GrpcTracing.spanName(entry),
+            GrpcTracing.clientSpanOptions(entry, options.baseUrl),
+          ),
+          Effect.catch(() => Effect.void),
+        );
       };
 
       const invoke = async (
@@ -107,8 +129,9 @@ const make = (
         request: Extract<FromClientEncoded, { readonly _tag: "Request" }>,
         clientId: number,
         signal: AbortSignal,
-      ) => {
-        const headers = headersWithTrace(request);
+        span: Tracer.Span,
+      ): Promise<GrpcStatusCode> => {
+        const headers = headersWithTrace(request, span);
         const callOptions: CallOptions = {
           headers: new Headers(headers.map(([key, value]) => [key, value])),
           signal,
@@ -131,7 +154,7 @@ const make = (
               ),
             ),
           );
-          return;
+          return "unimplemented";
         }
 
         try {
@@ -151,7 +174,7 @@ const make = (
                 ),
               ),
             );
-            return;
+            return "ok";
           }
 
           const responses = method.call(client, grpcRequest, callOptions) as
@@ -167,13 +190,11 @@ const make = (
             );
           }
           await run(writeResponse(clientId, successExit(request.id, null)));
+          return "ok";
         } catch (cause) {
-          await run(
-            writeResponse(
-              clientId,
-              failureExit(request.id, GrpcStatusError.fromConnectError(cause)),
-            ),
-          );
+          const error = GrpcStatusError.fromConnectError(cause);
+          await run(writeResponse(clientId, failureExit(request.id, error)));
+          return error.code;
         }
       };
 
@@ -187,20 +208,27 @@ const make = (
 
 const headersWithTrace = (
   request: Extract<FromClientEncoded, { readonly _tag: "Request" }>,
+  span: Tracer.Span,
 ): ReadonlyArray<readonly [string, string]> => {
   const headers = stripInternalHeaders(request.headers);
-  if (
-    request.traceId === undefined ||
-    request.spanId === undefined ||
-    headers.some(([key]) => key.toLowerCase() === "traceparent")
-  ) {
+  if (headers.some(([key]) => key.toLowerCase() === "traceparent")) {
+    return headers;
+  }
+  if (span.traceId !== "noop" && span.spanId !== "noop") {
+    return [...headers, ["traceparent", GrpcTracing.traceparent(span)]];
+  }
+  if (request.traceId === undefined || request.spanId === undefined) {
     return headers;
   }
   return [
     ...headers,
     [
       "traceparent",
-      `00-${request.traceId}-${request.spanId}-${request.sampled ? "01" : "00"}`,
+      GrpcTracing.traceparent({
+        traceId: request.traceId,
+        spanId: request.spanId,
+        sampled: request.sampled ?? true,
+      }),
     ],
   ];
 };

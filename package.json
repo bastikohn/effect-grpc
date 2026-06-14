@@ -13,7 +13,7 @@
     "check": "pnpm lint && pnpm format && pnpm typecheck && pnpm test:types && pnpm test",
     "check:ci": "pnpm check && pnpm check:generated && pnpm build && pnpm smoke:packages",
     "check:release": "pnpm check:ci && node scripts/publish-public-packages.mjs --dry-run",
-    "check:generated": "pnpm demo:generate && git diff --exit-code -- examples/simple-proto/src/generated",
+    "check:generated": "pnpm --filter @effect-grpc/protoc-gen-effect-grpc build && pnpm demo:generate && git diff --exit-code -- examples/simple-proto/src/generated",
     "changeset": "changeset",
     "changeset:publish": "node scripts/publish-public-packages.mjs",
     "changeset:status": "changeset status --since=origin/main",

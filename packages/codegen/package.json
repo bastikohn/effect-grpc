@@ -1,14 +1,13 @@
 {
-  "name": "@effect-grpc/protoc-gen-effect-grpc",
+  "name": "@effect-grpc/codegen",
   "version": "0.1.0-alpha.0",
-  "description": "Build-time protobuf generator for effect-grpc",
+  "description": "Self-contained CLI that compiles .proto files and runs the effect-grpc generator",
   "license": "Apache-2.0",
   "sideEffects": false,
   "type": "module",
   "files": [
     "LICENSE",
     "README.md",
-    "bin",
     "dist",
     "package.json"
   ],
@@ -18,7 +17,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/bastikohn/effect-grpc.git",
-    "directory": "packages/protoc-gen-effect-grpc"
+    "directory": "packages/codegen"
   },
   "bugs": {
     "url": "https://github.com/bastikohn/effect-grpc/issues"
@@ -35,7 +34,7 @@
     "./internal/*": null
   },
   "bin": {
-    "protoc-gen-effect-grpc": "./bin/protoc-gen-effect-grpc.mjs"
+    "effect-grpc-codegen": "./dist/main.mjs"
   },
   "main": "./dist/index.mjs",
   "module": "./dist/index.mjs",
@@ -49,8 +48,11 @@
     "clean": "rm -rf dist coverage node_modules"
   },
   "dependencies": {
+    "@bufbuild/buf": "^1.60.0",
     "@bufbuild/protobuf": "^2.0.0",
-    "@bufbuild/protoplugin": "^2.0.0"
+    "@effect-grpc/protoc-gen-effect-grpc": "workspace:*",
+    "@effect/platform-node": "catalog:",
+    "effect": "catalog:"
   },
   "devDependencies": {}
 }

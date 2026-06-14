@@ -67,6 +67,79 @@ Unsupported method kinds and protobuf field shapes fail codegen by default with
 a clear error. See [limitations](docs/users/limitations.md) for the current
 support policy.
 
+### Generating from your own `.proto` files
+
+Codegen runs through [Buf](https://buf.build). Install the plugins alongside
+Buf in the package that owns your protos:
+
+```sh
+pnpm add -D @bufbuild/buf @bufbuild/protoc-gen-es @effect-grpc/protoc-gen-effect-grpc
+```
+
+Point Buf at your proto sources with a `buf.yaml`:
+
+```yaml
+version: v2
+modules:
+  - path: proto
+lint:
+  use:
+    - STANDARD
+```
+
+Configure both plugins in a `buf.gen.yaml`. `protoc-gen-es` emits the
+protobuf-es messages and `protoc-gen-effect-grpc` emits the Effect RPC glue:
+
+```yaml
+version: v2
+clean: true
+plugins:
+  - local: protoc-gen-es
+    out: src/generated
+    opt:
+      - target=ts
+      - import_extension=js
+  - local: protoc-gen-effect-grpc
+    out: src/generated
+    opt:
+      - target=ts
+      - import_extension=js
+      - errors=grpc-status
+      - methods=unary,server-streaming
+```
+
+Then run the generator. Buf resolves the `local:` plugins from `node_modules`,
+so no global install is required:
+
+```sh
+# Generate into src/generated for every module in buf.yaml
+pnpm exec buf generate
+
+# Generate from an explicit input directory
+pnpm exec buf generate proto
+
+# Lint protos before generating
+pnpm exec buf lint
+```
+
+A typical project wires this into a `generate` script (the demo proto uses
+`"generate": "buf generate"`), so consumers run `pnpm --filter <pkg> generate`.
+
+#### `protoc-gen-effect-grpc` options
+
+Pass these under `opt:` in `buf.gen.yaml` (or as `--effect-grpc_opt` flags when
+invoking `protoc` directly):
+
+| Option                       | Values                                    | Default                  | Description                                          |
+| ---------------------------- | ----------------------------------------- | ------------------------ | ---------------------------------------------------- |
+| `import_extension`           | `js`, `ts`                                | `js`                     | Extension used in generated import paths.            |
+| `errors`                     | `grpc-status`                             | `grpc-status`            | Error model for generated RPCs.                      |
+| `methods`                    | comma list of `unary`, `server-streaming` | `unary,server-streaming` | Method kinds to emit.                                |
+| `ignore_unsupported_methods` | `true`, `false`                           | `false`                  | Skip unsupported methods instead of failing codegen. |
+| `int64`                      | `bigint`                                  | `bigint`                 | TypeScript representation for 64-bit integers.       |
+
+Unknown options and unsupported values fail codegen with a clear error.
+
 ## Effect Compatibility
 
 This prototype currently targets `effect@4.0.0-beta.79`. It uses

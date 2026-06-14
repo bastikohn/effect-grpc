@@ -1,5 +1,6 @@
 import type { ConnectRouter, HandlerContext } from "@connectrpc/connect";
-import { Effect, Option, Queue, Schema, Scope } from "effect";
+import { Effect, Exit, Option, Queue, Schema, Scope } from "effect";
+import type * as Tracer from "effect/Tracer";
 import * as Headers from "effect/unstable/http/Headers";
 import * as HttpTraceContext from "effect/unstable/http/HttpTraceContext";
 import * as RpcServer from "effect/unstable/rpc/RpcServer";
@@ -9,10 +10,12 @@ import type {
   GrpcMethodEntry,
   GrpcMethodRegistry,
 } from "./GrpcMethodRegistry.js";
+import type { GrpcStatusCode } from "./GrpcStatusCode.js";
 import * as GrpcStatusError from "./GrpcStatusError.js";
 import * as CallState from "./internal/callState.js";
 import { eof, requestId } from "./internal/effectRpc.js";
 import { errorFromExit } from "./internal/status.js";
+import * as GrpcTracing from "./internal/tracing.js";
 
 export interface GrpcServerProtocolOptions {
   readonly registry: GrpcMethodRegistry;
@@ -108,10 +111,9 @@ export const make = (
       clientId: number,
       entry: GrpcMethodEntry,
       request: unknown,
-      context: HandlerContext,
+      headers: ReadonlyArray<[string, string]>,
+      span: Tracer.Span,
     ) => {
-      const headers = Array.from(context.requestHeader.entries());
-      const trace = traceFields(headers);
       const payload = fromGrpcRequest(entry, request);
       validatePayload(entry, payload);
       return run(
@@ -121,8 +123,8 @@ export const make = (
           tag: entry.tag,
           payload,
           headers,
-          ...trace,
-        }),
+          ...GrpcTracing.traceFields(span),
+        }).pipe(Effect.withParentSpan(span)),
       );
     };
 
@@ -134,10 +136,34 @@ export const make = (
       request: unknown,
       context: HandlerContext,
     ): Promise<unknown> => {
+      const headers = Array.from(context.requestHeader.entries());
+      return run(
+        Effect.gen(function* () {
+          const span = yield* Effect.currentSpan.pipe(Effect.orDie);
+          return yield* Effect.promise(() =>
+            handleUnaryNative(entry, request, context, headers, span),
+          );
+        }).pipe(
+          Effect.withSpan(
+            GrpcTracing.spanName(entry),
+            GrpcTracing.serverSpanOptions(entry, traceParent(headers)),
+          ),
+        ),
+      );
+    };
+
+    const handleUnaryNative = async (
+      entry: GrpcMethodEntry,
+      request: unknown,
+      context: HandlerContext,
+      headers: ReadonlyArray<[string, string]>,
+      span: Tracer.Span,
+    ): Promise<unknown> => {
       const state = await run(CallState.makeUnary);
       const clientId = allocate(state);
       let completed = false;
       let signalDisconnect = () => Promise.resolve();
+      const recordStatus = statusRecorder(span);
       const onAbort = () => {
         void interrupt(clientId, signalDisconnect);
       };
@@ -146,7 +172,7 @@ export const make = (
       context.signal.addEventListener("abort", onAbort, { once: true });
 
       try {
-        await sendNativeRequest(clientId, entry, request, context);
+        await sendNativeRequest(clientId, entry, request, headers, span);
         const response = await run(state.awaitExit);
         completed = true;
         if (response._tag === "Defect") {
@@ -157,7 +183,13 @@ export const make = (
         if (response.exit._tag === "Failure") {
           throw GrpcStatusError.toConnectError(errorFromExit(response.exit));
         }
-        return toGrpcResponse(entry, response.exit.value);
+        const grpcResponse = toGrpcResponse(entry, response.exit.value);
+        recordStatus("ok");
+        return grpcResponse;
+      } catch (cause) {
+        const error = GrpcStatusError.fromConnectError(cause);
+        recordStatus(error.code);
+        throw GrpcStatusError.toConnectError(error);
       } finally {
         try {
           if (!completed) {
@@ -175,10 +207,25 @@ export const make = (
       request: unknown,
       context: HandlerContext,
     ): AsyncIterable<unknown> {
+      const headers = Array.from(context.requestHeader.entries());
+      const spanScope = await run(Scope.make());
+      const span = await run(
+        Effect.makeSpanScoped(
+          GrpcTracing.spanName(entry),
+          GrpcTracing.serverSpanOptions(entry, traceParent(headers)),
+        ).pipe(Scope.provide(spanScope)),
+      );
       const state = await run(CallState.makeServerStreaming);
       const clientId = allocate(state);
       let completed = false;
       let signalDisconnect = () => Promise.resolve();
+      let spanExit: Exit.Exit<void, GrpcStatusError.GrpcStatusError> =
+        Exit.void;
+      const recordStatus = statusRecorder(span);
+      const recordFailure = (error: GrpcStatusError.GrpcStatusError) => {
+        recordStatus(error.code);
+        spanExit = Exit.fail(error);
+      };
       const onAbort = () => {
         void interrupt(clientId, signalDisconnect);
       };
@@ -187,11 +234,12 @@ export const make = (
       context.signal.addEventListener("abort", onAbort, { once: true });
 
       try {
-        await sendNativeRequest(clientId, entry, request, context);
+        await sendNativeRequest(clientId, entry, request, headers, span);
         while (true) {
           const response = await run(state.take);
           if (!response) {
             completed = true;
+            recordStatus("ok");
             return;
           }
           switch (response._tag) {
@@ -207,6 +255,7 @@ export const make = (
                   errorFromExit(response.exit),
                 );
               }
+              recordStatus("ok");
               return;
             case "Defect":
               completed = true;
@@ -222,14 +271,25 @@ export const make = (
               break;
           }
         }
+      } catch (cause) {
+        const error = GrpcStatusError.fromConnectError(cause);
+        recordFailure(error);
+        throw GrpcStatusError.toConnectError(error);
       } finally {
         try {
           if (!completed) {
+            if (spanExit._tag === "Success") {
+              recordFailure(GrpcStatusError.cancelled("RPC cancelled"));
+            }
             await interrupt(clientId, call.signalDisconnect);
           }
           await endNativeRequest(clientId);
         } finally {
-          await call.release();
+          try {
+            await call.release();
+          } finally {
+            await run(Scope.close(spanScope, spanExit));
+          }
         }
       }
     };
@@ -296,14 +356,19 @@ const toGrpcResponse = (entry: GrpcMethodEntry, value: unknown) => {
   }
 };
 
-const traceFields = (headers: ReadonlyArray<readonly [string, string]>) =>
+const traceParent = (headers: ReadonlyArray<readonly [string, string]>) =>
   HttpTraceContext.fromHeaders(Headers.fromInput(headers)).pipe(
     Option.match({
-      onNone: () => ({}),
-      onSome: (span) => ({
-        traceId: span.traceId,
-        spanId: span.spanId,
-        sampled: span.sampled,
-      }),
+      onNone: () => undefined,
+      onSome: (span) => span,
     }),
   );
+
+const statusRecorder = (span: Tracer.Span) => {
+  let recorded = false;
+  return (code: GrpcStatusCode) => {
+    if (recorded) return;
+    recorded = true;
+    GrpcTracing.annotateSpanStatus(span, code);
+  };
+};

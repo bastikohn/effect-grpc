@@ -1,4 +1,12 @@
 import * as net from "node:net";
+import * as OtelTracer from "@effect/opentelemetry/Tracer";
+import { SpanKind, SpanStatusCode } from "@opentelemetry/api";
+import {
+  BasicTracerProvider,
+  InMemorySpanExporter,
+  SimpleSpanProcessor,
+  type ReadableSpan,
+} from "@opentelemetry/sdk-trace-base";
 import { Deferred, Effect, Exit, Fiber, Layer, Scope, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -138,6 +146,121 @@ describe("simple demo e2e", () => {
 
     expect(result.metadata).toContainEqual(["x-demo", "metadata"]);
     expect(result.serverTraceId).toBe(result.clientTraceId);
+  });
+
+  it("exports native gRPC protocol spans through OpenTelemetry", async () => {
+    const exporter = new InMemorySpanExporter();
+    const provider = new BasicTracerProvider({
+      spanProcessors: [new SimpleSpanProcessor(exporter)],
+    });
+
+    try {
+      await Effect.runPromise(
+        withServer(
+          (baseUrl) =>
+            Effect.gen(function* () {
+              const client = yield* UserServiceClient;
+              yield* client.getUser({ id: "123" });
+              yield* client.getUser({ id: "missing" }).pipe(
+                Effect.match({
+                  onFailure: () => undefined,
+                  onSuccess: () => {
+                    throw new Error("Expected getUser to fail");
+                  },
+                }),
+              );
+              yield* client.watchUsers({ tenantId: "demo", count: 1 }).pipe(
+                Stream.runDrain,
+                Effect.match({
+                  onFailure: () => undefined,
+                  onSuccess: () => {
+                    throw new Error("Expected watchUsers to fail");
+                  },
+                }),
+              );
+            }).pipe(Effect.provide(clientLayer(baseUrl))),
+          {
+            implementation: {
+              ...defaultImplementation,
+              watchUsers: () =>
+                Stream.fail(GrpcStatusError.unavailable("down")),
+            },
+          },
+        ).pipe(Effect.provide(otelTestLayer(provider))),
+      );
+      await provider.forceFlush();
+
+      const spans = exporter.getFinishedSpans();
+      const successClient = protocolSpan(
+        spans,
+        "demo.v1.UserService/GetUser",
+        SpanKind.CLIENT,
+        "OK",
+      );
+      const successServer = protocolSpan(
+        spans,
+        "demo.v1.UserService/GetUser",
+        SpanKind.SERVER,
+        "OK",
+      );
+      const failedClient = protocolSpan(
+        spans,
+        "demo.v1.UserService/GetUser",
+        SpanKind.CLIENT,
+        "NOT_FOUND",
+      );
+      const failedServer = protocolSpan(
+        spans,
+        "demo.v1.UserService/GetUser",
+        SpanKind.SERVER,
+        "NOT_FOUND",
+      );
+      const failedStreamServer = protocolSpan(
+        spans,
+        "demo.v1.UserService/WatchUsers",
+        SpanKind.SERVER,
+        "UNAVAILABLE",
+      );
+
+      expect(successClient.attributes).toMatchObject({
+        "rpc.system.name": "grpc",
+        "rpc.method": "demo.v1.UserService/GetUser",
+        "rpc.response.status_code": "OK",
+        "server.address": "127.0.0.1",
+      });
+      expect(successClient.attributes["server.port"]).toEqual(
+        expect.any(Number),
+      );
+      expect(successServer.attributes).toMatchObject({
+        "rpc.system.name": "grpc",
+        "rpc.method": "demo.v1.UserService/GetUser",
+        "rpc.response.status_code": "OK",
+      });
+      expect(successServer.parentSpanContext?.spanId).toBe(
+        successClient.spanContext().spanId,
+      );
+      expect(successServer.spanContext().traceId).toBe(
+        successClient.spanContext().traceId,
+      );
+
+      expect(failedClient.attributes).toMatchObject({
+        "rpc.response.status_code": "NOT_FOUND",
+        "error.type": "NOT_FOUND",
+      });
+      expect(failedServer.attributes).toMatchObject({
+        "rpc.response.status_code": "NOT_FOUND",
+        "error.type": "NOT_FOUND",
+      });
+      expect(failedStreamServer.attributes).toMatchObject({
+        "rpc.response.status_code": "UNAVAILABLE",
+        "error.type": "UNAVAILABLE",
+      });
+      expect(failedClient.status.code).toBe(SpanStatusCode.ERROR);
+      expect(failedServer.status.code).toBe(SpanStatusCode.ERROR);
+      expect(failedStreamServer.status.code).toBe(SpanStatusCode.ERROR);
+    } finally {
+      await provider.shutdown();
+    }
   });
 
   it("maps client deadlines to deadline_exceeded", async () => {
@@ -602,6 +725,32 @@ const clientLayer = (baseUrl: URL) =>
       }),
     ),
   );
+
+const otelTestLayer = (provider: BasicTracerProvider) =>
+  OtelTracer.layerWithoutOtelTracer.pipe(
+    Layer.provide(
+      Layer.succeed(
+        OtelTracer.OtelTracer,
+        provider.getTracer("effect-grpc-test"),
+      ),
+    ),
+  );
+
+const protocolSpan = (
+  spans: ReadonlyArray<ReadableSpan>,
+  name: string,
+  kind: SpanKind,
+  statusCode: string,
+): ReadableSpan => {
+  const span = spans.find(
+    (span) =>
+      span.name === name &&
+      span.kind === kind &&
+      span.attributes["rpc.response.status_code"] === statusCode,
+  );
+  expect(span).toBeDefined();
+  return span!;
+};
 
 const freePort = Effect.promise(
   () =>

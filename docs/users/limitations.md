@@ -21,6 +21,8 @@ The generator currently supports:
   values
 - `google.protobuf.Timestamp` as `Date`
 - `google.protobuf.Duration` as `Duration.Duration`
+- `google.protobuf.BoolValue` as `boolean`
+- `google.protobuf.Empty` as an empty object for method inputs and outputs
 - `map<string, ...>` fields with scalar or message values (including nested
   and imported messages)
 - scalar and message `oneof` fields (including nested and imported messages)
@@ -46,9 +48,10 @@ millisecond precision. `Duration` conversion uses Effect `Duration.Duration`.
 The generator deliberately fails fast for:
 
 - import cycles
-- well-known protobuf types other than `Timestamp` and `Duration`
-- `Timestamp` and `Duration` in repeated, map, or oneof positions, or as
-  method input/output
+- well-known protobuf types other than `Empty` as method input/output and
+  `Timestamp`, `Duration`, or `BoolValue` as singular fields or method
+  input/output
+- `Timestamp`, `Duration`, and `BoolValue` in repeated, map, or oneof positions
 - map fields with non-string keys or enum values
 - oneof fields with enum, repeated, or map values
 - proto2 required fields and default values

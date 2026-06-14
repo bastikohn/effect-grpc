@@ -4,12 +4,17 @@ package features.v1;
 
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
 
 service WellKnownTypeFeature {
   rpc Echo(WellKnownValues) returns (WellKnownValues);
+  rpc EchoTimestamp(google.protobuf.Timestamp) returns (google.protobuf.Timestamp);
+  rpc EchoDuration(google.protobuf.Duration) returns (google.protobuf.Duration);
+  rpc EchoBoolValue(google.protobuf.BoolValue) returns (google.protobuf.BoolValue);
 }
 
 message WellKnownValues {
   google.protobuf.Timestamp created_at = 1;
   google.protobuf.Duration timeout = 2;
+  google.protobuf.BoolValue enabled = 3;
 }

@@ -1,6 +1,12 @@
-import { plugin } from "@effect-grpc/protoc-gen-effect-grpc";
+import { createRequire } from "node:module";
+
+import { create } from "@bufbuild/protobuf";
 import type { CodeGeneratorRequest } from "@bufbuild/protobuf/wkt";
-import type { CodeGeneratorResponse } from "@bufbuild/protobuf/wkt";
+import {
+  CodeGeneratorResponseSchema,
+  type CodeGeneratorResponse,
+} from "@bufbuild/protobuf/wkt";
+import { plugin as effectGrpcPlugin } from "@effect-grpc/protoc-gen-effect-grpc";
 import { Effect, FileSystem, Path } from "effect";
 import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner";
 
@@ -13,6 +19,16 @@ import {
 } from "./options.js";
 import { buildCodeGeneratorRequest } from "./request.js";
 import { writeResponse } from "./write.js";
+
+interface CodegenPlugin {
+  readonly run: (request: CodeGeneratorRequest) => CodeGeneratorResponse;
+}
+
+const require = createRequire(import.meta.url);
+const { protocGenEs } =
+  require("@bufbuild/protoc-gen-es/dist/cjs/src/protoc-gen-es-plugin.js") as {
+    readonly protocGenEs: CodegenPlugin;
+  };
 
 export interface GenerateOptions {
   /** Resolved `.proto` file paths (the expanded `-i` globs). */
@@ -32,6 +48,8 @@ export interface GenerateResult {
 }
 
 const runPlugin = (
+  name: string,
+  plugin: CodegenPlugin,
   request: CodeGeneratorRequest,
 ): Effect.Effect<CodeGeneratorResponse, CodegenError> =>
   Effect.suspend(() => {
@@ -40,11 +58,23 @@ const runPlugin = (
     } catch (cause) {
       return Effect.fail(
         new CodegenError({
-          message: `codegen failed: ${formatUnknown(cause)}`,
+          message: `${name} failed: ${formatUnknown(cause)}`,
           cause,
         }),
       );
     }
+  });
+
+const protobufEsParameter = (options: PluginOptions) =>
+  `target=ts,import_extension=${options.importExtension}`;
+
+const mergeResponses = (
+  protobufEsResponse: CodeGeneratorResponse,
+  effectGrpcResponse: CodeGeneratorResponse,
+) =>
+  create(CodeGeneratorResponseSchema, {
+    file: [...protobufEsResponse.file, ...effectGrpcResponse.file],
+    error: protobufEsResponse.error || effectGrpcResponse.error,
   });
 
 /**
@@ -83,15 +113,29 @@ export const generate = (
       ),
     );
 
-    const request = buildCodeGeneratorRequest(
+    const protobufEsRequest = buildCodeGeneratorRequest(
+      set,
+      fileToGenerate,
+      protobufEsParameter(pluginOptions),
+    );
+    const effectGrpcRequest = buildCodeGeneratorRequest(
       set,
       fileToGenerate,
       toParameterString(pluginOptions),
     );
 
-    const response = yield* runPlugin(request);
+    const protobufEsResponse = yield* runPlugin(
+      "protoc-gen-es",
+      protocGenEs,
+      protobufEsRequest,
+    );
+    const effectGrpcResponse = yield* runPlugin(
+      "protoc-gen-effect-grpc",
+      effectGrpcPlugin,
+      effectGrpcRequest,
+    );
     const files = yield* writeResponse(
-      response,
+      mergeResponses(protobufEsResponse, effectGrpcResponse),
       options.outDir,
       options.clean ?? false,
     );

@@ -1,13 +1,28 @@
-import { serviceRegistryName } from "./naming.js";
+import {
+  grpcBoolValueName,
+  grpcDurationName,
+  grpcEmptyName,
+  grpcTimestampName,
+  serviceRegistryName,
+} from "./naming.js";
 import type {
   FieldModel,
   FieldValueModel,
   GeneratorFile,
   MessageModel,
+  WellKnownKind,
 } from "./types.js";
 
 export const generateRegistry = (file: GeneratorFile) => [
-  ...generateConverters(file.messages),
+  ...(usesGrpcEmpty(file)
+    ? [
+        `export const from${grpcEmptyName} = (_message: unknown): ${grpcEmptyName} => ({});`,
+        "",
+        `export const to${grpcEmptyName} = (_value: unknown) => ({});`,
+        "",
+      ]
+    : []),
+  ...generateConverters(file),
   ...file.services.flatMap((service) => [
     `export const ${serviceRegistryName(service.name)} = new Map<string, GrpcMethodRegistry.GrpcMethodEntry>([`,
     ...service.methods.flatMap((method) => [
@@ -31,33 +46,46 @@ export const generateRegistry = (file: GeneratorFile) => [
   ]),
 ];
 
-const generateConverters = (messages: ReadonlyArray<MessageModel>) => [
-  ...(messages.length === 0
-    ? []
-    : [
-        "const readField = (message: unknown, field: string): unknown =>",
-        `  typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;`,
-        "",
-        ...scalarConverters(messages),
-        ...wellKnownConverters(messages),
-      ]),
-  ...messages.flatMap((message) => [
-    ...message.fields.flatMap((field) =>
-      field.kind === "oneof" ? oneofConverters(field) : [],
+const usesGrpcEmpty = (file: GeneratorFile) =>
+  file.services.some((service) =>
+    service.methods.some(
+      (method) =>
+        method.inputType === grpcEmptyName ||
+        method.outputType === grpcEmptyName,
     ),
-    `export const from${message.name} = (message: unknown): unknown => ({`,
-    ...message.fields.map((field) => `  ${field.name}: ${fromField(field)},`),
-    "});",
-    "",
-    `export const to${message.name} = (value: unknown) => {`,
-    "  const message = value as Record<string, unknown>;",
-    "  return {",
-    ...message.fields.map((field) => `    ${field.name}: ${toField(field)},`),
-    "  };",
-    "};",
-    "",
-  ]),
-];
+  );
+
+const generateConverters = (file: GeneratorFile) => {
+  const messages = file.messages;
+  return [
+    ...(messages.length === 0
+      ? []
+      : [
+          "const readField = (message: unknown, field: string): unknown =>",
+          `  typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;`,
+          "",
+        ]),
+    ...scalarConverters(messages),
+    ...wellKnownConverters(file),
+    ...messages.flatMap((message) => [
+      ...message.fields.flatMap((field) =>
+        field.kind === "oneof" ? oneofConverters(field) : [],
+      ),
+      `export const from${message.name} = (message: unknown): unknown => ({`,
+      ...message.fields.map((field) => `  ${field.name}: ${fromField(field)},`),
+      "});",
+      "",
+      `export const to${message.name} = (value: unknown) => {`,
+      "  const message = value as Record<string, unknown>;",
+      "  return {",
+      ...message.fields.map((field) => `    ${field.name}: ${toField(field)},`),
+      "  };",
+      "};",
+      "",
+    ]),
+    ...wellKnownMethodConverters(file),
+  ];
+};
 
 const fromField = (field: FieldModel): string => {
   if (field.kind === "message") {
@@ -251,10 +279,12 @@ const scalarConverters = (messages: ReadonlyArray<MessageModel>) => {
   ];
 };
 
-const wellKnownConverters = (messages: ReadonlyArray<MessageModel>) => {
+const wellKnownConverters = (file: GeneratorFile) => {
+  const messages = file.messages;
   const fields = messages.flatMap((message) => message.fields);
   return [
-    ...(fields.some((field) => usesWellKnown(field, "timestamp"))
+    ...(fields.some((field) => usesWellKnown(field, "timestamp")) ||
+    usesWellKnownMethod(file, "timestamp")
       ? [
           "const fromTimestamp = (value: unknown): string => {",
           "  const message = value as { readonly seconds?: bigint | number; readonly nanos?: number };",
@@ -274,7 +304,8 @@ const wellKnownConverters = (messages: ReadonlyArray<MessageModel>) => {
           "",
         ]
       : []),
-    ...(fields.some((field) => usesWellKnown(field, "duration"))
+    ...(fields.some((field) => usesWellKnown(field, "duration")) ||
+    usesWellKnownMethod(file, "duration")
       ? [
           "const fromDuration = (value: unknown) => {",
           "  const message = value as { readonly seconds?: bigint | number; readonly nanos?: number };",
@@ -297,7 +328,48 @@ const wellKnownConverters = (messages: ReadonlyArray<MessageModel>) => {
           "",
         ]
       : []),
+    ...(fields.some((field) => usesWellKnown(field, "bool-value")) ||
+    usesWellKnownMethod(file, "bool-value")
+      ? [
+          "const fromBoolValue = (value: unknown) =>",
+          `  (value as { readonly value?: boolean }).value ?? false;`,
+          "",
+          "const toBoolValue = (value: unknown) => ({",
+          "  value: value as boolean,",
+          "});",
+          "",
+        ]
+      : []),
   ];
+};
+
+const wellKnownMethodConverters = (file: GeneratorFile) =>
+  [
+    ["timestamp", grpcTimestampName] as const,
+    ["duration", grpcDurationName] as const,
+    ["bool-value", grpcBoolValueName] as const,
+  ].flatMap(([type, name]) =>
+    usesWellKnownMethod(file, type)
+      ? [
+          `export const from${name} = from${wellKnownName(type)};`,
+          `export const to${name} = to${wellKnownName(type)};`,
+          "",
+        ]
+      : [],
+  );
+
+const usesWellKnownMethod = (file: GeneratorFile, type: WellKnownKind) => {
+  const name =
+    type === "timestamp"
+      ? grpcTimestampName
+      : type === "duration"
+        ? grpcDurationName
+        : grpcBoolValueName;
+  return file.services.some((service) =>
+    service.methods.some(
+      (method) => method.inputType === name || method.outputType === name,
+    ),
+  );
 };
 
 const usesScalar = (
@@ -321,10 +393,7 @@ const usesScalar = (
   }
 };
 
-const usesWellKnown = (
-  field: FieldModel,
-  type: Extract<FieldValueModel, { readonly kind: "well-known" }>["type"],
-): boolean => {
+const usesWellKnown = (field: FieldModel, type: WellKnownKind): boolean => {
   switch (field.kind) {
     case "well-known":
       return field.type === type;
@@ -333,6 +402,13 @@ const usesWellKnown = (
   }
 };
 
-const wellKnownName = (
-  type: Extract<FieldValueModel, { readonly kind: "well-known" }>["type"],
-) => (type === "timestamp" ? "Timestamp" : "Duration");
+const wellKnownName = (type: WellKnownKind) => {
+  switch (type) {
+    case "timestamp":
+      return "Timestamp";
+    case "duration":
+      return "Duration";
+    case "bool-value":
+      return "BoolValue";
+  }
+};

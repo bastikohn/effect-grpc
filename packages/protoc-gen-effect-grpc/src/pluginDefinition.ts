@@ -12,7 +12,13 @@ import { FeatureSet_FieldPresence } from "@bufbuild/protobuf/wkt";
 import { createEcmaScriptPlugin } from "@bufbuild/protoplugin";
 
 import { generateFile } from "./generate.js";
-import { effectFileName } from "./naming.js";
+import {
+  effectFileName,
+  grpcBoolValueName,
+  grpcDurationName,
+  grpcEmptyName,
+  grpcTimestampName,
+} from "./naming.js";
 import {
   defaultOptions,
   parseOptions,
@@ -179,6 +185,14 @@ const fieldModel = (field: DescField): FieldModel => {
           optional: true,
         };
       }
+      if (field.message.typeName === "google.protobuf.BoolValue") {
+        return {
+          kind: "well-known",
+          name: field.localName,
+          type: "bool-value",
+          optional: true,
+        };
+      }
       return {
         kind: "message",
         name: field.localName,
@@ -298,6 +312,7 @@ const oneofCaseModel = (field: DescField): OneofCaseModel => {
       };
     case "message":
       if (
+        field.message.typeName === "google.protobuf.BoolValue" ||
         field.message.typeName === "google.protobuf.Duration" ||
         field.message.typeName === "google.protobuf.Timestamp"
       ) {
@@ -390,11 +405,21 @@ const isUnsignedScalar = (scalar: DescField["scalar"]) =>
   scalar === ScalarType.FIXED64 ||
   scalar === ScalarType.UINT32;
 
-const supportedMethodMessage = (
+const methodMessageName = (
   service: DescService,
   method: DescMethod,
   message: DescMessage,
 ) => {
+  switch (message.typeName) {
+    case "google.protobuf.Empty":
+      return grpcEmptyName;
+    case "google.protobuf.Timestamp":
+      return grpcTimestampName;
+    case "google.protobuf.Duration":
+      return grpcDurationName;
+    case "google.protobuf.BoolValue":
+      return grpcBoolValueName;
+  }
   if (isWellKnownType(message)) {
     throw new Error(
       [
@@ -404,6 +429,7 @@ const supportedMethodMessage = (
       ].join("\n"),
     );
   }
+  return declName(message);
 };
 
 const serviceModel = (
@@ -420,15 +446,13 @@ const serviceModel = (
       ignoreUnsupportedMethods: options.ignoreUnsupportedMethods,
     });
     if (!kind || !options.methods.has(kind)) return [];
-    supportedMethodMessage(service, method, method.input);
-    supportedMethodMessage(service, method, method.output);
     return [
       {
         name: method.name,
         localName: method.localName,
         kind,
-        inputType: declName(method.input),
-        outputType: declName(method.output),
+        inputType: methodMessageName(service, method, method.input),
+        outputType: methodMessageName(service, method, method.output),
       },
     ];
   }),

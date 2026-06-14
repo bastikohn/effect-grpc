@@ -148,11 +148,23 @@ describe("proto feature fixtures", () => {
         'import { Duration } from "effect";',
         'import { WellKnownValuesSchema as WellKnownValuesPbSchema } from "./well_known_types_pb.js";',
         'import { create } from "@bufbuild/protobuf";',
-        'import { WellKnownTypeFeatureGrpcRegistry, type WellKnownValues } from "./well_known_types_effect_grpc.js";',
-        "const value: WellKnownValues = { createdAt: new Date(0), timeout: Duration.seconds(1) };",
+        'import { WellKnownTypeFeatureGrpcRegistry, type GrpcGoogleProtobufBoolValue, type GrpcGoogleProtobufDuration, type GrpcGoogleProtobufTimestamp, type WellKnownValues } from "./well_known_types_effect_grpc.js";',
+        "const value: WellKnownValues = { createdAt: new Date(0), timeout: Duration.seconds(1), enabled: true };",
+        "const timestamp: GrpcGoogleProtobufTimestamp = new Date(0);",
+        "const duration: GrpcGoogleProtobufDuration = Duration.seconds(1);",
+        "const boolValue: GrpcGoogleProtobufBoolValue = true;",
         'const entry = WellKnownTypeFeatureGrpcRegistry.get("features.v1.WellKnownTypeFeature/Echo");',
         'if (!entry) throw new Error("missing registry entry");',
         "create(WellKnownValuesPbSchema, entry.toGrpcRequest(value));",
+        'const timestampEntry = WellKnownTypeFeatureGrpcRegistry.get("features.v1.WellKnownTypeFeature/EchoTimestamp");',
+        'if (!timestampEntry) throw new Error("missing timestamp registry entry");',
+        "timestampEntry.toGrpcRequest(timestamp);",
+        'const durationEntry = WellKnownTypeFeatureGrpcRegistry.get("features.v1.WellKnownTypeFeature/EchoDuration");',
+        'if (!durationEntry) throw new Error("missing duration registry entry");',
+        "durationEntry.toGrpcRequest(duration);",
+        'const boolValueEntry = WellKnownTypeFeatureGrpcRegistry.get("features.v1.WellKnownTypeFeature/EchoBoolValue");',
+        'if (!boolValueEntry) throw new Error("missing bool value registry entry");',
+        "boolValueEntry.toGrpcRequest(boolValue);",
         "",
       ].join("\n"),
     );
@@ -420,8 +432,9 @@ describe("proto feature fixtures", () => {
   });
 
   it("converts Timestamp and Duration fields", async () => {
+    const feature = generateProtoFeature("well_known_types");
     const { entry } = await registryEntry(
-      generateProtoFeature("well_known_types"),
+      feature,
       "WellKnownTypeFeatureGrpcRegistry",
       "features.v1.WellKnownTypeFeature/Echo",
     );
@@ -429,11 +442,13 @@ describe("proto feature fixtures", () => {
     const decoded = entry.fromGrpcRequest({
       createdAt: { seconds: 1n, nanos: 500_000_000 },
       timeout: { seconds: 2n, nanos: 250_000_000 },
+      enabled: { value: true },
     });
 
     expect(decoded).toEqual({
       createdAt: "1970-01-01T00:00:01.500Z",
       timeout: { _tag: "Millis", value: 2250 },
+      enabled: true,
     });
     expect(
       (
@@ -445,25 +460,65 @@ describe("proto feature fixtures", () => {
     expect(entry.fromGrpcRequest({})).toEqual({
       createdAt: undefined,
       timeout: undefined,
+      enabled: undefined,
     });
     expect(
       entry.toGrpcRequest({
         createdAt: "1970-01-01T00:00:00.000Z",
         timeout: { _tag: "Millis", value: 0 },
+        enabled: true,
       }),
     ).toEqual({
       createdAt: { seconds: 0n, nanos: 0 },
       timeout: { seconds: 0n, nanos: 0 },
+      enabled: { value: true },
     });
     expect(
       entry.toGrpcRequest({
         createdAt: "1970-01-01T00:00:00.000Z",
         timeout: { _tag: "Nanos", value: "1" },
+        enabled: false,
       }),
     ).toEqual({
       createdAt: { seconds: 0n, nanos: 0 },
       timeout: { seconds: 0n, nanos: 1 },
+      enabled: { value: false },
     });
+
+    const { entry: timestampEntry } = await registryEntry(
+      feature,
+      "WellKnownTypeFeatureGrpcRegistry",
+      "features.v1.WellKnownTypeFeature/EchoTimestamp",
+    );
+    expect(
+      timestampEntry.fromGrpcRequest({ seconds: 1n, nanos: 500_000_000 }),
+    ).toBe("1970-01-01T00:00:01.500Z");
+    expect(timestampEntry.toGrpcRequest("1970-01-01T00:00:00.000Z")).toEqual({
+      seconds: 0n,
+      nanos: 0,
+    });
+
+    const { entry: durationEntry } = await registryEntry(
+      feature,
+      "WellKnownTypeFeatureGrpcRegistry",
+      "features.v1.WellKnownTypeFeature/EchoDuration",
+    );
+    expect(
+      durationEntry.fromGrpcRequest({ seconds: 2n, nanos: 250_000_000 }),
+    ).toEqual({ _tag: "Millis", value: 2250 });
+    expect(durationEntry.toGrpcRequest({ _tag: "Nanos", value: "1" })).toEqual({
+      seconds: 0n,
+      nanos: 1,
+    });
+
+    const { entry: boolValueEntry } = await registryEntry(
+      feature,
+      "WellKnownTypeFeatureGrpcRegistry",
+      "features.v1.WellKnownTypeFeature/EchoBoolValue",
+    );
+    expect(boolValueEntry.fromGrpcRequest({ value: true })).toBe(true);
+    expect(boolValueEntry.fromGrpcRequest({})).toBe(false);
+    expect(boolValueEntry.toGrpcRequest(false)).toEqual({ value: false });
   });
 
   it("converts string-key map fields", async () => {

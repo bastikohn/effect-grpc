@@ -1,9 +1,9 @@
 # @effect-grpc/codegen
 
 Self-contained CLI for `effect-grpc` code generation. It compiles `.proto`
-files with the package-local `@bufbuild/buf` binary and runs the
-`@effect-grpc/protoc-gen-effect-grpc` generator in a single step — no global Buf
-or protoc installation, no `buf.gen.yaml`.
+files with the package-local `@bufbuild/buf` binary, runs protobuf-es, and then
+runs the `@effect-grpc/protoc-gen-effect-grpc` generator in a single step — no
+global Buf or protoc installation, no `buf.gen.yaml`.
 
 ```sh
 npx @effect-grpc/codegen -i ./protos/*.proto -o ./generated/
@@ -40,9 +40,10 @@ current directory is used.
    `@bufbuild/buf` CLI.
 3. Wrap the descriptors in a `CodeGeneratorRequest`, with the user's files in
    `fileToGenerate` and the options serialized into `parameter`.
-4. Drive the existing plugin in-process via `plugin.run(request)` — same logic,
-   unsupported-shape guards, and output as the Buf path.
-5. Write the `CodeGeneratorResponse` files under `-o`.
+4. Drive protobuf-es in-process to emit `*_pb.ts`.
+5. Drive the existing effect-grpc plugin in-process via `plugin.run(request)` —
+   same logic, unsupported-shape guards, and output as the Buf path.
+6. Write both `CodeGeneratorResponse` file sets under `-o`.
 
 The pipeline is also available programmatically:
 

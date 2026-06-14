@@ -612,9 +612,19 @@ import {
   WellKnownTypeFeature,
 } from "./well_known_types_pb.js";
 
+export const GrpcGoogleProtobufTimestampSchema = Schema.Date;
+export type GrpcGoogleProtobufTimestamp = Schema.Schema.Type<typeof GrpcGoogleProtobufTimestampSchema>;
+
+export const GrpcGoogleProtobufDurationSchema = Schema.Duration;
+export type GrpcGoogleProtobufDuration = Schema.Schema.Type<typeof GrpcGoogleProtobufDurationSchema>;
+
+export const GrpcGoogleProtobufBoolValueSchema = Schema.Boolean;
+export type GrpcGoogleProtobufBoolValue = Schema.Schema.Type<typeof GrpcGoogleProtobufBoolValueSchema>;
+
 export const WellKnownValuesSchema = Schema.Struct({
   createdAt: Schema.optional(Schema.Date),
   timeout: Schema.optional(Schema.Duration),
+  enabled: Schema.optional(Schema.Boolean),
 });
 export type WellKnownValues = Schema.Schema.Type<typeof WellKnownValuesSchema>;
 
@@ -624,8 +634,26 @@ export const EchoRpc = Rpc.make("features.v1.WellKnownTypeFeature/Echo", {
   error: GrpcStatusError.GrpcStatusError,
 });
 
-export const WellKnownTypeFeatureRpcGroup = RpcGroup.make(EchoRpc);
-export type WellKnownTypeFeatureRpcs = typeof EchoRpc;
+export const EchoTimestampRpc = Rpc.make("features.v1.WellKnownTypeFeature/EchoTimestamp", {
+  payload: GrpcGoogleProtobufTimestampSchema,
+  success: GrpcGoogleProtobufTimestampSchema,
+  error: GrpcStatusError.GrpcStatusError,
+});
+
+export const EchoDurationRpc = Rpc.make("features.v1.WellKnownTypeFeature/EchoDuration", {
+  payload: GrpcGoogleProtobufDurationSchema,
+  success: GrpcGoogleProtobufDurationSchema,
+  error: GrpcStatusError.GrpcStatusError,
+});
+
+export const EchoBoolValueRpc = Rpc.make("features.v1.WellKnownTypeFeature/EchoBoolValue", {
+  payload: GrpcGoogleProtobufBoolValueSchema,
+  success: GrpcGoogleProtobufBoolValueSchema,
+  error: GrpcStatusError.GrpcStatusError,
+});
+
+export const WellKnownTypeFeatureRpcGroup = RpcGroup.make(EchoRpc, EchoTimestampRpc, EchoDurationRpc, EchoBoolValueRpc);
+export type WellKnownTypeFeatureRpcs = typeof EchoRpc | typeof EchoTimestampRpc | typeof EchoDurationRpc | typeof EchoBoolValueRpc;
 
 const readField = (message: unknown, field: string): unknown =>
   typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
@@ -665,9 +693,17 @@ const toDuration = (value: unknown) => {
   };
 };
 
+const fromBoolValue = (value: unknown) =>
+  (value as { readonly value?: boolean }).value ?? false;
+
+const toBoolValue = (value: unknown) => ({
+  value: value as boolean,
+});
+
 export const fromWellKnownValues = (message: unknown): unknown => ({
   createdAt: readField(message, "createdAt") == null ? undefined : fromTimestamp(readField(message, "createdAt")),
   timeout: readField(message, "timeout") == null ? undefined : fromDuration(readField(message, "timeout")),
+  enabled: readField(message, "enabled") == null ? undefined : fromBoolValue(readField(message, "enabled")),
 });
 
 export const toWellKnownValues = (value: unknown) => {
@@ -675,8 +711,18 @@ export const toWellKnownValues = (value: unknown) => {
   return {
     createdAt: readField(message, "createdAt") == null ? undefined : toTimestamp(readField(message, "createdAt")),
     timeout: readField(message, "timeout") == null ? undefined : toDuration(readField(message, "timeout")),
+    enabled: readField(message, "enabled") == null ? undefined : toBoolValue(readField(message, "enabled")),
   };
 };
+
+export const fromGrpcGoogleProtobufTimestamp = fromTimestamp;
+export const toGrpcGoogleProtobufTimestamp = toTimestamp;
+
+export const fromGrpcGoogleProtobufDuration = fromDuration;
+export const toGrpcGoogleProtobufDuration = toDuration;
+
+export const fromGrpcGoogleProtobufBoolValue = fromBoolValue;
+export const toGrpcGoogleProtobufBoolValue = toBoolValue;
 
 export const WellKnownTypeFeatureGrpcRegistry = new Map<string, GrpcMethodRegistry.GrpcMethodEntry>([
   [
@@ -693,18 +739,66 @@ export const WellKnownTypeFeatureGrpcRegistry = new Map<string, GrpcMethodRegist
       fromGrpcResponse: fromWellKnownValues,
     },
   ],
+  [
+    "features.v1.WellKnownTypeFeature/EchoTimestamp",
+    {
+      kind: "unary",
+      tag: "features.v1.WellKnownTypeFeature/EchoTimestamp",
+      service: WellKnownTypeFeature,
+      localName: "echoTimestamp",
+      payloadSchema: GrpcGoogleProtobufTimestampSchema,
+      toGrpcRequest: toGrpcGoogleProtobufTimestamp,
+      fromGrpcRequest: fromGrpcGoogleProtobufTimestamp,
+      toGrpcResponse: toGrpcGoogleProtobufTimestamp,
+      fromGrpcResponse: fromGrpcGoogleProtobufTimestamp,
+    },
+  ],
+  [
+    "features.v1.WellKnownTypeFeature/EchoDuration",
+    {
+      kind: "unary",
+      tag: "features.v1.WellKnownTypeFeature/EchoDuration",
+      service: WellKnownTypeFeature,
+      localName: "echoDuration",
+      payloadSchema: GrpcGoogleProtobufDurationSchema,
+      toGrpcRequest: toGrpcGoogleProtobufDuration,
+      fromGrpcRequest: fromGrpcGoogleProtobufDuration,
+      toGrpcResponse: toGrpcGoogleProtobufDuration,
+      fromGrpcResponse: fromGrpcGoogleProtobufDuration,
+    },
+  ],
+  [
+    "features.v1.WellKnownTypeFeature/EchoBoolValue",
+    {
+      kind: "unary",
+      tag: "features.v1.WellKnownTypeFeature/EchoBoolValue",
+      service: WellKnownTypeFeature,
+      localName: "echoBoolValue",
+      payloadSchema: GrpcGoogleProtobufBoolValueSchema,
+      toGrpcRequest: toGrpcGoogleProtobufBoolValue,
+      fromGrpcRequest: fromGrpcGoogleProtobufBoolValue,
+      toGrpcResponse: toGrpcGoogleProtobufBoolValue,
+      fromGrpcResponse: fromGrpcGoogleProtobufBoolValue,
+    },
+  ],
 ]);
 
 export type WellKnownTypeFeatureClientError = GrpcStatusError.GrpcStatusError | RpcClientError.RpcClientError;
 
 export interface WellKnownTypeFeatureClientService {
   readonly echo: (request: WellKnownValues, options?: CodegenSupport.GrpcCallOptions) => Effect.Effect<WellKnownValues, WellKnownTypeFeatureClientError>;
+  readonly echoTimestamp: (request: GrpcGoogleProtobufTimestamp, options?: CodegenSupport.GrpcCallOptions) => Effect.Effect<GrpcGoogleProtobufTimestamp, WellKnownTypeFeatureClientError>;
+  readonly echoDuration: (request: GrpcGoogleProtobufDuration, options?: CodegenSupport.GrpcCallOptions) => Effect.Effect<GrpcGoogleProtobufDuration, WellKnownTypeFeatureClientError>;
+  readonly echoBoolValue: (request: GrpcGoogleProtobufBoolValue, options?: CodegenSupport.GrpcCallOptions) => Effect.Effect<GrpcGoogleProtobufBoolValue, WellKnownTypeFeatureClientError>;
 }
 
 const makeWellKnownTypeFeatureClient = Effect.gen(function* () {
   const client = yield* RpcClient.make(WellKnownTypeFeatureRpcGroup);
   return {
     echo: (request, options) => client["features.v1.WellKnownTypeFeature/Echo"](request, { headers: CodegenSupport.headersFromOptions(options) }),
+    echoTimestamp: (request, options) => client["features.v1.WellKnownTypeFeature/EchoTimestamp"](request, { headers: CodegenSupport.headersFromOptions(options) }),
+    echoDuration: (request, options) => client["features.v1.WellKnownTypeFeature/EchoDuration"](request, { headers: CodegenSupport.headersFromOptions(options) }),
+    echoBoolValue: (request, options) => client["features.v1.WellKnownTypeFeature/EchoBoolValue"](request, { headers: CodegenSupport.headersFromOptions(options) }),
   } satisfies WellKnownTypeFeatureClientService;
 });
 
@@ -716,6 +810,9 @@ export const WellKnownTypeFeatureClientLayer = Layer.effect(WellKnownTypeFeature
 
 export interface WellKnownTypeFeatureImplementation<R = never> {
   readonly echo: (request: WellKnownValues, context: CodegenSupport.GrpcServerContext) => Effect.Effect<WellKnownValues, GrpcStatusError.GrpcStatusError, R>;
+  readonly echoTimestamp: (request: GrpcGoogleProtobufTimestamp, context: CodegenSupport.GrpcServerContext) => Effect.Effect<GrpcGoogleProtobufTimestamp, GrpcStatusError.GrpcStatusError, R>;
+  readonly echoDuration: (request: GrpcGoogleProtobufDuration, context: CodegenSupport.GrpcServerContext) => Effect.Effect<GrpcGoogleProtobufDuration, GrpcStatusError.GrpcStatusError, R>;
+  readonly echoBoolValue: (request: GrpcGoogleProtobufBoolValue, context: CodegenSupport.GrpcServerContext) => Effect.Effect<GrpcGoogleProtobufBoolValue, GrpcStatusError.GrpcStatusError, R>;
 }
 
 export const WellKnownTypeFeatureHandlersLayer = <R>(
@@ -723,6 +820,9 @@ export const WellKnownTypeFeatureHandlersLayer = <R>(
 ): Layer.Layer<Rpc.ToHandler<WellKnownTypeFeatureRpcs>, never, R> =>
   WellKnownTypeFeatureRpcGroup.toLayer({
     "features.v1.WellKnownTypeFeature/Echo": (request, options) => implementation.echo(request, CodegenSupport.serverContext(options)),
+    "features.v1.WellKnownTypeFeature/EchoTimestamp": (request, options) => implementation.echoTimestamp(request, CodegenSupport.serverContext(options)),
+    "features.v1.WellKnownTypeFeature/EchoDuration": (request, options) => implementation.echoDuration(request, CodegenSupport.serverContext(options)),
+    "features.v1.WellKnownTypeFeature/EchoBoolValue": (request, options) => implementation.echoBoolValue(request, CodegenSupport.serverContext(options)),
   }) as Layer.Layer<Rpc.ToHandler<
     WellKnownTypeFeatureRpcs
   >, never, R>;

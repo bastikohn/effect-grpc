@@ -125,6 +125,60 @@ describe("plugin fixture", () => {
     expect(response.file[0]?.content).toContain("UserServiceGrpcRegistry");
   });
 
+  it("supports google.protobuf.Empty as a method input or output", () => {
+    const response = plugin.run(
+      fixtureRequest([], {
+        dependency: ["google/protobuf/empty.proto"],
+        extraFiles: [emptyFile()],
+        methodInputType: ".google.protobuf.Empty",
+        methodOutputType: ".google.protobuf.Empty",
+      }),
+    );
+
+    expect(response.file[0]?.content).toContain(
+      "export const GrpcGoogleProtobufEmptySchema = Schema.Struct({});",
+    );
+    expect(response.file[0]?.content).toContain(
+      "payload: GrpcGoogleProtobufEmptySchema",
+    );
+    expect(response.file[0]?.content).toContain(
+      "toGrpcRequest: toGrpcGoogleProtobufEmpty",
+    );
+  });
+
+  it("supports BoolValue as a method input or output", () => {
+    const response = plugin.run(
+      fixtureRequest([], {
+        dependency: [
+          "google/protobuf/duration.proto",
+          "google/protobuf/wrappers.proto",
+        ],
+        extraFiles: [durationFile(), wrappersFile()],
+        methodInputType: ".google.protobuf.BoolValue",
+        methodOutputType: ".google.protobuf.Duration",
+      }),
+    );
+
+    expect(response.file[0]?.content).toContain(
+      "export const GrpcGoogleProtobufDurationSchema = Schema.Duration;",
+    );
+    expect(response.file[0]?.content).toContain(
+      "export const GrpcGoogleProtobufBoolValueSchema = Schema.Boolean;",
+    );
+    expect(response.file[0]?.content).toContain(
+      "payload: GrpcGoogleProtobufBoolValueSchema",
+    );
+    expect(response.file[0]?.content).toContain(
+      "success: GrpcGoogleProtobufDurationSchema",
+    );
+    expect(response.file[0]?.content).toContain(
+      "toGrpcRequest: toGrpcGoogleProtobufBoolValue",
+    );
+    expect(response.file[0]?.content).toContain(
+      "fromGrpcResponse: fromGrpcGoogleProtobufDuration",
+    );
+  });
+
   it("fails fast for unsupported map fields", () => {
     expectUnsupportedField(
       [
@@ -309,6 +363,8 @@ const fixtureRequest = (
     readonly requestNestedTypes?: ReadonlyArray<DescriptorProto>;
     readonly requestOneofs?: ReadonlyArray<OneofDescriptorProto>;
     readonly syntax?: "proto2" | "proto3";
+    readonly methodInputType?: string;
+    readonly methodOutputType?: string;
   },
 ) =>
   create(CodeGeneratorRequestSchema, {
@@ -353,8 +409,10 @@ const fixtureRequest = (
             method: [
               create(MethodDescriptorProtoSchema, {
                 name: "GetUser",
-                inputType: ".demo.v1.GetUserRequest",
-                outputType: ".demo.v1.GetUserResponse",
+                inputType:
+                  options?.methodInputType ?? ".demo.v1.GetUserRequest",
+                outputType:
+                  options?.methodOutputType ?? ".demo.v1.GetUserResponse",
               }),
             ],
           }),
@@ -406,6 +464,63 @@ const anyFile = () =>
           field("type_url", 1, FieldDescriptorProto_Type.STRING),
           field("value", 2, FieldDescriptorProto_Type.BYTES),
         ],
+      }),
+    ],
+  });
+
+const emptyFile = () =>
+  create(FileDescriptorProtoSchema, {
+    name: "google/protobuf/empty.proto",
+    package: "google.protobuf",
+    syntax: "proto3",
+    messageType: [
+      create(DescriptorProtoSchema, {
+        name: "Empty",
+      }),
+    ],
+  });
+
+const timestampFile = () =>
+  create(FileDescriptorProtoSchema, {
+    name: "google/protobuf/timestamp.proto",
+    package: "google.protobuf",
+    syntax: "proto3",
+    messageType: [
+      create(DescriptorProtoSchema, {
+        name: "Timestamp",
+        field: [
+          field("seconds", 1, FieldDescriptorProto_Type.INT64),
+          field("nanos", 2, FieldDescriptorProto_Type.INT32),
+        ],
+      }),
+    ],
+  });
+
+const durationFile = () =>
+  create(FileDescriptorProtoSchema, {
+    name: "google/protobuf/duration.proto",
+    package: "google.protobuf",
+    syntax: "proto3",
+    messageType: [
+      create(DescriptorProtoSchema, {
+        name: "Duration",
+        field: [
+          field("seconds", 1, FieldDescriptorProto_Type.INT64),
+          field("nanos", 2, FieldDescriptorProto_Type.INT32),
+        ],
+      }),
+    ],
+  });
+
+const wrappersFile = () =>
+  create(FileDescriptorProtoSchema, {
+    name: "google/protobuf/wrappers.proto",
+    package: "google.protobuf",
+    syntax: "proto3",
+    messageType: [
+      create(DescriptorProtoSchema, {
+        name: "BoolValue",
+        field: [field("value", 1, FieldDescriptorProto_Type.BOOL)],
       }),
     ],
   });

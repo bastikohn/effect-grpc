@@ -55,3 +55,11 @@ export const serviceHandlersLayerName = (serviceName: string) =>
 
 export const serviceRegistryName = (serviceName: string) =>
   `${serviceName}GrpcRegistry`;
+
+export const grpcWellKnownName = (protobufName: string) =>
+  `GrpcGoogleProtobuf${protobufName}`;
+
+export const grpcEmptyName = grpcWellKnownName("Empty");
+export const grpcTimestampName = grpcWellKnownName("Timestamp");
+export const grpcDurationName = grpcWellKnownName("Duration");
+export const grpcBoolValueName = grpcWellKnownName("BoolValue");

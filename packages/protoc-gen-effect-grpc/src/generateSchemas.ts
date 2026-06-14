@@ -5,11 +5,26 @@ import type {
   GeneratorFile,
   MessageModel,
   ScalarKind,
+  WellKnownKind,
 } from "./types.js";
+import {
+  grpcBoolValueName,
+  grpcDurationName,
+  grpcEmptyName,
+  grpcTimestampName,
+} from "./naming.js";
 
 export const generateSchemas = (file: GeneratorFile) => {
   const ordered = orderMessages(file.messages);
   return [
+    ...(usesGrpcEmpty(file)
+      ? [
+          `export const ${grpcEmptyName}Schema = Schema.Struct({});`,
+          `export type ${grpcEmptyName} = Schema.Schema.Type<typeof ${grpcEmptyName}Schema>;`,
+          "",
+        ]
+      : []),
+    ...wellKnownMethodSchemas(file),
     ...file.enums.flatMap(enumSchema),
     ...ordered.flatMap((message) => [
       `export const ${message.name}Schema = Schema.Struct({`,
@@ -22,6 +37,38 @@ export const generateSchemas = (file: GeneratorFile) => {
     ]),
   ];
 };
+
+const usesGrpcEmpty = (file: GeneratorFile) =>
+  file.services.some((service) =>
+    service.methods.some(
+      (method) =>
+        method.inputType === grpcEmptyName ||
+        method.outputType === grpcEmptyName,
+    ),
+  );
+
+const wellKnownMethodSchemas = (file: GeneratorFile) =>
+  [
+    ["timestamp", grpcTimestampName] as const,
+    ["duration", grpcDurationName] as const,
+    ["bool-value", grpcBoolValueName] as const,
+  ].flatMap(([type, name]) =>
+    usesMethodType(file, name)
+      ? [
+          `export const ${name}Schema = ${wellKnownSchema(type)};`,
+          `export type ${name} = Schema.Schema.Type<typeof ${name}Schema>;`,
+          "",
+        ]
+      : [],
+  );
+
+const usesMethodType = (file: GeneratorFile, typeName: string) =>
+  file.services.some((service) =>
+    service.methods.some(
+      (method) =>
+        method.inputType === typeName || method.outputType === typeName,
+    ),
+  );
 
 const enumSchema = (field: EnumModel) => [
   `export const ${field.name}Schema = Schema.Number;`,
@@ -144,13 +191,13 @@ const scalarSchema = (type: ScalarKind, unsigned?: boolean) => {
   }
 };
 
-const wellKnownSchema = (
-  type: Extract<FieldModel, { kind: "well-known" }>["type"],
-) => {
+const wellKnownSchema = (type: WellKnownKind) => {
   switch (type) {
     case "timestamp":
       return "Schema.Date";
     case "duration":
       return "Schema.Duration";
+    case "bool-value":
+      return "Schema.Boolean";
   }
 };

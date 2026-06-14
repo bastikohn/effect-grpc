@@ -170,4 +170,5 @@ export const isSupportedWellKnownType = (message: DescMessage) =>
 const supportedWellKnownTypeNames = new Set([
   "google.protobuf.Duration",
   "google.protobuf.Timestamp",
+  "google.protobuf.BoolValue",
 ]);

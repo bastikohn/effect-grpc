@@ -64,7 +64,7 @@ export interface EnumFieldModel {
 export interface WellKnownFieldModel {
   readonly kind: "well-known";
   readonly name: string;
-  readonly type: "timestamp" | "duration";
+  readonly type: WellKnownKind;
   readonly optional?: boolean;
 }
 
@@ -93,6 +93,7 @@ export interface OneofCaseModel {
 }
 
 export type ScalarKind = "string" | "number" | "boolean" | "bytes" | "bigint";
+export type WellKnownKind = "timestamp" | "duration" | "bool-value";
 
 export interface ServiceModel {
   readonly name: string;

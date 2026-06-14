@@ -30,6 +30,7 @@ export const defaultPluginOptions: PluginOptions = {
  */
 export const toParameterString = (options: PluginOptions): string => {
   const tokens: Array<string> = [
+    "target=ts",
     `import_extension=${options.importExtension}`,
     `errors=${options.errors}`,
     `int64=${options.int64}`,

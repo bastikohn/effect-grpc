@@ -19,6 +19,7 @@
     "changeset:status": "changeset status --since=origin/main",
     "changeset:version": "changeset version && pnpm install --lockfile-only",
     "clean": "vp run --filter='@effect-grpc/*' clean && rm -rf node_modules",
+    "codegen": "pnpm --filter @effect-grpc/codegen build && node packages/codegen/dist/main.mjs",
     "demo:client": "pnpm --filter @effect-grpc/simple-client start",
     "demo:generate": "pnpm --filter @effect-grpc/simple-proto generate",
     "demo:server": "pnpm --filter @effect-grpc/simple-server start",

@@ -39,7 +39,9 @@ const expandInputGlobs = (
       const matches = new Set<string>();
       for (const pattern of patterns) {
         for await (const match of glob(pattern)) {
-          matches.add(match);
+          if (match.endsWith(".proto")) {
+            matches.add(match);
+          }
         }
       }
       return [...matches].sort();

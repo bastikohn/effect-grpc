@@ -1,10 +1,11 @@
 import { Buffer } from "node:buffer";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { fromBinary } from "@bufbuild/protobuf";
 import type { FileDescriptorSet } from "@bufbuild/protobuf/wkt";
 import { FileDescriptorSetSchema } from "@bufbuild/protobuf/wkt";
-import { Effect, Path, Stream } from "effect";
+import { Effect, Stream } from "effect";
 import { ChildProcess } from "effect/unstable/process";
 import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner";
 
@@ -80,22 +81,30 @@ export const compileProtos = (
 ): Effect.Effect<
   CompileResult,
   BufBuildError | CodegenError,
-  ChildProcessSpawner | Path.Path
+  ChildProcessSpawner
 > =>
   Effect.gen(function* () {
-    const path = yield* Path.Path;
     const root = input.importPaths[0] ?? ".";
     const rootPath = path.resolve(root);
-    const fileToGenerate = input.files.map((file) =>
-      path.relative(rootPath, path.resolve(file)).split(path.sep).join("/"),
-    );
+    const fileToGenerate: Array<string> = [];
+    for (const file of input.files) {
+      const relative = path.relative(rootPath, path.resolve(file));
+      if (relative === ".." || relative.startsWith(`..${path.sep}`)) {
+        return yield* Effect.fail(
+          new CodegenError({
+            message: `${file} is outside the proto root ${rootPath}. Pass -I/--proto-path pointing at the directory that contains this proto file.`,
+          }),
+        );
+      }
+      fileToGenerate.push(relative.split(path.sep).join("/"));
+    }
     const bufBin = yield* resolveBufBin(input, root);
     const args = [
       bufBin,
       "build",
-      root,
+      rootPath,
       "--as-file-descriptor-set",
-      ...input.files.flatMap((file) => ["--path", file]),
+      ...input.files.flatMap((file) => ["--path", path.resolve(file)]),
       "-o",
       "-#format=binpb",
     ];

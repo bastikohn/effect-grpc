@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package features.v1;
+
+service OptionalScalarFeature {
+  rpc Echo(OptionalScalars) returns (OptionalScalars);
+}
+
+enum OptionalState {
+  OPTIONAL_STATE_UNSPECIFIED = 0;
+  OPTIONAL_STATE_ON = 1;
+}
+
+message OptionalScalars {
+  optional string name = 1;
+  optional bool enabled = 2;
+  optional bytes blob = 3;
+  optional int32 score = 4;
+  optional int64 total = 5;
+  optional OptionalState state = 6;
+}

@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package features.common.v1;
+
+enum CommonState {
+  COMMON_STATE_UNSPECIFIED = 0;
+  COMMON_STATE_ACTIVE = 1;
+}
+
+message CommonUser {
+  string id = 1;
+  CommonState state = 2;
+}

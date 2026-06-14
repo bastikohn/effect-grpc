@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package features.v1;
+
+service RepeatedMessageFeature {
+  rpc Echo(UserList) returns (UserList);
+}
+
+message UserList {
+  repeated User users = 1;
+}
+
+message User {
+  string id = 1;
+  repeated Address addresses = 2;
+}
+
+message Address {
+  string city = 1;
+}

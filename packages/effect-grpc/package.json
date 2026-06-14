@@ -1,0 +1,59 @@
+{
+  "name": "@effect-grpc/effect-grpc",
+  "version": "0.1.0-alpha.0",
+  "description": "Effect RPC-backed native gRPC runtime",
+  "license": "Apache-2.0",
+  "sideEffects": false,
+  "type": "module",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "dist",
+    "package.json"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bastikohn/effect-grpc.git",
+    "directory": "packages/effect-grpc"
+  },
+  "bugs": {
+    "url": "https://github.com/bastikohn/effect-grpc/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "default": "./dist/index.mjs"
+    },
+    "./package.json": "./package.json",
+    "./internal/*": null
+  },
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "scripts": {
+    "build": "tsdown --config-loader unrun",
+    "prepublishOnly": "pnpm build",
+    "dev": "tsdown --watch --config-loader unrun",
+    "typecheck": "tsc --noEmit --project tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "clean": "rm -rf dist coverage node_modules"
+  },
+  "peerDependencies": {
+    "@bufbuild/protobuf": "^2.0.0",
+    "@connectrpc/connect": "^2.0.0",
+    "effect": "4.0.0-beta.79"
+  },
+  "dependencies": {
+    "@connectrpc/connect-node": "^2.0.0"
+  },
+  "devDependencies": {
+    "@bufbuild/protobuf": "^2.0.0",
+    "@connectrpc/connect": "^2.0.0"
+  }
+}

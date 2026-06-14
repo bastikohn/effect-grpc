@@ -1,0 +1,15 @@
+{
+  "mode": "pre",
+  "tag": "alpha",
+  "initialVersions": {
+    "@effect-grpc/features-client": "0.0.0",
+    "@effect-grpc/features-proto": "0.0.0",
+    "@effect-grpc/features-server": "0.0.0",
+    "@effect-grpc/simple-client": "0.0.0",
+    "@effect-grpc/simple-proto": "0.0.0",
+    "@effect-grpc/simple-server": "0.0.0",
+    "@effect-grpc/effect-grpc": "0.1.0-alpha.0",
+    "@effect-grpc/protoc-gen-effect-grpc": "0.1.0-alpha.0"
+  },
+  "changesets": []
+}

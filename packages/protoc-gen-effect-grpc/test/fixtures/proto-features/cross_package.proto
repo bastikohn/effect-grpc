@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package features.v1;
+
+import "cross_package_common.proto";
+
+service CrossPackageFeature {
+  rpc Echo(CrossPackageRequest) returns (CrossPackageRequest);
+  rpc GetUser(features.common.v1.CommonUser) returns (features.common.v1.CommonUser);
+}
+
+message CrossPackageRequest {
+  features.common.v1.CommonUser user = 1;
+  repeated features.common.v1.CommonUser users = 2;
+  map<string, features.common.v1.CommonUser> by_id = 3;
+  features.common.v1.CommonState state = 4;
+  repeated features.common.v1.CommonState states = 5;
+  oneof choice {
+    features.common.v1.CommonUser picked = 6;
+  }
+}

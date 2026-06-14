@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package features.v1;
+
+service OneofFeature {
+  rpc Echo(SearchRequest) returns (SearchRequest);
+}
+
+message SearchRequest {
+  oneof query {
+    string id = 1;
+    string email = 2;
+    OneofUser user = 3;
+  }
+}
+
+message OneofUser {
+  string id = 1;
+}

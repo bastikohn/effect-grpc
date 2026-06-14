@@ -1,0 +1,16 @@
+version: v2
+clean: true
+plugins:
+  - local: protoc-gen-es
+    out: src/generated
+    opt:
+      - target=ts
+      - import_extension=js
+  - local: protoc-gen-effect-grpc
+    out: src/generated
+    opt:
+      - target=ts
+      - import_extension=js
+      - errors=grpc-status
+      - methods=unary,server-streaming
+      - int64=bigint

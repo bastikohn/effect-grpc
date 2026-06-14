@@ -1,0 +1,55 @@
+{
+  "name": "effect-grpc",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "packageManager": "pnpm@11.1.1",
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=11"
+  },
+  "scripts": {
+    "build": "vp run --filter='@effect-grpc/*' build",
+    "check": "pnpm lint && pnpm format && pnpm typecheck && pnpm test:types && pnpm test",
+    "check:ci": "pnpm check && pnpm check:generated && pnpm build && pnpm smoke:packages",
+    "check:release": "pnpm check:ci && node scripts/publish-public-packages.mjs --dry-run",
+    "check:generated": "pnpm demo:generate && git diff --exit-code -- examples/simple-proto/src/generated",
+    "changeset": "changeset",
+    "changeset:publish": "node scripts/publish-public-packages.mjs",
+    "changeset:status": "changeset status --since=origin/main",
+    "changeset:version": "changeset version && pnpm install --lockfile-only",
+    "clean": "vp run --filter='@effect-grpc/*' clean && rm -rf node_modules",
+    "demo:client": "pnpm --filter @effect-grpc/simple-client start",
+    "demo:generate": "pnpm --filter @effect-grpc/simple-proto generate",
+    "demo:server": "pnpm --filter @effect-grpc/simple-server start",
+    "dev": "vp run --filter='@effect-grpc/*' --parallel dev",
+    "format": "vp fmt --check",
+    "lint": "vp lint --report-unused-disable-directives",
+    "smoke:packages": "node scripts/package-smoke.mjs",
+    "test": "pnpm test:unit",
+    "test:coverage": "vp run --filter='@effect-grpc/*' --concurrency-limit 1 test -- --coverage",
+    "test:types": "tstyche",
+    "test:unit": "vp run --filter='@effect-grpc/*' --concurrency-limit 1 test",
+    "typecheck": "vp run --filter='@effect-grpc/*' typecheck",
+    "fix": "vp fmt && vp lint --fix"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
+  "devDependencies": {
+    "@bufbuild/buf": "^1.60.0",
+    "@bufbuild/protoc-gen-es": "^2.0.0",
+    "@changesets/cli": "^2.31.0",
+    "@effect/language-service": "^0.39.0",
+    "@oxlint/plugins": "^1.63.0",
+    "@types/node": "^24.0.0",
+    "tsdown": "^0.16.0",
+    "tstyche": "^7.2.1",
+    "typescript": "^5.0.0",
+    "unrun": "^0.3.0",
+    "vite-plus": "^0.1.24",
+    "vitest": "^4.0.0"
+  }
+}

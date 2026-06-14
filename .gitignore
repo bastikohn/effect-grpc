@@ -1,0 +1,11 @@
+node_modules
+.pnpm-store
+.direnv
+dist
+coverage
+packages/protoc-gen-effect-grpc/test/.generated
+.plans/
+.DS_Store
+*.log
+.nvimlog
+*.tsbuildinfo

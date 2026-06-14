@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "plugins": [],
+    "verbatimModuleSyntax": false
+  },
+  "include": [
+    "packages/effect-grpc/src",
+    "packages/effect-grpc/test/**/*.tst.ts",
+    "packages/protoc-gen-effect-grpc/src",
+    "packages/protoc-gen-effect-grpc/test/**/*.tst.ts",
+    "examples/simple-proto/src",
+    "examples/simple-client/src",
+    "examples/simple-server/src"
+  ]
+}

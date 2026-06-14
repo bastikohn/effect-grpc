@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package features.v1;
+
+service NestedMessageFeature {
+  rpc Echo(NestedOuter) returns (NestedOuter);
+}
+
+message NestedOuter {
+  message Inner {
+    enum Status {
+      STATUS_UNSPECIFIED = 0;
+      STATUS_ACTIVE = 1;
+    }
+
+    string id = 1;
+    Status status = 2;
+  }
+
+  Inner inner = 1;
+  repeated Inner items = 2;
+  map<string, Inner> by_id = 3;
+  oneof choice {
+    Inner picked = 4;
+  }
+}

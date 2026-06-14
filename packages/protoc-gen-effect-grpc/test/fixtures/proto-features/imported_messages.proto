@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package features.v1;
+
+import "imported_common.proto";
+
+service ImportedMessageFeature {
+  rpc Echo(GetImportedUserResponse) returns (GetImportedUserResponse);
+}
+
+message GetImportedUserResponse {
+  ImportedUser user = 1;
+  ImportedState state = 2;
+}

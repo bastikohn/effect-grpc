@@ -1,0 +1,94 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CI: "1"
+
+jobs:
+  verify:
+    name: Verify release
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Run release checks
+        run: pnpm check:release
+
+  changesets:
+    name: Version packages
+    if: github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      has-changesets: ${{ steps.changesets.outputs.hasChangesets }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Create or update version PR
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          version: pnpm changeset:version
+          title: Version packages
+          commit: "chore: version packages"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish:
+    name: Publish packages
+    if: github.ref == 'refs/heads/main' && needs.changesets.outputs.has-changesets == 'false'
+    needs: [verify, changesets]
+    runs-on: ubuntu-latest
+    permissions:
+      # contents: write lets the job push version tags and create GitHub
+      # releases; id-token: write lets npm mint provenance attestations.
+      contents: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup
+        uses: ./.github/actions/setup
+        with:
+          node-version: "24.x"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Build
+        run: pnpm build
+
+      - name: Publish changed public packages
+        run: pnpm changeset:publish --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

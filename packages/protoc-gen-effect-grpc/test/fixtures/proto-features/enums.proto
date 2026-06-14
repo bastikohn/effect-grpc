@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package features.v1;
+
+service EnumFeature {
+  rpc Echo(EnumUser) returns (EnumUser);
+}
+
+enum UserState {
+  USER_STATE_UNSPECIFIED = 0;
+  USER_STATE_ACTIVE = 1;
+  USER_STATE_DISABLED = 2;
+}
+
+message EnumUser {
+  string id = 1;
+  UserState state = 2;
+  repeated UserState history = 3;
+}

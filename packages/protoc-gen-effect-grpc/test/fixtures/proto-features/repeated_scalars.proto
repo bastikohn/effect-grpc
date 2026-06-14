@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package features.v1;
+
+service RepeatedScalarFeature {
+  rpc Echo(RepeatedScalars) returns (RepeatedScalars);
+}
+
+message RepeatedScalars {
+  repeated string tags = 1;
+  repeated bool flags = 2;
+  repeated bytes blobs = 3;
+  repeated int32 scores = 4;
+  repeated uint32 counts = 5;
+  repeated float ratios = 6;
+  repeated double weights = 7;
+}

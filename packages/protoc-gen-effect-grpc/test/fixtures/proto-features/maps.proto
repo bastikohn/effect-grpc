@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package features.v1;
+
+service MapFeature {
+  rpc Echo(MapValues) returns (MapValues);
+}
+
+message MapValues {
+  map<string, string> labels = 1;
+  map<string, int32> counts = 2;
+  map<string, MapUser> users = 3;
+}
+
+message MapUser {
+  string id = 1;
+}

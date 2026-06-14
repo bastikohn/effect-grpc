@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package features.v1;
+
+service Int64BigintFeature {
+  rpc Echo(Int64Scalars) returns (Int64Scalars);
+}
+
+message Int64Scalars {
+  int64 id = 1;
+  uint64 count = 2;
+  sint64 delta = 3;
+  fixed64 hash = 4;
+  sfixed64 value = 5;
+}

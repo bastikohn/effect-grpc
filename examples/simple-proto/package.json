@@ -1,0 +1,39 @@
+{
+  "name": "@effect-grpc/simple-proto",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./generated/demo/v1/user_service_effect_grpc": {
+      "types": "./dist/user_service_effect_grpc.d.mts",
+      "default": "./dist/user_service_effect_grpc.mjs"
+    },
+    "./generated/demo/v1/user_service_pb": {
+      "types": "./dist/user_service_pb.d.mts",
+      "default": "./dist/user_service_pb.mjs"
+    },
+    "./generated/*": {
+      "types": "./dist/generated/*.d.mts",
+      "default": "./dist/generated/*.mjs"
+    },
+    "./package.json": "./package.json",
+    "./internal/*": null
+  },
+  "scripts": {
+    "clean": "rm -rf src/generated dist coverage node_modules",
+    "generate": "buf generate",
+    "build": "pnpm run generate && tsdown --config-loader unrun",
+    "dev": "tsdown --watch --config-loader unrun",
+    "typecheck": "tsc --noEmit --project tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.0.0",
+    "@connectrpc/connect": "^2.0.0",
+    "@effect-grpc/effect-grpc": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect-grpc/protoc-gen-effect-grpc": "workspace:*"
+  }
+}

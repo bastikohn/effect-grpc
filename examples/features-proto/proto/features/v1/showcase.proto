@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package features.v1;
+
+import "features/v1/common.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+service FeatureShowcaseService {
+  rpc Describe(FeatureRequest) returns (FeatureResponse);
+}
+
+enum UserState {
+  USER_STATE_UNSPECIFIED = 0;
+  USER_STATE_ACTIVE = 1;
+  USER_STATE_DISABLED = 2;
+}
+
+message FeatureRequest {
+  repeated string tags = 1;
+  repeated int32 scores = 2;
+  repeated Note notes = 3;
+  UserState state = 4;
+  FeatureUser owner = 5;
+  map<string, string> labels = 6;
+  map<string, int32> counts = 7;
+  map<string, LocalUser> reviewers = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Duration ttl = 10;
+  bytes payload = 11;
+  int64 sequence = 12;
+  oneof contact {
+    string contact_email = 13;
+    LocalUser contact_user = 14;
+  }
+}
+
+message FeatureResponse {
+  FeatureRequest request = 1;
+  string summary = 2;
+}
+
+message Note {
+  string text = 1;
+}
+
+message LocalUser {
+  string id = 1;
+  string role = 2;
+}

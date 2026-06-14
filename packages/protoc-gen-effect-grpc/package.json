@@ -1,0 +1,55 @@
+{
+  "name": "@effect-grpc/protoc-gen-effect-grpc",
+  "version": "0.1.0-alpha.0",
+  "description": "Build-time protobuf generator for effect-grpc",
+  "license": "Apache-2.0",
+  "sideEffects": false,
+  "type": "module",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "dist",
+    "package.json"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bastikohn/effect-grpc.git",
+    "directory": "packages/protoc-gen-effect-grpc"
+  },
+  "bugs": {
+    "url": "https://github.com/bastikohn/effect-grpc/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "default": "./dist/index.mjs"
+    },
+    "./package.json": "./package.json",
+    "./internal/*": null
+  },
+  "bin": {
+    "protoc-gen-effect-grpc": "./dist/plugin.mjs"
+  },
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "scripts": {
+    "build": "tsdown --config-loader unrun",
+    "prepublishOnly": "pnpm build",
+    "dev": "tsdown --watch --config-loader unrun",
+    "typecheck": "tsc --noEmit --project tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "clean": "rm -rf dist coverage node_modules"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.0.0",
+    "@bufbuild/protoplugin": "^2.0.0"
+  },
+  "devDependencies": {}
+}

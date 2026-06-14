@@ -1,0 +1,43 @@
+{
+  "name": "@effect-grpc/features-proto",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./generated/features/v1/common_effect_grpc": {
+      "types": "./dist/common_effect_grpc.d.mts",
+      "default": "./dist/common_effect_grpc.mjs"
+    },
+    "./generated/features/v1/common_pb": {
+      "types": "./dist/common_pb.d.mts",
+      "default": "./dist/common_pb.mjs"
+    },
+    "./generated/features/v1/showcase_effect_grpc": {
+      "types": "./dist/showcase_effect_grpc.d.mts",
+      "default": "./dist/showcase_effect_grpc.mjs"
+    },
+    "./generated/features/v1/showcase_pb": {
+      "types": "./dist/showcase_pb.d.mts",
+      "default": "./dist/showcase_pb.mjs"
+    },
+    "./package.json": "./package.json",
+    "./internal/*": null
+  },
+  "scripts": {
+    "clean": "rm -rf src/generated dist coverage node_modules",
+    "generate": "buf generate",
+    "build": "pnpm run generate && tsdown --config-loader unrun",
+    "dev": "tsdown --watch --config-loader unrun",
+    "typecheck": "tsc --noEmit --project tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.0.0",
+    "@connectrpc/connect": "^2.0.0",
+    "@effect-grpc/effect-grpc": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect-grpc/protoc-gen-effect-grpc": "workspace:*"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ESNext"],
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@effect-grpc/effect-grpc": ["packages/effect-grpc/src/index.ts"],
+      "@effect-grpc/effect-grpc/*": ["packages/effect-grpc/src/*"],
+      "@effect-grpc/protoc-gen-effect-grpc": [
+        "packages/protoc-gen-effect-grpc/src/index.ts"
+      ],
+      "@effect-grpc/protoc-gen-effect-grpc/*": [
+        "packages/protoc-gen-effect-grpc/src/*"
+      ],
+      "@effect-grpc/features-proto/*": ["examples/features-proto/src/*"],
+      "@effect-grpc/simple-proto/*": ["examples/simple-proto/src/*"]
+    },
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "verbatimModuleSyntax": true,
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        "diagnosticSeverity": {
+          "deterministicKeys": "error"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package features.v1;
+
+enum ImportedState {
+  IMPORTED_STATE_UNSPECIFIED = 0;
+  IMPORTED_STATE_ACTIVE = 1;
+}
+
+message ImportedUser {
+  string id = 1;
+  string name = 2;
+}

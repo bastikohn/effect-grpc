@@ -719,7 +719,7 @@ const clientLayer = (baseUrl: URL) =>
   UserServiceClientLayer.pipe(
     Layer.provide(
       GrpcClientProtocol.layer({
-        baseUrl,
+        baseUrl: baseUrl.toString().replace(/\/$/, ""),
         defaultTimeoutMs: 1_000,
         registry: UserServiceGrpcRegistry,
       }),

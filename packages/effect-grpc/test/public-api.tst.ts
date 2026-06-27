@@ -1,10 +1,11 @@
-import type { ConnectRouter } from "@connectrpc/connect";
+import type { ConnectRouter, Interceptor } from "@connectrpc/connect";
 import { Effect, Layer, Stream } from "effect";
 import { describe, expect, it } from "tstyche";
 
 import {
   CodegenSupport,
   GrpcClientProtocol,
+  GrpcMetadata,
   GrpcMethodRegistry,
   GrpcNodeServer,
   GrpcServerProtocol,
@@ -21,6 +22,15 @@ import {
 
 const registry = new Map() as GrpcMethodRegistry.GrpcMethodRegistry;
 declare const context: CodegenSupport.GrpcServerContext;
+declare const metadata: GrpcMetadata.GrpcMetadata;
+interface AuthToken {
+  readonly token: string;
+}
+declare const authMetadata: Effect.Effect<
+  GrpcMetadata.GrpcMetadata,
+  never,
+  AuthToken
+>;
 const implementation: UserServiceImplementation = {
   getUser: (request) =>
     Effect.succeed({
@@ -42,9 +52,15 @@ describe("public API", () => {
   it("keeps runtime constructors callable", () => {
     expect(GrpcStatusError.notFound).type.toBeCallableWith("missing");
     expect(GrpcClientProtocol.layer).type.toBeCallableWith({
-      baseUrl: new URL("http://127.0.0.1:50051"),
+      baseUrl: "http://127.0.0.1:50051",
       registry,
     });
+    expect(GrpcClientProtocol.metadataInterceptor).type.toBeCallableWith(
+      Effect.succeed(metadata),
+    );
+    expect(GrpcClientProtocol.metadataInterceptor(authMetadata)).type.toBe<
+      Effect.Effect<Interceptor, never, AuthToken>
+    >();
     expect(GrpcServerProtocol.make).type.toBeCallableWith({ registry });
     expect(GrpcNodeServer.serve).type.toBeCallableWith({
       host: "127.0.0.1",
@@ -68,7 +84,7 @@ describe("public API", () => {
     const layer = UserServiceClientLayer.pipe(
       Layer.provide(
         GrpcClientProtocol.layer({
-          baseUrl: new URL("http://127.0.0.1:50051"),
+          baseUrl: "http://127.0.0.1:50051",
           registry,
         }),
       ),

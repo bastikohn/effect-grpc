@@ -1,10 +1,12 @@
-import type { CallOptions } from "@connectrpc/connect";
+import type { CallOptions, Interceptor, Transport } from "@connectrpc/connect";
 import { createGrpcTransport } from "@connectrpc/connect-node";
+import type { GrpcTransportOptions } from "@connectrpc/connect-node";
 import { Effect, Layer, Scope } from "effect";
 import type * as Tracer from "effect/Tracer";
 import * as RpcClient from "effect/unstable/rpc/RpcClient";
 import type { FromClientEncoded } from "effect/unstable/rpc/RpcMessage";
 
+import * as GrpcMetadata from "./GrpcMetadata.js";
 import type {
   GrpcMethodEntry,
   GrpcMethodRegistry,
@@ -12,32 +14,108 @@ import type {
 import type { GrpcStatusCode } from "./GrpcStatusCode.js";
 import * as GrpcStatusError from "./GrpcStatusError.js";
 import { getClient } from "./internal/connect.js";
-import { readTimeoutMs, stripInternalHeaders } from "./internal/metadata.js";
+import {
+  headersFromCallOptions,
+  readTimeoutMs,
+  stripInternalHeaders,
+} from "./internal/metadata.js";
 import { failureExit, successExit } from "./internal/status.js";
 import * as GrpcTracing from "./internal/tracing.js";
 
-export interface GrpcClientProtocolOptions {
-  readonly baseUrl: URL;
+export type { GrpcTransportOptions } from "@connectrpc/connect-node";
+
+export interface GrpcClientProtocolOptions extends GrpcTransportOptions {
   readonly registry: GrpcMethodRegistry;
-  readonly defaultTimeoutMs?: number;
+  /**
+   * Overrides the address reported in client span attributes
+   * (`server.address` / `server.port`). Defaults to `baseUrl`.
+   */
+  readonly serverAddress?: URL;
 }
 
+export interface GrpcClientProtocolTransportOptions {
+  readonly registry: GrpcMethodRegistry;
+  /** A transport from {@link makeTransport}, or any connect `Transport`. */
+  readonly transport: Transport;
+  /** Address reported in client span attributes. Telemetry only. */
+  readonly serverAddress?: URL;
+}
+
+/**
+ * Builds the gRPC transport used by the client protocol. Wraps connect-node's
+ * `createGrpcTransport` so callers configure TLS (`nodeOptions`), interceptors,
+ * compression, and timeouts without depending on `@connectrpc/connect-node`.
+ */
+export const makeTransport = (options: GrpcTransportOptions): Transport =>
+  createGrpcTransport(options);
+
+/**
+ * Adapts an Effect that resolves gRPC metadata into a connect `Interceptor`,
+ * so cross-cutting headers (e.g. `authorization: Bearer <token>`) can be
+ * attached to every outgoing call while staying in Effect.
+ *
+ * `resolve` runs once per request against the context captured when the
+ * interceptor is built, so reading a `Ref`/service yields the current value —
+ * e.g. a token rotated by a background refresher. Its requirements `R` must be
+ * satisfied where the interceptor is built (typically the same scope as the
+ * service it reads).
+ *
+ * Resolved metadata is treated as defaults: a header already present on the
+ * call — per-call `GrpcCallOptions.metadata`, or the injected `traceparent` —
+ * is left untouched. Reserved `x-effect-grpc-*` keys are rejected, as on the
+ * per-call path.
+ *
+ * Pass the result via `interceptors` on {@link layer} or {@link makeTransport}.
+ */
+export const metadataInterceptor = <R>(
+  resolve: Effect.Effect<GrpcMetadata.GrpcMetadata, never, R>,
+): Effect.Effect<Interceptor, never, R> =>
+  Effect.context<R>().pipe(
+    Effect.map((context): Interceptor => {
+      const run = Effect.runPromiseWith(context);
+      return (next) => async (req) => {
+        const metadata = await run(resolve);
+        const present = new Set<string>();
+        req.header.forEach((_value, key) => present.add(key.toLowerCase()));
+        for (const [key, value] of headersFromCallOptions({ metadata })) {
+          if (present.has(key.toLowerCase())) continue;
+          req.header.append(key, value);
+        }
+        return next(req);
+      };
+    }),
+  );
+
+/**
+ * Builds the protocol layer. The common case: pass `baseUrl` plus any
+ * connect-node options (`nodeOptions`, `interceptors`, `defaultTimeoutMs`, ...).
+ */
 export const layer = (
   options: GrpcClientProtocolOptions,
+): Layer.Layer<RpcClient.Protocol> =>
+  layerFromTransport({
+    registry: options.registry,
+    transport: makeTransport(options),
+    serverAddress: options.serverAddress ?? new URL(options.baseUrl),
+  });
+
+/**
+ * Builds the protocol layer from an existing transport. Use this to share one
+ * transport across services, or to inject a fake transport in tests.
+ */
+export const layerFromTransport = (
+  options: GrpcClientProtocolTransportOptions,
 ): Layer.Layer<RpcClient.Protocol> =>
   Layer.effect(RpcClient.Protocol, make(options));
 
 const make = (
-  options: GrpcClientProtocolOptions,
+  options: GrpcClientProtocolTransportOptions,
 ): Effect.Effect<RpcClient.Protocol["Service"], never, Scope.Scope> =>
   RpcClient.Protocol.make((writeResponse) =>
     Effect.gen(function* () {
       const context = yield* Effect.context<never>();
       const run = Effect.runPromiseWith(context);
-      const transport = createGrpcTransport({
-        baseUrl: options.baseUrl.toString().replace(/\/$/, ""),
-        defaultTimeoutMs: options.defaultTimeoutMs,
-      });
+      const transport = options.transport;
       const activeCalls = new Map<string, AbortController>();
 
       yield* Effect.addFinalizer(() =>
@@ -118,7 +196,7 @@ const make = (
         }).pipe(
           Effect.withSpan(
             GrpcTracing.spanName(entry),
-            GrpcTracing.clientSpanOptions(entry, options.baseUrl),
+            GrpcTracing.clientSpanOptions(entry, options.serverAddress),
           ),
           Effect.catch(() => Effect.void),
         );
@@ -132,10 +210,13 @@ const make = (
         span: Tracer.Span,
       ): Promise<GrpcStatusCode> => {
         const headers = headersWithTrace(request, span);
+        const headerTimeoutMs = readTimeoutMs(request.headers);
         const callOptions: CallOptions = {
           headers: new Headers(headers.map(([key, value]) => [key, value])),
           signal,
-          timeoutMs: readTimeoutMs(request.headers) ?? options.defaultTimeoutMs,
+          ...(headerTimeoutMs !== undefined
+            ? { timeoutMs: headerTimeoutMs }
+            : {}),
         };
         const client = getClient(transport, entry.service) as Record<
           string,

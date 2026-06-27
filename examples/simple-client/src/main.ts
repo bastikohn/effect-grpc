@@ -13,7 +13,7 @@ const clientLayer = (baseUrl: URL) =>
   UserServiceClientLayer.pipe(
     Layer.provide(
       GrpcClientProtocol.layer({
-        baseUrl,
+        baseUrl: baseUrl.toString().replace(/\/$/, ""),
         registry: UserServiceGrpcRegistry,
       }),
     ),

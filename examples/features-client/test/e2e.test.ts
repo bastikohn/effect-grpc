@@ -212,7 +212,7 @@ const clientLayer = (baseUrl: URL) =>
   FeatureShowcaseServiceClientLayer.pipe(
     Layer.provide(
       GrpcClientProtocol.layer({
-        baseUrl,
+        baseUrl: baseUrl.toString().replace(/\/$/, ""),
         defaultTimeoutMs: 1_000,
         registry: FeatureShowcaseServiceGrpcRegistry,
       }),
@@ -223,7 +223,7 @@ const userClientLayer = (baseUrl: URL) =>
   UserServiceClientLayer.pipe(
     Layer.provide(
       GrpcClientProtocol.layer({
-        baseUrl,
+        baseUrl: baseUrl.toString().replace(/\/$/, ""),
         defaultTimeoutMs: 1_000,
         registry: UserServiceGrpcRegistry,
       }),

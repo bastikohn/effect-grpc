@@ -1,5 +1,5 @@
 import type { ConnectRouter, HandlerContext } from "@connectrpc/connect";
-import { Deferred, Effect, Fiber, Queue, Schema } from "effect";
+import { Deferred, Effect, Fiber, Queue, Ref, Schema } from "effect";
 import * as RpcClient from "effect/unstable/rpc/RpcClient";
 import type { FromServerEncoded } from "effect/unstable/rpc/RpcMessage";
 import { describe, expect, it } from "vitest";
@@ -39,7 +39,7 @@ describe("GrpcClientProtocol", () => {
       ).pipe(
         Effect.provide(
           GrpcClientProtocol.layer({
-            baseUrl: new URL("http://127.0.0.1:1"),
+            baseUrl: "http://127.0.0.1:1",
             registry: new Map(),
           }),
         ),
@@ -53,6 +53,45 @@ describe("GrpcClientProtocol", () => {
     expect(response.exit.cause[0]).toMatchObject({
       _tag: "Fail",
       error: { code: "unimplemented" },
+    });
+  });
+});
+
+describe("metadataInterceptor", () => {
+  it("adds metadata as defaults, lets per-call win, and re-reads per call", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const token = yield* Ref.make("t1");
+        const interceptor = yield* GrpcClientProtocol.metadataInterceptor(
+          Ref.get(token).pipe(
+            Effect.map((t) => [["authorization", `Bearer ${t}`]] as const),
+          ),
+        );
+
+        const invoke = (header: Headers) =>
+          Effect.promise(async () => {
+            const next = ((req: { header: Headers }) =>
+              Promise.resolve(req)) as unknown as Parameters<
+              typeof interceptor
+            >[0];
+            await interceptor(next)({ header } as never);
+            return header.get("authorization");
+          });
+
+        const fresh = yield* invoke(new Headers());
+        const perCall = yield* invoke(
+          new Headers({ authorization: "Bearer explicit" }),
+        );
+        yield* Ref.set(token, "t2");
+        const rotated = yield* invoke(new Headers());
+        return { fresh, perCall, rotated };
+      }),
+    );
+
+    expect(result).toEqual({
+      fresh: "Bearer t1",
+      perCall: "Bearer explicit",
+      rotated: "Bearer t2",
     });
   });
 });

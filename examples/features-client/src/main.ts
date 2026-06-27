@@ -21,7 +21,7 @@ const getArg = (name: string, fallback: string): string => {
 const baseUrl = new URL(getArg("base-url", "http://127.0.0.1:50052"));
 
 const ClientProtocolLive = GrpcClientProtocol.layer({
-  baseUrl,
+  baseUrl: baseUrl.toString().replace(/\/$/, ""),
   registry: FeatureShowcaseServiceGrpcRegistry,
 });
 

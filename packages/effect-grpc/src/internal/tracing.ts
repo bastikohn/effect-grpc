@@ -13,12 +13,12 @@ export const spanName = (entry: GrpcMethodEntry): string => entry.tag;
 
 export const clientSpanOptions = (
   entry: GrpcMethodEntry,
-  baseUrl: URL,
+  serverAddress?: URL,
 ): Tracer.SpanOptionsNoTrace => ({
   kind: "client",
   attributes: {
     ...commonAttributes(entry),
-    ...serverAttributes(baseUrl),
+    ...(serverAddress ? serverAttributes(serverAddress) : {}),
   },
 });
 

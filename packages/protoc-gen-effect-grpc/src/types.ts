@@ -71,29 +71,51 @@ export interface WellKnownFieldModel {
 export interface ListFieldModel {
   readonly kind: "list";
   readonly name: string;
-  readonly item: ScalarFieldModel | MessageFieldModel | EnumFieldModel;
+  readonly item: FieldValueModel;
 }
 
 export interface MapFieldModel {
   readonly kind: "map";
   readonly name: string;
-  readonly key: ScalarFieldModel;
-  readonly value: ScalarFieldModel | MessageFieldModel;
+  readonly key: MapKeyModel;
+  readonly value: FieldValueModel;
+}
+
+export interface MapKeyModel {
+  readonly kind: "map-key";
+  readonly type: "number" | "string";
 }
 
 export interface OneofFieldModel {
   readonly kind: "oneof";
   readonly name: string;
+  readonly converterName: string;
   readonly cases: ReadonlyArray<OneofCaseModel>;
 }
 
 export interface OneofCaseModel {
   readonly name: string;
-  readonly value: ScalarFieldModel | MessageFieldModel;
+  readonly value: FieldValueModel;
 }
 
 export type ScalarKind = "string" | "number" | "boolean" | "bytes" | "bigint";
-export type WellKnownKind = "timestamp" | "duration" | "bool-value";
+export type WellKnownKind =
+  | "timestamp"
+  | "duration"
+  | "double-value"
+  | "float-value"
+  | "int64-value"
+  | "uint64-value"
+  | "int32-value"
+  | "uint32-value"
+  | "bool-value"
+  | "string-value"
+  | "bytes-value"
+  | "any"
+  | "struct"
+  | "value"
+  | "list-value"
+  | "field-mask";
 
 export interface ServiceModel {
   readonly name: string;

@@ -7,6 +7,7 @@ import {
 import { FeatureSet_FieldPresence } from "@bufbuild/protobuf/wkt";
 
 import type { MethodModel, ScalarKind } from "./types.js";
+import { wellKnownKind } from "./wellKnown.js";
 
 export const supportedMethodKind = (options: {
   readonly serviceTypeName: string;
@@ -63,13 +64,8 @@ export const supportedField = (field: DescField): void => {
       }
       return;
     case "message":
-      if (isSupportedWellKnownType(field.message)) return;
       if (isWellKnownType(field.message)) {
-        unsupportedField(
-          field,
-          `well-known type field ${field.parent.typeName}.${field.name} (${field.message.typeName})`,
-          "well-known protobuf types",
-        );
+        supportedWellKnownField(field, field.message);
       }
       return;
     case "enum":
@@ -81,41 +77,21 @@ export const supportedField = (field: DescField): void => {
           return;
         case "message":
           if (isWellKnownType(field.message)) {
-            unsupportedField(
-              field,
-              `repeated well-known type field ${field.parent.typeName}.${field.name} (${field.message.typeName})`,
-              "repeated well-known type fields",
-            );
+            supportedWellKnownField(field, field.message);
           }
           return;
       }
       return;
     case "map":
-      if (field.mapKey !== ScalarType.STRING) {
-        unsupportedField(
-          field,
-          `map field ${field.parent.typeName}.${field.name}`,
-          "non-string map keys",
-        );
-      }
       switch (field.mapKind) {
         case "scalar":
           return;
         case "message":
           if (isWellKnownType(field.message)) {
-            unsupportedField(
-              field,
-              `map field ${field.parent.typeName}.${field.name} (${field.message.typeName})`,
-              "well-known type map values",
-            );
+            supportedWellKnownField(field, field.message);
           }
           return;
         case "enum":
-          unsupportedField(
-            field,
-            `map field ${field.parent.typeName}.${field.name}`,
-            "enum map values",
-          );
           return;
       }
       return;
@@ -165,10 +141,16 @@ export const isWellKnownType = (desc: DescMessage | DescEnum) =>
   desc.file.proto.package === "google.protobuf";
 
 export const isSupportedWellKnownType = (message: DescMessage) =>
-  supportedWellKnownTypeNames.has(message.typeName);
+  wellKnownKind(message.typeName) !== undefined;
 
-const supportedWellKnownTypeNames = new Set([
-  "google.protobuf.Duration",
-  "google.protobuf.Timestamp",
-  "google.protobuf.BoolValue",
-]);
+const supportedWellKnownField = (
+  field: DescField,
+  message: DescMessage,
+): void => {
+  if (isSupportedWellKnownType(message)) return;
+  unsupportedField(
+    field,
+    `well-known type field ${field.parent.typeName}.${field.name} (${message.typeName})`,
+    "well-known protobuf types",
+  );
+};

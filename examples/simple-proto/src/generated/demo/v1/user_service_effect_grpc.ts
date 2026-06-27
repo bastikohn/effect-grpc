@@ -19,7 +19,7 @@ export const UserSchema = Schema.Struct({
 export type User = Schema.Schema.Type<typeof UserSchema>;
 
 export const GetUserResponseSchema = Schema.Struct({
-  user: Schema.optional(UserSchema),
+  user: Schema.optional(Schema.suspend((): typeof UserSchema => UserSchema)),
 });
 export type GetUserResponse = Schema.Schema.Type<typeof GetUserResponseSchema>;
 
@@ -37,33 +37,33 @@ export const UserEventSchema = Schema.Struct({
 });
 export type UserEvent = Schema.Schema.Type<typeof UserEventSchema>;
 
-export const GetUserRpc = Rpc.make("demo.v1.UserService/GetUser", {
+export const UserService_GetUserRpc = Rpc.make("demo.v1.UserService/GetUser", {
   payload: GetUserRequestSchema,
   success: GetUserResponseSchema,
   error: GrpcStatusError.GrpcStatusError,
 });
 
-export const WatchUsersRpc = Rpc.make("demo.v1.UserService/WatchUsers", {
+export const UserService_WatchUsersRpc = Rpc.make("demo.v1.UserService/WatchUsers", {
   payload: WatchUsersRequestSchema,
   success: UserEventSchema,
   error: GrpcStatusError.GrpcStatusError,
   stream: true,
 });
 
-export const UserServiceRpcGroup = RpcGroup.make(GetUserRpc, WatchUsersRpc);
-export type UserServiceRpcs = typeof GetUserRpc | typeof WatchUsersRpc;
+export const UserServiceRpcGroup = RpcGroup.make(UserService_GetUserRpc, UserService_WatchUsersRpc);
+export type UserServiceRpcs = typeof UserService_GetUserRpc | typeof UserService_WatchUsersRpc;
 
 const readField = (message: unknown, field: string): unknown =>
   typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
 
 export const fromGetUserRequest = (message: unknown): unknown => ({
-  id: readField(message, "id") as string,
+  id: (readField(message, "id")) as string,
 });
 
-export const toGetUserRequest = (value: unknown) => {
+export const toGetUserRequest = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return {
-    id: readField(message, "id") as string,
+    id: (readField(message, "id")) as string,
   };
 };
 
@@ -71,7 +71,7 @@ export const fromGetUserResponse = (message: unknown): unknown => ({
   user: readField(message, "user") == null ? undefined : fromUser(readField(message, "user")),
 });
 
-export const toGetUserResponse = (value: unknown) => {
+export const toGetUserResponse = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return {
     user: readField(message, "user") == null ? undefined : toUser(readField(message, "user")),
@@ -79,45 +79,45 @@ export const toGetUserResponse = (value: unknown) => {
 };
 
 export const fromWatchUsersRequest = (message: unknown): unknown => ({
-  tenantId: readField(message, "tenantId") as string,
-  count: readField(message, "count") as number,
+  tenantId: (readField(message, "tenantId")) as string,
+  count: (readField(message, "count")) as number,
 });
 
-export const toWatchUsersRequest = (value: unknown) => {
+export const toWatchUsersRequest = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return {
-    tenantId: readField(message, "tenantId") as string,
-    count: readField(message, "count") as number,
+    tenantId: (readField(message, "tenantId")) as string,
+    count: (readField(message, "count")) as number,
   };
 };
 
 export const fromUser = (message: unknown): unknown => ({
-  id: readField(message, "id") as string,
-  name: readField(message, "name") as string,
+  id: (readField(message, "id")) as string,
+  name: (readField(message, "name")) as string,
 });
 
-export const toUser = (value: unknown) => {
+export const toUser = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return {
-    id: readField(message, "id") as string,
-    name: readField(message, "name") as string,
+    id: (readField(message, "id")) as string,
+    name: (readField(message, "name")) as string,
   };
 };
 
 export const fromUserEvent = (message: unknown): unknown => ({
-  id: readField(message, "id") as string,
-  name: readField(message, "name") as string,
-  action: readField(message, "action") as string,
-  sequence: readField(message, "sequence") as number,
+  id: (readField(message, "id")) as string,
+  name: (readField(message, "name")) as string,
+  action: (readField(message, "action")) as string,
+  sequence: (readField(message, "sequence")) as number,
 });
 
-export const toUserEvent = (value: unknown) => {
+export const toUserEvent = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return {
-    id: readField(message, "id") as string,
-    name: readField(message, "name") as string,
-    action: readField(message, "action") as string,
-    sequence: readField(message, "sequence") as number,
+    id: (readField(message, "id")) as string,
+    name: (readField(message, "name")) as string,
+    action: (readField(message, "action")) as string,
+    sequence: (readField(message, "sequence")) as number,
   };
 };
 

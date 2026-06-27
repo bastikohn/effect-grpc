@@ -12,15 +12,15 @@ const readField = (message: unknown, field: string): unknown =>
   typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
 
 export const fromFeatureUser = (message: unknown): unknown => ({
-  id: readField(message, "id") as string,
-  name: readField(message, "name") as string,
+  id: (readField(message, "id")) as string,
+  name: (readField(message, "name")) as string,
 });
 
-export const toFeatureUser = (value: unknown) => {
+export const toFeatureUser = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return {
-    id: readField(message, "id") as string,
-    name: readField(message, "name") as string,
+    id: (readField(message, "id")) as string,
+    name: (readField(message, "name")) as string,
   };
 };
 

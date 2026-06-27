@@ -101,7 +101,9 @@ describe("generateFile", () => {
     const output = generateFile(demoFile);
 
     expect(output).toContain("export const UserSchema = Schema.Struct");
-    expect(output).toContain("user: Schema.optional(UserSchema)");
+    expect(output).toContain(
+      "user: Schema.optional(Schema.suspend((): typeof UserSchema => UserSchema))",
+    );
     expect(output).toContain(
       'user: readField(message, "user") == null ? undefined : fromUser(readField(message, "user"))',
     );
@@ -179,105 +181,134 @@ describe("plugin fixture", () => {
     );
   });
 
-  it("fails fast for unsupported map fields", () => {
-    expectUnsupportedField(
-      [
-        field("labels", 1, FieldDescriptorProto_Type.MESSAGE, {
-          label: FieldDescriptorProto_Label.REPEATED,
-          typeName: ".demo.v1.GetUserRequest.LabelsEntry",
-        }),
-      ],
-      "map field demo.v1.GetUserRequest.labels",
-      {
-        requestNestedTypes: [
-          create(DescriptorProtoSchema, {
-            name: "LabelsEntry",
-            field: [
-              field("key", 1, FieldDescriptorProto_Type.INT32),
-              field("value", 2, FieldDescriptorProto_Type.STRING),
-            ],
-            options: create(MessageOptionsSchema, { mapEntry: true }),
+  it("supports non-string map keys", () => {
+    const response = plugin.run(
+      fixtureRequest(
+        [
+          field("labels", 1, FieldDescriptorProto_Type.MESSAGE, {
+            label: FieldDescriptorProto_Label.REPEATED,
+            typeName: ".demo.v1.GetUserRequest.LabelsEntry",
           }),
         ],
-      },
+        {
+          requestNestedTypes: [
+            create(DescriptorProtoSchema, {
+              name: "LabelsEntry",
+              field: [
+                field("key", 1, FieldDescriptorProto_Type.INT32),
+                field("value", 2, FieldDescriptorProto_Type.STRING),
+              ],
+              options: create(MessageOptionsSchema, { mapEntry: true }),
+            }),
+          ],
+        },
+      ),
+    );
+
+    expect(response.file[0]?.content).toContain(
+      "labels: Schema.Record(Schema.Number, Schema.String)",
+    );
+    expect(response.file[0]?.content).toContain(
+      "map(([key, value]) => [Number(key), (value) as string])",
     );
   });
 
-  it("fails fast for unsupported map value fields", () => {
-    expectUnsupportedField(
-      [
-        field("states", 1, FieldDescriptorProto_Type.MESSAGE, {
-          label: FieldDescriptorProto_Label.REPEATED,
-          typeName: ".demo.v1.GetUserRequest.StatesEntry",
-        }),
-      ],
-      "map field demo.v1.GetUserRequest.states",
-      {
-        enumType: [
-          create(EnumDescriptorProtoSchema, {
-            name: "Kind",
-            value: [
-              create(EnumValueDescriptorProtoSchema, {
-                name: "KIND_UNSPECIFIED",
-                number: 0,
-              }),
-            ],
+  it("supports enum map value fields", () => {
+    const response = plugin.run(
+      fixtureRequest(
+        [
+          field("states", 1, FieldDescriptorProto_Type.MESSAGE, {
+            label: FieldDescriptorProto_Label.REPEATED,
+            typeName: ".demo.v1.GetUserRequest.StatesEntry",
           }),
         ],
-        requestNestedTypes: [
-          create(DescriptorProtoSchema, {
-            name: "StatesEntry",
-            field: [
-              field("key", 1, FieldDescriptorProto_Type.STRING),
-              field("value", 2, FieldDescriptorProto_Type.ENUM, {
-                typeName: ".demo.v1.Kind",
-              }),
-            ],
-            options: create(MessageOptionsSchema, { mapEntry: true }),
+        {
+          enumType: [
+            create(EnumDescriptorProtoSchema, {
+              name: "Kind",
+              value: [
+                create(EnumValueDescriptorProtoSchema, {
+                  name: "KIND_UNSPECIFIED",
+                  number: 0,
+                }),
+              ],
+            }),
+          ],
+          requestNestedTypes: [
+            create(DescriptorProtoSchema, {
+              name: "StatesEntry",
+              field: [
+                field("key", 1, FieldDescriptorProto_Type.STRING),
+                field("value", 2, FieldDescriptorProto_Type.ENUM, {
+                  typeName: ".demo.v1.Kind",
+                }),
+              ],
+              options: create(MessageOptionsSchema, { mapEntry: true }),
+            }),
+          ],
+        },
+      ),
+    );
+
+    expect(response.file[0]?.content).toContain(
+      "states: Schema.Record(Schema.String, KindSchema)",
+    );
+    expect(response.file[0]?.content).toContain("value as Kind");
+  });
+
+  it("supports enum oneof fields", () => {
+    const response = plugin.run(
+      fixtureRequest(
+        [
+          field("kind", 1, FieldDescriptorProto_Type.ENUM, {
+            oneofIndex: 0,
+            typeName: ".demo.v1.Kind",
           }),
         ],
-      },
+        {
+          enumType: [
+            create(EnumDescriptorProtoSchema, {
+              name: "Kind",
+              value: [
+                create(EnumValueDescriptorProtoSchema, {
+                  name: "KIND_UNSPECIFIED",
+                  number: 0,
+                }),
+              ],
+            }),
+          ],
+          requestOneofs: [
+            create(OneofDescriptorProtoSchema, { name: "lookup" }),
+          ],
+        },
+      ),
+    );
+
+    expect(response.file[0]?.content).toContain(
+      'Schema.Struct({ case: Schema.Literal("kind"), value: KindSchema })',
     );
   });
 
-  it("fails fast for unsupported oneof fields", () => {
-    expectUnsupportedField(
-      [
-        field("kind", 1, FieldDescriptorProto_Type.ENUM, {
-          oneofIndex: 0,
-          typeName: ".demo.v1.Kind",
-        }),
-      ],
-      "Unsupported protobuf oneof field kind: enum",
-      {
-        enumType: [
-          create(EnumDescriptorProtoSchema, {
-            name: "Kind",
-            value: [
-              create(EnumValueDescriptorProtoSchema, {
-                name: "KIND_UNSPECIFIED",
-                number: 0,
-              }),
-            ],
+  it("supports Any fields", () => {
+    const response = plugin.run(
+      fixtureRequest(
+        [
+          field("payload", 1, FieldDescriptorProto_Type.MESSAGE, {
+            typeName: ".google.protobuf.Any",
           }),
         ],
-        requestOneofs: [create(OneofDescriptorProtoSchema, { name: "lookup" })],
-      },
+        {
+          dependency: ["google/protobuf/any.proto"],
+          extraFiles: [anyFile()],
+        },
+      ),
     );
-  });
 
-  it("fails fast for unsupported well-known type fields", () => {
-    expectUnsupportedField(
-      [
-        field("payload", 1, FieldDescriptorProto_Type.MESSAGE, {
-          typeName: ".google.protobuf.Any",
-        }),
-      ],
-      "well-known type field demo.v1.GetUserRequest.payload (google.protobuf.Any)",
-      {
-        dependency: ["google/protobuf/any.proto"],
-        extraFiles: [anyFile()],
-      },
+    expect(response.file[0]?.content).toContain(
+      "payload: Schema.optional(Schema.Struct({ typeUrl: Schema.String, value: Schema.String }))",
+    );
+    expect(response.file[0]?.content).toContain(
+      "const fromGrpcGoogleProtobufAny",
     );
   });
 
@@ -476,22 +507,6 @@ const emptyFile = () =>
     messageType: [
       create(DescriptorProtoSchema, {
         name: "Empty",
-      }),
-    ],
-  });
-
-const timestampFile = () =>
-  create(FileDescriptorProtoSchema, {
-    name: "google/protobuf/timestamp.proto",
-    package: "google.protobuf",
-    syntax: "proto3",
-    messageType: [
-      create(DescriptorProtoSchema, {
-        name: "Timestamp",
-        field: [
-          field("seconds", 1, FieldDescriptorProto_Type.INT64),
-          field("nanos", 2, FieldDescriptorProto_Type.INT32),
-        ],
       }),
     ],
   });

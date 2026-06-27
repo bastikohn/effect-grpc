@@ -45,6 +45,7 @@ describe("proto feature fixtures", () => {
     });
     expectSnapshot("int64_bigint");
     expectSnapshot("well_known_types");
+    expectSnapshot("field_shapes");
     expectSnapshot("maps");
     expectSnapshot("oneofs");
     expectSnapshot("nested_messages");
@@ -165,6 +166,42 @@ describe("proto feature fixtures", () => {
         'const boolValueEntry = WellKnownTypeFeatureGrpcRegistry.get("features.v1.WellKnownTypeFeature/EchoBoolValue");',
         'if (!boolValueEntry) throw new Error("missing bool value registry entry");',
         "boolValueEntry.toGrpcRequest(boolValue);",
+        "",
+      ].join("\n"),
+    );
+    typecheckProtoFeature(
+      generateProtoFeature("field_shapes"),
+      [
+        'import { Duration } from "effect";',
+        'import { FieldShapeValuesSchema as FieldShapeValuesPbSchema } from "./field_shapes_pb.js";',
+        'import { create } from "@bufbuild/protobuf";',
+        "import {",
+        "  FieldShapeFeatureGrpcRegistry,",
+        "  type FieldShapeValues,",
+        '} from "./field_shapes_effect_grpc.js";',
+        "const value: FieldShapeValues = {",
+        "  ratio: 1.5,",
+        "  score: 2.5,",
+        "  count: 3,",
+        "  total: 4n,",
+        "  size: 5,",
+        "  serial: 6n,",
+        '  label: "sample",',
+        "  blob: new Uint8Array([1, 2]),",
+        '  payload: { typeUrl: "type.googleapis.com/example.Payload", value: "AwQ=" },',
+        "  metadata: { enabled: true },",
+        "  dynamicValue: { nested: false },",
+        '  listValue: [1, "two"],',
+        '  updateMask: "fooBar,baz",',
+        '  choice: { case: "timeout", value: Duration.seconds(1) },',
+        '  labelsByNumber: { 1: "one" },',
+        "  statesByNumber: { 2: 1 },",
+        "  statesByName: { ready: 1 },",
+        '  childrenByNumber: { 3: { id: "child" } },',
+        "};",
+        'const entry = FieldShapeFeatureGrpcRegistry.get("features.v1.FieldShapeFeature/Echo");',
+        'if (!entry) throw new Error("missing registry entry");',
+        "create(FieldShapeValuesPbSchema, entry.toGrpcRequest(value));",
         "",
       ].join("\n"),
     );
@@ -519,6 +556,74 @@ describe("proto feature fixtures", () => {
     expect(boolValueEntry.fromGrpcRequest({ value: true })).toBe(true);
     expect(boolValueEntry.fromGrpcRequest({})).toBe(false);
     expect(boolValueEntry.toGrpcRequest(false)).toEqual({ value: false });
+  });
+
+  it("converts comprehensive field shapes", async () => {
+    const { entry } = await registryEntry(
+      generateProtoFeature("field_shapes"),
+      "FieldShapeFeatureGrpcRegistry",
+      "features.v1.FieldShapeFeature/Echo",
+    );
+    const value = {
+      ratio: 1.5,
+      score: 2.5,
+      count: 3,
+      total: "4",
+      size: 5,
+      serial: "6",
+      label: "sample",
+      blob: "AQI=",
+      payload: {
+        typeUrl: "type.googleapis.com/example.Payload",
+        value: "AwQ=",
+      },
+      metadata: { enabled: true },
+      dynamicValue: { nested: false },
+      listValue: [1, "two"],
+      updateMask: "fooBar,baz",
+      choice: { case: "state", value: 1 },
+      labelsByNumber: { 1: "one" },
+      statesByNumber: { 2: 1 },
+      statesByName: { ready: 1 },
+      childrenByNumber: { 3: { id: "child" } },
+    };
+
+    const grpcValue = entry.toGrpcRequest(value);
+
+    expect(grpcValue).toMatchObject({
+      ratio: { value: 1.5 },
+      score: { value: 2.5 },
+      count: { value: 3 },
+      total: { value: 4n },
+      size: { value: 5 },
+      serial: { value: 6n },
+      label: { value: "sample" },
+      blob: { value: new Uint8Array([1, 2]) },
+      payload: {
+        typeUrl: "type.googleapis.com/example.Payload",
+        value: new Uint8Array([3, 4]),
+      },
+      choice: { case: "state", value: 1 },
+      labelsByNumber: { 1: "one" },
+      statesByNumber: { 2: 1 },
+      statesByName: { ready: 1 },
+      childrenByNumber: { 3: { id: "child" } },
+    });
+    expect(entry.fromGrpcRequest(grpcValue)).toEqual(value);
+    expect(
+      (
+        entry.fromGrpcRequest({
+          choice: { case: "timeout", value: { seconds: 1n, nanos: 0 } },
+        }) as { readonly choice?: unknown }
+      ).choice,
+    ).toEqual({ case: "timeout", value: { _tag: "Millis", value: 1000 } });
+    expect(
+      (
+        entry.fromGrpcRequest({
+          choice: { case: "note", value: { value: "hello" } },
+        }) as { readonly choice?: unknown }
+      ).choice,
+    ).toEqual({ case: "note", value: "hello" });
   });
 
   it("converts string-key map fields", async () => {

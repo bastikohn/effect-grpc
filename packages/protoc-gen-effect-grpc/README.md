@@ -7,7 +7,8 @@ fails on client-streaming and bidirectional-streaming methods by default.
 
 It supports scalar (including `optional` and 64-bit-as-`bigint`), message
 (including nested and cross-package imported), enum, repeated, map, and oneof
-fields, plus `google.protobuf.Timestamp`, `Duration`, and `BoolValue`. It
-still fails fast for unsupported shapes such as other well-known types,
-non-string map keys, enum map values, enum/repeated/map oneof values, and
-proto2 required/default behavior (see `docs/users/limitations.md`).
+fields, plus the common protobuf well-known types used by service APIs:
+timestamps, durations, wrapper values, `Any`, `Struct`, `Value`, `ListValue`,
+and `FieldMask`. It still fails fast for client/bidirectional streaming unless
+configured to skip those methods, import cycles, unsupported well-known types,
+and proto2 required/default behavior (see `docs/users/limitations.md`).

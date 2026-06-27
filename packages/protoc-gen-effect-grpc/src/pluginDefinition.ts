@@ -12,13 +12,7 @@ import { FeatureSet_FieldPresence } from "@bufbuild/protobuf/wkt";
 import { createEcmaScriptPlugin } from "@bufbuild/protoplugin";
 
 import { generateFile } from "./generate.js";
-import {
-  effectFileName,
-  grpcBoolValueName,
-  grpcDurationName,
-  grpcEmptyName,
-  grpcTimestampName,
-} from "./naming.js";
+import { effectFileName, grpcEmptyName, grpcWellKnownName } from "./naming.js";
 import {
   defaultOptions,
   parseOptions,
@@ -32,14 +26,17 @@ import {
 } from "./unsupported.js";
 import type {
   EnumModel,
+  FieldValueModel,
   FieldModel,
   GeneratorFile,
   ImportModel,
+  MapKeyModel,
   MessageModel,
   MethodModel,
   OneofCaseModel,
   ServiceModel,
 } from "./types.js";
+import { wellKnownKind, wellKnownProtobufName } from "./wellKnown.js";
 
 export const plugin = createEcmaScriptPlugin({
   name: "protoc-gen-effect-grpc",
@@ -150,7 +147,7 @@ const enumModel = (desc: DescEnum): EnumModel => ({
 const messageModel = (message: DescMessage): MessageModel => ({
   name: declName(message),
   fields: message.members.map((member) =>
-    member.kind === "oneof" ? oneofModel(member) : fieldModel(member),
+    member.kind === "oneof" ? oneofModel(message, member) : fieldModel(member),
   ),
 });
 
@@ -161,36 +158,102 @@ const fieldModel = (field: DescField): FieldModel => {
   supportedField(field);
   switch (field.fieldKind) {
     case "scalar":
+      return fieldScalarModel(field);
+    case "message":
+      return { ...messageValueModel(field), optional: true };
+    case "enum":
+      return fieldEnumModel(field);
+    case "list":
+      return {
+        kind: "list",
+        name: field.localName,
+        item: listValueModel(field),
+      };
+    case "map":
+      return {
+        kind: "map",
+        name: field.localName,
+        key: mapKeyModel(field),
+        value: mapValueModel(field),
+      };
+  }
+};
+
+const fieldScalarModel = (
+  field: Extract<DescField, { readonly fieldKind: "scalar" }>,
+): FieldModel => ({
+  ...scalarValueModel(field),
+  optional: hasExplicitPresence(field) ? true : undefined,
+});
+
+const fieldEnumModel = (
+  field: Extract<DescField, { readonly fieldKind: "enum" }>,
+): FieldModel => ({
+  ...enumValueModel(field),
+  optional: hasExplicitPresence(field) ? true : undefined,
+});
+
+const scalarValueModel = (
+  field: Extract<DescField, { readonly fieldKind: "scalar" }>,
+): FieldValueModel => ({
+  kind: "scalar",
+  name: field.localName,
+  type: scalarKind(field.scalar),
+  unsigned: isUnsignedScalar(field.scalar),
+});
+
+const enumValueModel = (
+  field: Extract<DescField, { readonly fieldKind: "enum" }>,
+): FieldValueModel => ({
+  kind: "enum",
+  name: field.localName,
+  enumName: declName(field.enum),
+});
+
+const messageValueModel = (
+  field: Extract<DescField, { readonly fieldKind: "message" }>,
+): FieldValueModel => {
+  const kind = wellKnownKind(field.message.typeName);
+  if (kind) {
+    return {
+      kind: "well-known",
+      name: field.localName,
+      type: kind,
+    };
+  }
+  return {
+    kind: "message",
+    name: field.localName,
+    messageName: declName(field.message),
+    source:
+      field.message.file.name === field.parent.file.name ? "local" : "imported",
+  };
+};
+
+const listValueModel = (
+  field: Extract<DescField, { readonly fieldKind: "list" }>,
+): FieldValueModel => {
+  switch (field.listKind) {
+    case "scalar":
       return {
         kind: "scalar",
         name: field.localName,
         type: scalarKind(field.scalar),
         unsigned: isUnsignedScalar(field.scalar),
-        optional: hasExplicitPresence(field) ? true : undefined,
       };
-    case "message":
-      if (field.message.typeName === "google.protobuf.Timestamp") {
+    case "enum":
+      return {
+        kind: "enum",
+        name: field.localName,
+        enumName: declName(field.enum),
+      };
+    case "message": {
+      const kind = wellKnownKind(field.message.typeName);
+      if (kind) {
         return {
           kind: "well-known",
           name: field.localName,
-          type: "timestamp",
-          optional: true,
-        };
-      }
-      if (field.message.typeName === "google.protobuf.Duration") {
-        return {
-          kind: "well-known",
-          name: field.localName,
-          type: "duration",
-          optional: true,
-        };
-      }
-      if (field.message.typeName === "google.protobuf.BoolValue") {
-        return {
-          kind: "well-known",
-          name: field.localName,
-          type: "bool-value",
-          optional: true,
+          type: kind,
         };
       }
       return {
@@ -201,99 +264,69 @@ const fieldModel = (field: DescField): FieldModel => {
           field.message.file.name === field.parent.file.name
             ? "local"
             : "imported",
-        optional: true,
+      };
+    }
+  }
+};
+
+const mapValueModel = (
+  field: Extract<DescField, { readonly fieldKind: "map" }>,
+): FieldValueModel => {
+  switch (field.mapKind) {
+    case "scalar":
+      return {
+        kind: "scalar",
+        name: field.localName,
+        type: scalarKind(field.scalar),
+        unsigned: isUnsignedScalar(field.scalar),
       };
     case "enum":
       return {
         kind: "enum",
         name: field.localName,
         enumName: declName(field.enum),
-        optional: hasExplicitPresence(field) ? true : undefined,
       };
-    case "list":
-      if (field.listKind === "message") {
+    case "message": {
+      const kind = wellKnownKind(field.message.typeName);
+      if (kind) {
         return {
-          kind: "list",
+          kind: "well-known",
           name: field.localName,
-          item: {
-            kind: "message",
-            name: field.localName,
-            messageName: declName(field.message),
-            source:
-              field.message.file.name === field.parent.file.name
-                ? "local"
-                : "imported",
-          },
-        };
-      }
-      if (field.listKind === "enum") {
-        return {
-          kind: "list",
-          name: field.localName,
-          item: {
-            kind: "enum",
-            name: field.localName,
-            enumName: declName(field.enum),
-          },
+          type: kind,
         };
       }
       return {
-        kind: "list",
+        kind: "message",
         name: field.localName,
-        item: {
-          kind: "scalar",
-          name: field.localName,
-          type: scalarKind(field.scalar),
-          unsigned: isUnsignedScalar(field.scalar),
-        },
+        messageName: declName(field.message),
+        source:
+          field.message.file.name === field.parent.file.name
+            ? "local"
+            : "imported",
       };
-    case "map":
-      if (field.mapKind === "message") {
-        return {
-          kind: "map",
-          name: field.localName,
-          key: {
-            kind: "scalar",
-            name: "key",
-            type: "string",
-          },
-          value: {
-            kind: "message",
-            name: field.localName,
-            messageName: declName(field.message),
-            source:
-              field.message.file.name === field.parent.file.name
-                ? "local"
-                : "imported",
-          },
-        };
-      }
-      if (field.mapKind !== "scalar") {
-        throw new Error(
-          `Unsupported protobuf field kind: map:${field.mapKind}`,
-        );
-      }
-      return {
-        kind: "map",
-        name: field.localName,
-        key: {
-          kind: "scalar",
-          name: "key",
-          type: "string",
-        },
-        value: {
-          kind: "scalar",
-          name: field.localName,
-          type: scalarKind(field.scalar),
-          unsigned: isUnsignedScalar(field.scalar),
-        },
-      };
+    }
   }
 };
 
-const oneofModel = (oneof: DescOneof): FieldModel => ({
+const mapKeyModel = (
+  field: Extract<DescField, { readonly fieldKind: "map" }>,
+): MapKeyModel => {
+  switch (field.mapKey) {
+    case ScalarType.INT32:
+    case ScalarType.UINT32:
+    case ScalarType.SINT32:
+    case ScalarType.FIXED32:
+    case ScalarType.SFIXED32:
+      return { kind: "map-key", type: "number" };
+    default:
+      return { kind: "map-key", type: "string" };
+  }
+};
+
+const oneofModel = (message: DescMessage, oneof: DescOneof): FieldModel => ({
   kind: "oneof",
   name: oneof.localName,
+  converterName: `${declName(message)}_${oneof.localName}`,
   cases: oneof.fields.map(oneofCaseModel),
 });
 
@@ -303,34 +336,18 @@ const oneofCaseModel = (field: DescField): OneofCaseModel => {
     case "scalar":
       return {
         name: field.localName,
-        value: {
-          kind: "scalar",
-          name: field.localName,
-          type: scalarKind(field.scalar),
-          unsigned: isUnsignedScalar(field.scalar),
-        },
+        value: scalarValueModel(field),
       };
     case "message":
-      if (
-        field.message.typeName === "google.protobuf.BoolValue" ||
-        field.message.typeName === "google.protobuf.Duration" ||
-        field.message.typeName === "google.protobuf.Timestamp"
-      ) {
-        throw new Error("Unsupported protobuf oneof field kind: well-known");
-      }
       return {
         name: field.localName,
-        value: {
-          kind: "message",
-          name: field.localName,
-          messageName: declName(field.message),
-          source:
-            field.message.file.name === field.parent.file.name
-              ? "local"
-              : "imported",
-        },
+        value: messageValueModel(field),
       };
     case "enum":
+      return {
+        name: field.localName,
+        value: enumValueModel(field),
+      };
     case "list":
     case "map":
       throw new Error(
@@ -413,13 +430,9 @@ const methodMessageName = (
   switch (message.typeName) {
     case "google.protobuf.Empty":
       return grpcEmptyName;
-    case "google.protobuf.Timestamp":
-      return grpcTimestampName;
-    case "google.protobuf.Duration":
-      return grpcDurationName;
-    case "google.protobuf.BoolValue":
-      return grpcBoolValueName;
   }
+  const kind = wellKnownKind(message.typeName);
+  if (kind) return grpcWellKnownName(wellKnownProtobufName(kind));
   if (isWellKnownType(message)) {
     throw new Error(
       [

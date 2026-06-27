@@ -21,11 +21,18 @@ The generator currently supports:
   values
 - `google.protobuf.Timestamp` as `Date`
 - `google.protobuf.Duration` as `Duration.Duration`
-- `google.protobuf.BoolValue` as `boolean`
+- `google.protobuf.*Value` wrapper fields as their wrapped scalar value
+- `google.protobuf.Any` as `{ typeUrl: string; value: string }`, with `value`
+  as base64-encoded bytes
+- `google.protobuf.Struct`, `Value`, and `ListValue` as their protobuf JSON
+  representation
+- `google.protobuf.FieldMask` as its protobuf JSON string representation
 - `google.protobuf.Empty` as an empty object for method inputs and outputs
-- `map<string, ...>` fields with scalar or message values (including nested
-  and imported messages)
-- scalar and message `oneof` fields (including nested and imported messages)
+- map fields with scalar, message, enum, or supported well-known values
+- 32-bit integer map keys as number-keyed records; string, bool, and 64-bit
+  integer map keys follow protobuf-es and use string-keyed records
+- scalar, message, enum, and supported well-known `oneof` fields (including
+  nested and imported messages)
 - method input and output messages defined in other files and packages
 
 Nested messages and enums are generated with protobuf-es-style flattened names
@@ -48,12 +55,7 @@ millisecond precision. `Duration` conversion uses Effect `Duration.Duration`.
 The generator deliberately fails fast for:
 
 - import cycles
-- well-known protobuf types other than `Empty` as method input/output and
-  `Timestamp`, `Duration`, or `BoolValue` as singular fields or method
-  input/output
-- `Timestamp`, `Duration`, and `BoolValue` in repeated, map, or oneof positions
-- map fields with non-string keys or enum values
-- oneof fields with enum, repeated, or map values
+- well-known protobuf types outside the supported set above
 - proto2 required fields and default values
 
 Generated client errors are `GrpcStatusError` instances or `RpcClientError`

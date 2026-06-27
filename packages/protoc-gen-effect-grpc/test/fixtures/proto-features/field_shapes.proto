@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package features.v1;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+service FieldShapeFeature {
+  rpc Echo(FieldShapeValues) returns (FieldShapeValues);
+}
+
+message FieldShapeValues {
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    STATE_READY = 1;
+  }
+
+  google.protobuf.DoubleValue ratio = 1;
+  google.protobuf.FloatValue score = 2;
+  google.protobuf.Int32Value count = 3;
+  google.protobuf.Int64Value total = 4;
+  google.protobuf.UInt32Value size = 5;
+  google.protobuf.UInt64Value serial = 6;
+  google.protobuf.StringValue label = 7;
+  google.protobuf.BytesValue blob = 8;
+  google.protobuf.Any payload = 9;
+  google.protobuf.Struct metadata = 10;
+  google.protobuf.Value dynamic_value = 11;
+  google.protobuf.ListValue list_value = 12;
+  google.protobuf.FieldMask update_mask = 13;
+
+  oneof choice {
+    google.protobuf.Duration timeout = 14;
+    google.protobuf.Timestamp created_at = 15;
+    google.protobuf.StringValue note = 16;
+    State state = 17;
+  }
+
+  map<int32, string> labels_by_number = 18;
+  map<int32, State> states_by_number = 19;
+  map<string, State> states_by_name = 20;
+  map<int32, FieldShapeChild> children_by_number = 21;
+}
+
+message FieldShapeChild {
+  string id = 1;
+}

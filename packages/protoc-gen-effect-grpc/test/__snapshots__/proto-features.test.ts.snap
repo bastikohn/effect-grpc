@@ -37,13 +37,21 @@ export type RepeatedScalarFeatureRpcs = typeof RepeatedScalarFeature_EchoRpc;
 const readField = (message: unknown, field: string): unknown =>
   typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
 
+const compact = <T extends Record<string, unknown>>(object: T): T => {
+  const result: Record<string, unknown> = {};
+  for (const key of Object.keys(object)) {
+    if (object[key] !== undefined) result[key] = object[key];
+  }
+  return result as T;
+};
+
 const fromBytes = (value: Uint8Array): string =>
   Buffer.from(value).toString("base64");
 
 const toBytes = (value: unknown): Uint8Array =>
   Uint8Array.from(Buffer.from(value as string, "base64"));
 
-export const fromRepeatedScalars = (message: unknown): unknown => ({
+export const fromRepeatedScalars = (message: unknown): unknown => compact({
   tags: ((readField(message, "tags") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as string),
   flags: ((readField(message, "flags") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as boolean),
   blobs: ((readField(message, "blobs") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => fromBytes((value) as Uint8Array)),
@@ -55,7 +63,7 @@ export const fromRepeatedScalars = (message: unknown): unknown => ({
 
 export const toRepeatedScalars = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
-  return {
+  return compact({
     tags: ((readField(message, "tags") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as string),
     flags: ((readField(message, "flags") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as boolean),
     blobs: ((readField(message, "blobs") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => toBytes(value)),
@@ -63,7 +71,7 @@ export const toRepeatedScalars = (value: unknown): Record<string, unknown> => {
     counts: ((readField(message, "counts") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as number),
     ratios: ((readField(message, "ratios") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as number),
     weights: ((readField(message, "weights") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as number),
-  };
+  });
 };
 
 export const RepeatedScalarFeatureGrpcRegistry = new Map<string, GrpcMethodRegistry.GrpcMethodEntry>([
@@ -161,39 +169,47 @@ export type RepeatedMessageFeatureRpcs = typeof RepeatedMessageFeature_EchoRpc;
 const readField = (message: unknown, field: string): unknown =>
   typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
 
-export const fromUserList = (message: unknown): unknown => ({
+const compact = <T extends Record<string, unknown>>(object: T): T => {
+  const result: Record<string, unknown> = {};
+  for (const key of Object.keys(object)) {
+    if (object[key] !== undefined) result[key] = object[key];
+  }
+  return result as T;
+};
+
+export const fromUserList = (message: unknown): unknown => compact({
   users: ((readField(message, "users") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => fromUser(value)),
 });
 
 export const toUserList = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
-  return {
+  return compact({
     users: ((readField(message, "users") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => toUser(value)),
-  };
+  });
 };
 
-export const fromUser = (message: unknown): unknown => ({
+export const fromUser = (message: unknown): unknown => compact({
   id: (readField(message, "id")) as string,
   addresses: ((readField(message, "addresses") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => fromAddress(value)),
 });
 
 export const toUser = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
-  return {
+  return compact({
     id: (readField(message, "id")) as string,
     addresses: ((readField(message, "addresses") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => toAddress(value)),
-  };
+  });
 };
 
-export const fromAddress = (message: unknown): unknown => ({
+export const fromAddress = (message: unknown): unknown => compact({
   city: (readField(message, "city")) as string,
 });
 
 export const toAddress = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
-  return {
+  return compact({
     city: (readField(message, "city")) as string,
-  };
+  });
 };
 
 export const RepeatedMessageFeatureGrpcRegistry = new Map<string, GrpcMethodRegistry.GrpcMethodEntry>([
@@ -285,7 +301,15 @@ export type EnumFeatureRpcs = typeof EnumFeature_EchoRpc;
 const readField = (message: unknown, field: string): unknown =>
   typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
 
-export const fromEnumUser = (message: unknown): unknown => ({
+const compact = <T extends Record<string, unknown>>(object: T): T => {
+  const result: Record<string, unknown> = {};
+  for (const key of Object.keys(object)) {
+    if (object[key] !== undefined) result[key] = object[key];
+  }
+  return result as T;
+};
+
+export const fromEnumUser = (message: unknown): unknown => compact({
   id: (readField(message, "id")) as string,
   state: readField(message, "state") as UserState,
   history: ((readField(message, "history") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => value as UserState),
@@ -293,11 +317,11 @@ export const fromEnumUser = (message: unknown): unknown => ({
 
 export const toEnumUser = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
-  return {
+  return compact({
     id: (readField(message, "id")) as string,
     state: readField(message, "state") as number,
     history: ((readField(message, "history") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => value as number),
-  };
+  });
 };
 
 export const EnumFeatureGrpcRegistry = new Map<string, GrpcMethodRegistry.GrpcMethodEntry>([
@@ -374,17 +398,25 @@ export type ImportedUser = Schema.Schema.Type<typeof ImportedUserSchema>;
 const readField = (message: unknown, field: string): unknown =>
   typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
 
-export const fromImportedUser = (message: unknown): unknown => ({
+const compact = <T extends Record<string, unknown>>(object: T): T => {
+  const result: Record<string, unknown> = {};
+  for (const key of Object.keys(object)) {
+    if (object[key] !== undefined) result[key] = object[key];
+  }
+  return result as T;
+};
+
+export const fromImportedUser = (message: unknown): unknown => compact({
   id: (readField(message, "id")) as string,
   name: (readField(message, "name")) as string,
 });
 
 export const toImportedUser = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
-  return {
+  return compact({
     id: (readField(message, "id")) as string,
     name: (readField(message, "name")) as string,
-  };
+  });
 };
 
 ",
@@ -426,17 +458,25 @@ export type ImportedMessageFeatureRpcs = typeof ImportedMessageFeature_EchoRpc;
 const readField = (message: unknown, field: string): unknown =>
   typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
 
-export const fromGetImportedUserResponse = (message: unknown): unknown => ({
+const compact = <T extends Record<string, unknown>>(object: T): T => {
+  const result: Record<string, unknown> = {};
+  for (const key of Object.keys(object)) {
+    if (object[key] !== undefined) result[key] = object[key];
+  }
+  return result as T;
+};
+
+export const fromGetImportedUserResponse = (message: unknown): unknown => compact({
   user: readField(message, "user") == null ? undefined : fromImportedUser(readField(message, "user")),
   state: readField(message, "state") as ImportedState,
 });
 
 export const toGetImportedUserResponse = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
-  return {
+  return compact({
     user: readField(message, "user") == null ? undefined : toImportedUser(readField(message, "user")),
     state: readField(message, "state") as number,
-  };
+  });
 };
 
 export const ImportedMessageFeatureGrpcRegistry = new Map<string, GrpcMethodRegistry.GrpcMethodEntry>([
@@ -527,7 +567,15 @@ export type Int64BigintFeatureRpcs = typeof Int64BigintFeature_EchoRpc;
 const readField = (message: unknown, field: string): unknown =>
   typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
 
-export const fromInt64Scalars = (message: unknown): unknown => ({
+const compact = <T extends Record<string, unknown>>(object: T): T => {
+  const result: Record<string, unknown> = {};
+  for (const key of Object.keys(object)) {
+    if (object[key] !== undefined) result[key] = object[key];
+  }
+  return result as T;
+};
+
+export const fromInt64Scalars = (message: unknown): unknown => compact({
   id: String(readField(message, "id")),
   count: String(readField(message, "count")),
   delta: String(readField(message, "delta")),
@@ -537,13 +585,13 @@ export const fromInt64Scalars = (message: unknown): unknown => ({
 
 export const toInt64Scalars = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
-  return {
+  return compact({
     id: BigInt((readField(message, "id")) as string),
     count: BigInt((readField(message, "count")) as string),
     delta: BigInt((readField(message, "delta")) as string),
     hash: BigInt((readField(message, "hash")) as string),
     value: BigInt((readField(message, "value")) as string),
-  };
+  });
 };
 
 export const Int64BigintFeatureGrpcRegistry = new Map<string, GrpcMethodRegistry.GrpcMethodEntry>([
@@ -659,6 +707,14 @@ export type WellKnownTypeFeatureRpcs = typeof WellKnownTypeFeature_EchoRpc | typ
 const readField = (message: unknown, field: string): unknown =>
   typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
 
+const compact = <T extends Record<string, unknown>>(object: T): T => {
+  const result: Record<string, unknown> = {};
+  for (const key of Object.keys(object)) {
+    if (object[key] !== undefined) result[key] = object[key];
+  }
+  return result as T;
+};
+
 export const fromGrpcGoogleProtobufTimestamp = (value: unknown): string => {
   const message = value as { readonly seconds?: bigint | number; readonly nanos?: number };
   const seconds = Number(message.seconds ?? 0);
@@ -703,7 +759,7 @@ export const toGrpcGoogleProtobufBoolValue = (value: unknown) => ({
   value: (value) as boolean,
 });
 
-export const fromWellKnownValues = (message: unknown): unknown => ({
+export const fromWellKnownValues = (message: unknown): unknown => compact({
   createdAt: readField(message, "createdAt") == null ? undefined : fromGrpcGoogleProtobufTimestamp(readField(message, "createdAt")),
   timeout: readField(message, "timeout") == null ? undefined : fromGrpcGoogleProtobufDuration(readField(message, "timeout")),
   enabled: readField(message, "enabled") == null ? undefined : fromGrpcGoogleProtobufBoolValue(readField(message, "enabled")),
@@ -711,11 +767,11 @@ export const fromWellKnownValues = (message: unknown): unknown => ({
 
 export const toWellKnownValues = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
-  return {
+  return compact({
     createdAt: readField(message, "createdAt") == null ? undefined : toGrpcGoogleProtobufTimestamp(readField(message, "createdAt")),
     timeout: readField(message, "timeout") == null ? undefined : toGrpcGoogleProtobufDuration(readField(message, "timeout")),
     enabled: readField(message, "enabled") == null ? undefined : toGrpcGoogleProtobufBoolValue(readField(message, "enabled")),
-  };
+  });
 };
 
 export const WellKnownTypeFeatureGrpcRegistry = new Map<string, GrpcMethodRegistry.GrpcMethodEntry>([
@@ -889,6 +945,14 @@ export type FieldShapeFeatureRpcs = typeof FieldShapeFeature_EchoRpc;
 const readField = (message: unknown, field: string): unknown =>
   typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
 
+const compact = <T extends Record<string, unknown>>(object: T): T => {
+  const result: Record<string, unknown> = {};
+  for (const key of Object.keys(object)) {
+    if (object[key] !== undefined) result[key] = object[key];
+  }
+  return result as T;
+};
+
 const fromBytes = (value: Uint8Array): string =>
   Buffer.from(value).toString("base64");
 
@@ -1044,7 +1108,7 @@ const toGrpcGoogleProtobufFieldMask = (value: unknown) =>
 
 const fromFieldShapeValues_choiceOneof = (value: unknown): unknown => {
   const oneof = (value ?? { case: undefined }) as { readonly case?: string; readonly value?: unknown };
-  switch (oneof.case) {
+  switch (oneof.case ?? undefined) {
     case "timeout":
       return { case: "timeout", value: fromGrpcGoogleProtobufDuration(oneof.value) };
     case "createdAt":
@@ -1054,7 +1118,7 @@ const fromFieldShapeValues_choiceOneof = (value: unknown): unknown => {
     case "state":
       return { case: "state", value: oneof.value as FieldShapeValues_State };
     case undefined:
-      return { case: undefined };
+      return { case: null };
     default:
       throw new Error(\`Unknown oneof case choice: \${oneof.case}\`);
   }
@@ -1063,7 +1127,7 @@ const fromFieldShapeValues_choiceOneof = (value: unknown): unknown => {
 const toFieldShapeValues_choiceOneof = (value: unknown): unknown => {
   const oneof = value ?? { case: undefined };
   const message = oneof as { readonly case?: string; readonly value?: unknown };
-  switch (message.case) {
+  switch (message.case ?? undefined) {
     case "timeout":
       return { case: "timeout", value: toGrpcGoogleProtobufDuration(message.value) };
     case "createdAt":
@@ -1079,7 +1143,7 @@ const toFieldShapeValues_choiceOneof = (value: unknown): unknown => {
   }
 };
 
-export const fromFieldShapeValues = (message: unknown): unknown => ({
+export const fromFieldShapeValues = (message: unknown): unknown => compact({
   ratio: readField(message, "ratio") == null ? undefined : fromGrpcGoogleProtobufDoubleValue(readField(message, "ratio")),
   score: readField(message, "score") == null ? undefined : fromGrpcGoogleProtobufFloatValue(readField(message, "score")),
   count: readField(message, "count") == null ? undefined : fromGrpcGoogleProtobufInt32Value(readField(message, "count")),
@@ -1102,7 +1166,7 @@ export const fromFieldShapeValues = (message: unknown): unknown => ({
 
 export const toFieldShapeValues = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
-  return {
+  return compact({
     ratio: readField(message, "ratio") == null ? undefined : toGrpcGoogleProtobufDoubleValue(readField(message, "ratio")),
     score: readField(message, "score") == null ? undefined : toGrpcGoogleProtobufFloatValue(readField(message, "score")),
     count: readField(message, "count") == null ? undefined : toGrpcGoogleProtobufInt32Value(readField(message, "count")),
@@ -1121,18 +1185,18 @@ export const toFieldShapeValues = (value: unknown): Record<string, unknown> => {
     statesByNumber: Object.fromEntries(Object.entries((readField(message, "statesByNumber") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [Number(key), value as number])),
     statesByName: Object.fromEntries(Object.entries((readField(message, "statesByName") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, value as number])),
     childrenByNumber: Object.fromEntries(Object.entries((readField(message, "childrenByNumber") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [Number(key), toFieldShapeChild(value)])),
-  };
+  });
 };
 
-export const fromFieldShapeChild = (message: unknown): unknown => ({
+export const fromFieldShapeChild = (message: unknown): unknown => compact({
   id: (readField(message, "id")) as string,
 });
 
 export const toFieldShapeChild = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
-  return {
+  return compact({
     id: (readField(message, "id")) as string,
-  };
+  });
 };
 
 export const FieldShapeFeatureGrpcRegistry = new Map<string, GrpcMethodRegistry.GrpcMethodEntry>([
@@ -1226,7 +1290,15 @@ export type MapFeatureRpcs = typeof MapFeature_EchoRpc;
 const readField = (message: unknown, field: string): unknown =>
   typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
 
-export const fromMapValues = (message: unknown): unknown => ({
+const compact = <T extends Record<string, unknown>>(object: T): T => {
+  const result: Record<string, unknown> = {};
+  for (const key of Object.keys(object)) {
+    if (object[key] !== undefined) result[key] = object[key];
+  }
+  return result as T;
+};
+
+export const fromMapValues = (message: unknown): unknown => compact({
   labels: Object.fromEntries(Object.entries((readField(message, "labels") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, (value) as string])),
   counts: Object.fromEntries(Object.entries((readField(message, "counts") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, (value) as number])),
   users: Object.fromEntries(Object.entries((readField(message, "users") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, fromMapUser(value)])),
@@ -1234,22 +1306,22 @@ export const fromMapValues = (message: unknown): unknown => ({
 
 export const toMapValues = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
-  return {
+  return compact({
     labels: Object.fromEntries(Object.entries((readField(message, "labels") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, (value) as string])),
     counts: Object.fromEntries(Object.entries((readField(message, "counts") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, (value) as number])),
     users: Object.fromEntries(Object.entries((readField(message, "users") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, toMapUser(value)])),
-  };
+  });
 };
 
-export const fromMapUser = (message: unknown): unknown => ({
+export const fromMapUser = (message: unknown): unknown => compact({
   id: (readField(message, "id")) as string,
 });
 
 export const toMapUser = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
-  return {
+  return compact({
     id: (readField(message, "id")) as string,
-  };
+  });
 };
 
 export const MapFeatureGrpcRegistry = new Map<string, GrpcMethodRegistry.GrpcMethodEntry>([
@@ -1341,9 +1413,17 @@ export type OneofFeatureRpcs = typeof OneofFeature_EchoRpc;
 const readField = (message: unknown, field: string): unknown =>
   typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
 
+const compact = <T extends Record<string, unknown>>(object: T): T => {
+  const result: Record<string, unknown> = {};
+  for (const key of Object.keys(object)) {
+    if (object[key] !== undefined) result[key] = object[key];
+  }
+  return result as T;
+};
+
 const fromSearchRequest_queryOneof = (value: unknown): unknown => {
   const oneof = (value ?? { case: undefined }) as { readonly case?: string; readonly value?: unknown };
-  switch (oneof.case) {
+  switch (oneof.case ?? undefined) {
     case "id":
       return { case: "id", value: (oneof.value) as string };
     case "email":
@@ -1351,7 +1431,7 @@ const fromSearchRequest_queryOneof = (value: unknown): unknown => {
     case "user":
       return { case: "user", value: fromOneofUser(oneof.value) };
     case undefined:
-      return { case: undefined };
+      return { case: null };
     default:
       throw new Error(\`Unknown oneof case query: \${oneof.case}\`);
   }
@@ -1360,7 +1440,7 @@ const fromSearchRequest_queryOneof = (value: unknown): unknown => {
 const toSearchRequest_queryOneof = (value: unknown): unknown => {
   const oneof = value ?? { case: undefined };
   const message = oneof as { readonly case?: string; readonly value?: unknown };
-  switch (message.case) {
+  switch (message.case ?? undefined) {
     case "id":
       return { case: "id", value: (message.value) as string };
     case "email":
@@ -1374,26 +1454,26 @@ const toSearchRequest_queryOneof = (value: unknown): unknown => {
   }
 };
 
-export const fromSearchRequest = (message: unknown): unknown => ({
+export const fromSearchRequest = (message: unknown): unknown => compact({
   query: fromSearchRequest_queryOneof(readField(message, "query")),
 });
 
 export const toSearchRequest = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
-  return {
+  return compact({
     query: toSearchRequest_queryOneof(readField(message, "query")),
-  };
+  });
 };
 
-export const fromOneofUser = (message: unknown): unknown => ({
+export const fromOneofUser = (message: unknown): unknown => compact({
   id: (readField(message, "id")) as string,
 });
 
 export const toOneofUser = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
-  return {
+  return compact({
     id: (readField(message, "id")) as string,
-  };
+  });
 };
 
 export const OneofFeatureGrpcRegistry = new Map<string, GrpcMethodRegistry.GrpcMethodEntry>([
@@ -1492,13 +1572,21 @@ export type NestedMessageFeatureRpcs = typeof NestedMessageFeature_EchoRpc;
 const readField = (message: unknown, field: string): unknown =>
   typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
 
+const compact = <T extends Record<string, unknown>>(object: T): T => {
+  const result: Record<string, unknown> = {};
+  for (const key of Object.keys(object)) {
+    if (object[key] !== undefined) result[key] = object[key];
+  }
+  return result as T;
+};
+
 const fromNestedOuter_choiceOneof = (value: unknown): unknown => {
   const oneof = (value ?? { case: undefined }) as { readonly case?: string; readonly value?: unknown };
-  switch (oneof.case) {
+  switch (oneof.case ?? undefined) {
     case "picked":
       return { case: "picked", value: fromNestedOuter_Inner(oneof.value) };
     case undefined:
-      return { case: undefined };
+      return { case: null };
     default:
       throw new Error(\`Unknown oneof case choice: \${oneof.case}\`);
   }
@@ -1507,7 +1595,7 @@ const fromNestedOuter_choiceOneof = (value: unknown): unknown => {
 const toNestedOuter_choiceOneof = (value: unknown): unknown => {
   const oneof = value ?? { case: undefined };
   const message = oneof as { readonly case?: string; readonly value?: unknown };
-  switch (message.case) {
+  switch (message.case ?? undefined) {
     case "picked":
       return { case: "picked", value: toNestedOuter_Inner(message.value) };
     case undefined:
@@ -1517,7 +1605,7 @@ const toNestedOuter_choiceOneof = (value: unknown): unknown => {
   }
 };
 
-export const fromNestedOuter = (message: unknown): unknown => ({
+export const fromNestedOuter = (message: unknown): unknown => compact({
   inner: readField(message, "inner") == null ? undefined : fromNestedOuter_Inner(readField(message, "inner")),
   items: ((readField(message, "items") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => fromNestedOuter_Inner(value)),
   byId: Object.fromEntries(Object.entries((readField(message, "byId") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, fromNestedOuter_Inner(value)])),
@@ -1526,25 +1614,25 @@ export const fromNestedOuter = (message: unknown): unknown => ({
 
 export const toNestedOuter = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
-  return {
+  return compact({
     inner: readField(message, "inner") == null ? undefined : toNestedOuter_Inner(readField(message, "inner")),
     items: ((readField(message, "items") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => toNestedOuter_Inner(value)),
     byId: Object.fromEntries(Object.entries((readField(message, "byId") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, toNestedOuter_Inner(value)])),
     choice: toNestedOuter_choiceOneof(readField(message, "choice")),
-  };
+  });
 };
 
-export const fromNestedOuter_Inner = (message: unknown): unknown => ({
+export const fromNestedOuter_Inner = (message: unknown): unknown => compact({
   id: (readField(message, "id")) as string,
   status: readField(message, "status") as NestedOuter_Inner_Status,
 });
 
 export const toNestedOuter_Inner = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
-  return {
+  return compact({
     id: (readField(message, "id")) as string,
     status: readField(message, "status") as number,
-  };
+  });
 };
 
 export const NestedMessageFeatureGrpcRegistry = new Map<string, GrpcMethodRegistry.GrpcMethodEntry>([
@@ -1621,17 +1709,25 @@ export type CommonUser = Schema.Schema.Type<typeof CommonUserSchema>;
 const readField = (message: unknown, field: string): unknown =>
   typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
 
-export const fromCommonUser = (message: unknown): unknown => ({
+const compact = <T extends Record<string, unknown>>(object: T): T => {
+  const result: Record<string, unknown> = {};
+  for (const key of Object.keys(object)) {
+    if (object[key] !== undefined) result[key] = object[key];
+  }
+  return result as T;
+};
+
+export const fromCommonUser = (message: unknown): unknown => compact({
   id: (readField(message, "id")) as string,
   state: readField(message, "state") as CommonState,
 });
 
 export const toCommonUser = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
-  return {
+  return compact({
     id: (readField(message, "id")) as string,
     state: readField(message, "state") as number,
-  };
+  });
 };
 
 ",
@@ -1683,13 +1779,21 @@ export type CrossPackageFeatureRpcs = typeof CrossPackageFeature_EchoRpc | typeo
 const readField = (message: unknown, field: string): unknown =>
   typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
 
+const compact = <T extends Record<string, unknown>>(object: T): T => {
+  const result: Record<string, unknown> = {};
+  for (const key of Object.keys(object)) {
+    if (object[key] !== undefined) result[key] = object[key];
+  }
+  return result as T;
+};
+
 const fromCrossPackageRequest_choiceOneof = (value: unknown): unknown => {
   const oneof = (value ?? { case: undefined }) as { readonly case?: string; readonly value?: unknown };
-  switch (oneof.case) {
+  switch (oneof.case ?? undefined) {
     case "picked":
       return { case: "picked", value: fromCommonUser(oneof.value) };
     case undefined:
-      return { case: undefined };
+      return { case: null };
     default:
       throw new Error(\`Unknown oneof case choice: \${oneof.case}\`);
   }
@@ -1698,7 +1802,7 @@ const fromCrossPackageRequest_choiceOneof = (value: unknown): unknown => {
 const toCrossPackageRequest_choiceOneof = (value: unknown): unknown => {
   const oneof = value ?? { case: undefined };
   const message = oneof as { readonly case?: string; readonly value?: unknown };
-  switch (message.case) {
+  switch (message.case ?? undefined) {
     case "picked":
       return { case: "picked", value: toCommonUser(message.value) };
     case undefined:
@@ -1708,7 +1812,7 @@ const toCrossPackageRequest_choiceOneof = (value: unknown): unknown => {
   }
 };
 
-export const fromCrossPackageRequest = (message: unknown): unknown => ({
+export const fromCrossPackageRequest = (message: unknown): unknown => compact({
   user: readField(message, "user") == null ? undefined : fromCommonUser(readField(message, "user")),
   users: ((readField(message, "users") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => fromCommonUser(value)),
   byId: Object.fromEntries(Object.entries((readField(message, "byId") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, fromCommonUser(value)])),
@@ -1719,14 +1823,14 @@ export const fromCrossPackageRequest = (message: unknown): unknown => ({
 
 export const toCrossPackageRequest = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
-  return {
+  return compact({
     user: readField(message, "user") == null ? undefined : toCommonUser(readField(message, "user")),
     users: ((readField(message, "users") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => toCommonUser(value)),
     byId: Object.fromEntries(Object.entries((readField(message, "byId") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, toCommonUser(value)])),
     state: readField(message, "state") as number,
     states: ((readField(message, "states") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => value as number),
     choice: toCrossPackageRequest_choiceOneof(readField(message, "choice")),
-  };
+  });
 };
 
 export const CrossPackageFeatureGrpcRegistry = new Map<string, GrpcMethodRegistry.GrpcMethodEntry>([
@@ -1840,13 +1944,21 @@ export type OptionalScalarFeatureRpcs = typeof OptionalScalarFeature_EchoRpc;
 const readField = (message: unknown, field: string): unknown =>
   typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
 
+const compact = <T extends Record<string, unknown>>(object: T): T => {
+  const result: Record<string, unknown> = {};
+  for (const key of Object.keys(object)) {
+    if (object[key] !== undefined) result[key] = object[key];
+  }
+  return result as T;
+};
+
 const fromBytes = (value: Uint8Array): string =>
   Buffer.from(value).toString("base64");
 
 const toBytes = (value: unknown): Uint8Array =>
   Uint8Array.from(Buffer.from(value as string, "base64"));
 
-export const fromOptionalScalars = (message: unknown): unknown => ({
+export const fromOptionalScalars = (message: unknown): unknown => compact({
   name: readField(message, "name") == null ? undefined : (readField(message, "name")) as string,
   enabled: readField(message, "enabled") == null ? undefined : (readField(message, "enabled")) as boolean,
   blob: readField(message, "blob") == null ? undefined : fromBytes((readField(message, "blob")) as Uint8Array),
@@ -1857,14 +1969,14 @@ export const fromOptionalScalars = (message: unknown): unknown => ({
 
 export const toOptionalScalars = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
-  return {
+  return compact({
     name: readField(message, "name") == null ? undefined : (readField(message, "name")) as string,
     enabled: readField(message, "enabled") == null ? undefined : (readField(message, "enabled")) as boolean,
     blob: readField(message, "blob") == null ? undefined : toBytes(readField(message, "blob")),
     score: readField(message, "score") == null ? undefined : (readField(message, "score")) as number,
     total: readField(message, "total") == null ? undefined : BigInt((readField(message, "total")) as string),
     state: readField(message, "state") as number | undefined,
-  };
+  });
 };
 
 export const OptionalScalarFeatureGrpcRegistry = new Map<string, GrpcMethodRegistry.GrpcMethodEntry>([

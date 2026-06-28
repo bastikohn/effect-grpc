@@ -59,55 +59,63 @@ export type UserServiceRpcs = typeof UserService_GetUserRpc | typeof UserService
 const readField = (message: unknown, field: string): unknown =>
   typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
 
-export const fromGetUserRequest = (message: unknown): unknown => ({
+const compact = <T extends Record<string, unknown>>(object: T): T => {
+  const result: Record<string, unknown> = {};
+  for (const key of Object.keys(object)) {
+    if (object[key] !== undefined) result[key] = object[key];
+  }
+  return result as T;
+};
+
+export const fromGetUserRequest = (message: unknown): unknown => compact({
   id: (readField(message, "id")) as string,
 });
 
 export const toGetUserRequest = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
-  return {
+  return compact({
     id: (readField(message, "id")) as string,
-  };
+  });
 };
 
-export const fromGetUserResponse = (message: unknown): unknown => ({
+export const fromGetUserResponse = (message: unknown): unknown => compact({
   user: readField(message, "user") == null ? undefined : fromUser(readField(message, "user")),
 });
 
 export const toGetUserResponse = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
-  return {
+  return compact({
     user: readField(message, "user") == null ? undefined : toUser(readField(message, "user")),
-  };
+  });
 };
 
-export const fromWatchUsersRequest = (message: unknown): unknown => ({
+export const fromWatchUsersRequest = (message: unknown): unknown => compact({
   tenantId: (readField(message, "tenantId")) as string,
   count: (readField(message, "count")) as number,
 });
 
 export const toWatchUsersRequest = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
-  return {
+  return compact({
     tenantId: (readField(message, "tenantId")) as string,
     count: (readField(message, "count")) as number,
-  };
+  });
 };
 
-export const fromUser = (message: unknown): unknown => ({
+export const fromUser = (message: unknown): unknown => compact({
   id: (readField(message, "id")) as string,
   name: (readField(message, "name")) as string,
 });
 
 export const toUser = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
-  return {
+  return compact({
     id: (readField(message, "id")) as string,
     name: (readField(message, "name")) as string,
-  };
+  });
 };
 
-export const fromUserEvent = (message: unknown): unknown => ({
+export const fromUserEvent = (message: unknown): unknown => compact({
   id: (readField(message, "id")) as string,
   name: (readField(message, "name")) as string,
   action: (readField(message, "action")) as string,
@@ -116,12 +124,12 @@ export const fromUserEvent = (message: unknown): unknown => ({
 
 export const toUserEvent = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
-  return {
+  return compact({
     id: (readField(message, "id")) as string,
     name: (readField(message, "name")) as string,
     action: (readField(message, "action")) as string,
     sequence: (readField(message, "sequence")) as number,
-  };
+  });
 };
 
 export const UserServiceGrpcRegistry = new Map<string, GrpcMethodRegistry.GrpcMethodEntry>([

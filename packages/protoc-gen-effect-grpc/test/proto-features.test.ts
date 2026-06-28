@@ -654,7 +654,9 @@ describe("proto feature fixtures", () => {
       "features.v1.OneofFeature/Echo",
     );
 
-    expect(entry.fromGrpcRequest({})).toEqual({ query: { case: undefined } });
+    // The unset oneof case encodes as `null` (the JSON codec's `Schema.Undefined`
+    // representation), so it decodes back to the `undefined` case.
+    expect(entry.fromGrpcRequest({})).toEqual({ query: { case: null } });
     expect(
       entry.fromGrpcRequest({ query: { case: "id", value: "1" } }),
     ).toEqual({ query: { case: "id", value: "1" } });
@@ -688,10 +690,9 @@ describe("proto feature fixtures", () => {
     expect(entry.fromGrpcRequest(value)).toEqual(value);
     expect(entry.toGrpcRequest(value)).toEqual(value);
     expect(entry.fromGrpcRequest({})).toEqual({
-      inner: undefined,
       items: [],
       byId: {},
-      choice: { case: undefined },
+      choice: { case: null },
     });
   });
 
@@ -717,12 +718,10 @@ describe("proto feature fixtures", () => {
     expect(entry.fromGrpcRequest(value)).toEqual(value);
     expect(entry.toGrpcRequest(value)).toEqual(value);
     expect(entry.fromGrpcRequest({})).toEqual({
-      user: undefined,
       users: [],
       byId: {},
-      state: undefined,
       states: [],
-      choice: { case: undefined },
+      choice: { case: null },
     });
   });
 

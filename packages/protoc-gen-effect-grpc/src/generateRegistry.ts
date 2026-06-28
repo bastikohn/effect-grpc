@@ -63,6 +63,18 @@ const generateConverters = (file: GeneratorFile) => {
           "const readField = (message: unknown, field: string): unknown =>",
           `  typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;`,
           "",
+          // Effect Schema treats an absent optional field as a missing *key*, not
+          // a present `undefined` value: decoding `{ field: undefined }` against an
+          // `optional` field fails. Strip undefined-valued keys so converted
+          // messages decode (and round-trip) cleanly.
+          "const compact = <T extends Record<string, unknown>>(object: T): T => {",
+          "  const result: Record<string, unknown> = {};",
+          "  for (const key of Object.keys(object)) {",
+          "    if (object[key] !== undefined) result[key] = object[key];",
+          "  }",
+          "  return result as T;",
+          "};",
+          "",
         ]),
     ...scalarConverters(file),
     ...wellKnownConverters(file),
@@ -70,15 +82,15 @@ const generateConverters = (file: GeneratorFile) => {
       ...message.fields.flatMap((field) =>
         field.kind === "oneof" ? oneofConverters(field) : [],
       ),
-      `export const from${message.name} = (message: unknown): unknown => ({`,
+      `export const from${message.name} = (message: unknown): unknown => compact({`,
       ...message.fields.map((field) => `  ${field.name}: ${fromField(field)},`),
       "});",
       "",
       `export const to${message.name} = (value: unknown): Record<string, unknown> => {`,
       "  const message = value as Record<string, unknown>;",
-      "  return {",
+      "  return compact({",
       ...message.fields.map((field) => `    ${field.name}: ${toField(field)},`),
-      "  };",
+      "  });",
       "};",
       "",
     ]),
@@ -223,13 +235,17 @@ const oneofConverters = (
 ) => [
   `const from${field.converterName}Oneof = (value: unknown): unknown => {`,
   `  const oneof = (value ?? { case: undefined }) as { readonly case?: string; readonly value?: unknown };`,
-  "  switch (oneof.case) {",
+  // The unset case arrives as `undefined` from protobuf-es but as `null` from
+  // the JSON codec; coalesce so both select the `undefined` branch.
+  "  switch (oneof.case ?? undefined) {",
   ...field.cases.flatMap((oneofCase) => [
     `    case "${oneofCase.name}":`,
     `      return { case: "${oneofCase.name}", value: ${fromValue("oneof.value", oneofCase.value)} };`,
   ]),
   "    case undefined:",
-  "      return { case: undefined };",
+  // The JSON codec represents the unset `Schema.Undefined` case as `null`, so
+  // emit `null` here for the value to decode (protobuf-es uses `undefined`).
+  "      return { case: null };",
   "    default:",
   `      throw new Error(\`Unknown oneof case ${field.name}: \${oneof.case}\`);`,
   "  }",
@@ -238,7 +254,8 @@ const oneofConverters = (
   `const to${field.converterName}Oneof = (value: unknown): unknown => {`,
   `  const oneof = value ?? { case: undefined };`,
   `  const message = oneof as { readonly case?: string; readonly value?: unknown };`,
-  "  switch (message.case) {",
+  // See `from*Oneof`: the JSON codec encodes the unset case as `null`.
+  "  switch (message.case ?? undefined) {",
   ...field.cases.flatMap((oneofCase) => [
     `    case "${oneofCase.name}":`,
     `      return { case: "${oneofCase.name}", value: ${toValue("message.value", oneofCase.value)} };`,

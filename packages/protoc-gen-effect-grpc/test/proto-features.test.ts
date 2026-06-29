@@ -508,7 +508,7 @@ describe("proto feature fixtures", () => {
     ).toEqual({
       createdAt: { seconds: 0n, nanos: 0 },
       timeout: { seconds: 0n, nanos: 0 },
-      enabled: { value: true },
+      enabled: true,
     });
     expect(
       entry.toGrpcRequest({
@@ -519,7 +519,7 @@ describe("proto feature fixtures", () => {
     ).toEqual({
       createdAt: { seconds: 0n, nanos: 0 },
       timeout: { seconds: 0n, nanos: 1 },
-      enabled: { value: false },
+      enabled: false,
     });
 
     const { entry: timestampEntry } = await registryEntry(
@@ -591,14 +591,14 @@ describe("proto feature fixtures", () => {
     const grpcValue = entry.toGrpcRequest(value);
 
     expect(grpcValue).toMatchObject({
-      ratio: { value: 1.5 },
-      score: { value: 2.5 },
-      count: { value: 3 },
-      total: { value: 4n },
-      size: { value: 5 },
-      serial: { value: 6n },
-      label: { value: "sample" },
-      blob: { value: new Uint8Array([1, 2]) },
+      ratio: 1.5,
+      score: 2.5,
+      count: 3,
+      total: 4n,
+      size: 5,
+      serial: 6n,
+      label: "sample",
+      blob: new Uint8Array([1, 2]),
       payload: {
         typeUrl: "type.googleapis.com/example.Payload",
         value: new Uint8Array([3, 4]),
@@ -624,6 +624,13 @@ describe("proto feature fixtures", () => {
         }) as { readonly choice?: unknown }
       ).choice,
     ).toEqual({ case: "note", value: "hello" });
+    expect(
+      (
+        entry.toGrpcRequest({
+          choice: { case: "note", value: "hello" },
+        }) as { readonly choice?: unknown }
+      ).choice,
+    ).toEqual({ case: "note", value: { value: "hello" } });
   });
 
   it("converts string-key map fields", async () => {

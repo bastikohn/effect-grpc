@@ -11,16 +11,24 @@ export type FeatureUser = Schema.Schema.Type<typeof FeatureUserSchema>;
 const readField = (message: unknown, field: string): unknown =>
   typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
 
-export const fromFeatureUser = (message: unknown): unknown => ({
+const compact = <T extends Record<string, unknown>>(object: T): T => {
+  const result: Record<string, unknown> = {};
+  for (const key of Object.keys(object)) {
+    if (object[key] !== undefined) result[key] = object[key];
+  }
+  return result as T;
+};
+
+export const fromFeatureUser = (message: unknown): unknown => compact({
   id: (readField(message, "id")) as string,
   name: (readField(message, "name")) as string,
 });
 
 export const toFeatureUser = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
-  return {
+  return compact({
     id: (readField(message, "id")) as string,
     name: (readField(message, "name")) as string,
-  };
+  });
 };
 

@@ -33,9 +33,9 @@ export const generateRegistry = (file: GeneratorFile) => [
       `      service: ${service.name},`,
       `      localName: "${method.localName}",`,
       `      payloadSchema: ${method.inputType}Schema,`,
-      `      toGrpcRequest: to${method.inputType},`,
+      `      toGrpcRequest: ${toRegistryConverter(method.inputType)},`,
       `      fromGrpcRequest: from${method.inputType},`,
-      `      toGrpcResponse: to${method.outputType},`,
+      `      toGrpcResponse: ${toRegistryConverter(method.outputType)},`,
       `      fromGrpcResponse: from${method.outputType},`,
       "    },",
       "  ],",
@@ -138,13 +138,13 @@ const toField = (field: FieldModel): string => {
     return `${value} as number${field.optional ? " | undefined" : ""}`;
   }
   if (field.kind === "well-known") {
-    return `${value} == null ? undefined : to${wellKnownConverterName(field.type)}(${value})`;
+    return `${value} == null ? undefined : ${toWellKnownValue(value, field, "bare")}`;
   }
   if (field.kind === "list") {
-    return `((${value} as ReadonlyArray<unknown> | undefined) ?? []).map((value) => ${toValue("value", field.item)})`;
+    return `((${value} as ReadonlyArray<unknown> | undefined) ?? []).map((value) => ${toValue("value", field.item, "boxed")})`;
   }
   if (field.kind === "map") {
-    return `Object.fromEntries(Object.entries((${value} as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [${toMapKey("key", field.key.type)}, ${toValue("value", field.value)}]))`;
+    return `Object.fromEntries(Object.entries((${value} as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [${toMapKey("key", field.key.type)}, ${toValue("value", field.value, "boxed")}]))`;
   }
   if (field.kind === "oneof") return `to${field.converterName}Oneof(${value})`;
   return value;
@@ -189,7 +189,11 @@ const fromValue = (value: string, field: FieldValueModel): string => {
   }
 };
 
-const toValue = (value: string, field: FieldValueModel): string => {
+const toValue = (
+  value: string,
+  field: FieldValueModel,
+  wrapperEncoding: "bare" | "boxed" = "bare",
+): string => {
   switch (field.kind) {
     case "scalar":
       return toScalarValue(value, field);
@@ -198,9 +202,18 @@ const toValue = (value: string, field: FieldValueModel): string => {
     case "message":
       return `to${field.messageName}(${value})`;
     case "well-known":
-      return `to${wellKnownConverterName(field.type)}(${value})`;
+      return toWellKnownValue(value, field, wrapperEncoding);
   }
 };
+
+const toWellKnownValue = (
+  value: string,
+  field: Extract<FieldValueModel, { readonly kind: "well-known" }>,
+  wrapperEncoding: "bare" | "boxed",
+) =>
+  wrapperEncoding === "boxed" && isWrapperWellKnownKind(field.type)
+    ? `to${wellKnownConverterName(field.type)}Message(${value})`
+    : `to${wellKnownConverterName(field.type)}(${value})`;
 
 const fromScalarValue = (
   value: string,
@@ -258,7 +271,7 @@ const oneofConverters = (
   "  switch (message.case ?? undefined) {",
   ...field.cases.flatMap((oneofCase) => [
     `    case "${oneofCase.name}":`,
-    `      return { case: "${oneofCase.name}", value: ${toValue("message.value", oneofCase.value)} };`,
+    `      return { case: "${oneofCase.name}", value: ${toValue("message.value", oneofCase.value, "boxed")} };`,
   ]),
   "    case undefined:",
   "      return { case: undefined };",
@@ -380,36 +393,88 @@ const wellKnownConverters = (file: GeneratorFile) => {
   ];
 };
 
+const wrapperWellKnownKinds = [
+  "double-value",
+  "float-value",
+  "int32-value",
+  "uint32-value",
+  "int64-value",
+  "uint64-value",
+  "bool-value",
+  "string-value",
+  "bytes-value",
+] as const satisfies ReadonlyArray<WellKnownKind>;
+
+const wrapperWellKnownKindByGrpcName = (
+  name: string,
+): WellKnownKind | undefined =>
+  wrapperWellKnownKinds.find((type) => wellKnownConverterName(type) === name);
+
+const isWrapperWellKnownKind = (type: WellKnownKind): boolean =>
+  wrapperWellKnownKinds.includes(
+    type as (typeof wrapperWellKnownKinds)[number],
+  );
+
+const toRegistryConverter = (name: string) => {
+  const wrapper = wrapperWellKnownKindByGrpcName(name);
+  return wrapper ? `to${wellKnownConverterName(wrapper)}Message` : `to${name}`;
+};
+
 const wrapperConverter = (
   file: GeneratorFile,
   type: WellKnownKind,
   scalar: ScalarKind,
   unsigned: boolean,
   defaultValue: string,
-) =>
-  usesWellKnownInFile(file, type)
-    ? [
-        `${wellKnownConverterDecl(file, type)} from${wellKnownConverterName(type)} = (value: unknown) => {`,
-        `  const message = value as { readonly value?: unknown };`,
-        `  return ${fromScalarValue(`message.value ?? ${defaultValue}`, {
-          kind: "scalar",
-          name: "value",
-          type: scalar,
-          unsigned,
-        })};`,
-        "};",
-        "",
-        `${wellKnownConverterDecl(file, type)} to${wellKnownConverterName(type)} = (value: unknown) => ({`,
-        `  value: ${toScalarValue("value", {
-          kind: "scalar",
-          name: "value",
-          type: scalar,
-          unsigned,
-        })},`,
-        "});",
-        "",
-      ]
-    : [];
+) => {
+  if (!usesWellKnownInFile(file, type)) return [];
+  // A wrapper value can reach the converter either already unwrapped (a bare
+  // scalar, e.g. when nested through another converter) or as the `{ value }`
+  // message; accept both. Nested wrapper fields use bare scalars because
+  // protobuf-es unwraps wrapper fields.
+  const scalarField = {
+    kind: "scalar",
+    name: "value",
+    type: scalar,
+    unsigned,
+  } as const;
+  const guard =
+    scalar === "bytes"
+      ? "value instanceof Uint8Array"
+      : `typeof value === "${scalar}"`;
+  const unwrapped = `\n    ${guard}\n      ? value\n      : ((value as { readonly value?: unknown }).value ?? ${defaultValue})\n  `;
+  return [
+    `${wellKnownConverterDecl(file, type)} from${wellKnownConverterName(type)} = (value: unknown) =>`,
+    `  ${fromScalarValue(unwrapped, {
+      kind: "scalar",
+      name: "value",
+      type: scalar,
+      unsigned,
+    })};`,
+    "",
+    `${wellKnownConverterDecl(file, type)} to${wellKnownConverterName(type)} = (value: unknown) => ${toScalarValue(
+      "value",
+      scalarField,
+    )};`,
+    "",
+    ...(usesBoxedWrapperInFile(file, type)
+      ? [
+          `const to${wellKnownConverterName(type)}Message = (value: unknown) => ({`,
+          `  value: ${toScalarValue("value", scalarField)},`,
+          "});",
+          "",
+        ]
+      : []),
+  ];
+};
+
+const usesBoxedWrapperInFile = (file: GeneratorFile, type: WellKnownKind) => {
+  const fields = file.messages.flatMap((message) => message.fields);
+  return (
+    usesWellKnownMethod(file, type) ||
+    fields.some((field) => usesBoxedWrapper(field, type))
+  );
+};
 
 const jsonWellKnownConverter = (file: GeneratorFile, type: WellKnownKind) => {
   const schema = wellKnownJsonSchema(type);
@@ -490,6 +555,23 @@ const usesWellKnown = (field: FieldModel, type: WellKnownKind): boolean => {
   switch (field.kind) {
     case "well-known":
       return field.type === type;
+    case "list":
+      return field.item.kind === "well-known" && field.item.type === type;
+    case "map":
+      return field.value.kind === "well-known" && field.value.type === type;
+    case "oneof":
+      return field.cases.some(
+        (oneofCase) =>
+          oneofCase.value.kind === "well-known" &&
+          oneofCase.value.type === type,
+      );
+    default:
+      return false;
+  }
+};
+
+const usesBoxedWrapper = (field: FieldModel, type: WellKnownKind): boolean => {
+  switch (field.kind) {
     case "list":
       return field.item.kind === "well-known" && field.item.type === type;
     case "map":

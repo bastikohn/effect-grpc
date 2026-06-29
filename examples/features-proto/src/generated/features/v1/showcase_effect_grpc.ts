@@ -63,6 +63,14 @@ export type FeatureShowcaseServiceRpcs = typeof FeatureShowcaseService_DescribeR
 const readField = (message: unknown, field: string): unknown =>
   typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
 
+const compact = <T extends Record<string, unknown>>(object: T): T => {
+  const result: Record<string, unknown> = {};
+  for (const key of Object.keys(object)) {
+    if (object[key] !== undefined) result[key] = object[key];
+  }
+  return result as T;
+};
+
 const fromBytes = (value: Uint8Array): string =>
   Buffer.from(value).toString("base64");
 
@@ -106,13 +114,13 @@ const toGrpcGoogleProtobufDuration = (value: unknown) => {
 
 const fromFeatureRequest_contactOneof = (value: unknown): unknown => {
   const oneof = (value ?? { case: undefined }) as { readonly case?: string; readonly value?: unknown };
-  switch (oneof.case) {
+  switch (oneof.case ?? undefined) {
     case "contactEmail":
       return { case: "contactEmail", value: (oneof.value) as string };
     case "contactUser":
       return { case: "contactUser", value: fromLocalUser(oneof.value) };
     case undefined:
-      return { case: undefined };
+      return { case: null };
     default:
       throw new Error(`Unknown oneof case contact: ${oneof.case}`);
   }
@@ -121,7 +129,7 @@ const fromFeatureRequest_contactOneof = (value: unknown): unknown => {
 const toFeatureRequest_contactOneof = (value: unknown): unknown => {
   const oneof = value ?? { case: undefined };
   const message = oneof as { readonly case?: string; readonly value?: unknown };
-  switch (message.case) {
+  switch (message.case ?? undefined) {
     case "contactEmail":
       return { case: "contactEmail", value: (message.value) as string };
     case "contactUser":
@@ -133,7 +141,7 @@ const toFeatureRequest_contactOneof = (value: unknown): unknown => {
   }
 };
 
-export const fromFeatureRequest = (message: unknown): unknown => ({
+export const fromFeatureRequest = (message: unknown): unknown => compact({
   tags: ((readField(message, "tags") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as string),
   scores: ((readField(message, "scores") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as number),
   notes: ((readField(message, "notes") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => fromNote(value)),
@@ -151,7 +159,7 @@ export const fromFeatureRequest = (message: unknown): unknown => ({
 
 export const toFeatureRequest = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
-  return {
+  return compact({
     tags: ((readField(message, "tags") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as string),
     scores: ((readField(message, "scores") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as number),
     notes: ((readField(message, "notes") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => toNote(value)),
@@ -165,44 +173,44 @@ export const toFeatureRequest = (value: unknown): Record<string, unknown> => {
     payload: toBytes(readField(message, "payload")),
     sequence: BigInt((readField(message, "sequence")) as string),
     contact: toFeatureRequest_contactOneof(readField(message, "contact")),
-  };
+  });
 };
 
-export const fromFeatureResponse = (message: unknown): unknown => ({
+export const fromFeatureResponse = (message: unknown): unknown => compact({
   request: readField(message, "request") == null ? undefined : fromFeatureRequest(readField(message, "request")),
   summary: (readField(message, "summary")) as string,
 });
 
 export const toFeatureResponse = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
-  return {
+  return compact({
     request: readField(message, "request") == null ? undefined : toFeatureRequest(readField(message, "request")),
     summary: (readField(message, "summary")) as string,
-  };
+  });
 };
 
-export const fromNote = (message: unknown): unknown => ({
+export const fromNote = (message: unknown): unknown => compact({
   text: (readField(message, "text")) as string,
 });
 
 export const toNote = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
-  return {
+  return compact({
     text: (readField(message, "text")) as string,
-  };
+  });
 };
 
-export const fromLocalUser = (message: unknown): unknown => ({
+export const fromLocalUser = (message: unknown): unknown => compact({
   id: (readField(message, "id")) as string,
   role: (readField(message, "role")) as string,
 });
 
 export const toLocalUser = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
-  return {
+  return compact({
     id: (readField(message, "id")) as string,
     role: (readField(message, "role")) as string,
-  };
+  });
 };
 
 export const FeatureShowcaseServiceGrpcRegistry = new Map<string, GrpcMethodRegistry.GrpcMethodEntry>([

@@ -750,12 +750,16 @@ export const toGrpcGoogleProtobufDuration = (value: unknown) => {
   };
 };
 
-export const fromGrpcGoogleProtobufBoolValue = (value: unknown) => {
-  const message = value as { readonly value?: unknown };
-  return (message.value ?? false) as boolean;
-};
+export const fromGrpcGoogleProtobufBoolValue = (value: unknown) =>
+  (
+    typeof value === "boolean"
+      ? value
+      : ((value as { readonly value?: unknown }).value ?? false)
+  ) as boolean;
 
-export const toGrpcGoogleProtobufBoolValue = (value: unknown) => ({
+export const toGrpcGoogleProtobufBoolValue = (value: unknown) => (value) as boolean;
+
+const toGrpcGoogleProtobufBoolValueMessage = (value: unknown) => ({
   value: (value) as boolean,
 });
 
@@ -825,9 +829,9 @@ export const WellKnownTypeFeatureGrpcRegistry = new Map<string, GrpcMethodRegist
       service: WellKnownTypeFeature,
       localName: "echoBoolValue",
       payloadSchema: GrpcGoogleProtobufBoolValueSchema,
-      toGrpcRequest: toGrpcGoogleProtobufBoolValue,
+      toGrpcRequest: toGrpcGoogleProtobufBoolValueMessage,
       fromGrpcRequest: fromGrpcGoogleProtobufBoolValue,
-      toGrpcResponse: toGrpcGoogleProtobufBoolValue,
+      toGrpcResponse: toGrpcGoogleProtobufBoolValueMessage,
       fromGrpcResponse: fromGrpcGoogleProtobufBoolValue,
     },
   ],
@@ -994,77 +998,81 @@ const toGrpcGoogleProtobufDuration = (value: unknown) => {
   };
 };
 
-const fromGrpcGoogleProtobufDoubleValue = (value: unknown) => {
-  const message = value as { readonly value?: unknown };
-  return (message.value ?? 0) as number;
-};
+const fromGrpcGoogleProtobufDoubleValue = (value: unknown) =>
+  (
+    typeof value === "number"
+      ? value
+      : ((value as { readonly value?: unknown }).value ?? 0)
+  ) as number;
 
-const toGrpcGoogleProtobufDoubleValue = (value: unknown) => ({
-  value: (value) as number,
-});
+const toGrpcGoogleProtobufDoubleValue = (value: unknown) => (value) as number;
 
-const fromGrpcGoogleProtobufFloatValue = (value: unknown) => {
-  const message = value as { readonly value?: unknown };
-  return (message.value ?? 0) as number;
-};
+const fromGrpcGoogleProtobufFloatValue = (value: unknown) =>
+  (
+    typeof value === "number"
+      ? value
+      : ((value as { readonly value?: unknown }).value ?? 0)
+  ) as number;
 
-const toGrpcGoogleProtobufFloatValue = (value: unknown) => ({
-  value: (value) as number,
-});
+const toGrpcGoogleProtobufFloatValue = (value: unknown) => (value) as number;
 
-const fromGrpcGoogleProtobufInt32Value = (value: unknown) => {
-  const message = value as { readonly value?: unknown };
-  return (message.value ?? 0) as number;
-};
+const fromGrpcGoogleProtobufInt32Value = (value: unknown) =>
+  (
+    typeof value === "number"
+      ? value
+      : ((value as { readonly value?: unknown }).value ?? 0)
+  ) as number;
 
-const toGrpcGoogleProtobufInt32Value = (value: unknown) => ({
-  value: (value) as number,
-});
+const toGrpcGoogleProtobufInt32Value = (value: unknown) => (value) as number;
 
-const fromGrpcGoogleProtobufUInt32Value = (value: unknown) => {
-  const message = value as { readonly value?: unknown };
-  return (message.value ?? 0) as number;
-};
+const fromGrpcGoogleProtobufUInt32Value = (value: unknown) =>
+  (
+    typeof value === "number"
+      ? value
+      : ((value as { readonly value?: unknown }).value ?? 0)
+  ) as number;
 
-const toGrpcGoogleProtobufUInt32Value = (value: unknown) => ({
-  value: (value) as number,
-});
+const toGrpcGoogleProtobufUInt32Value = (value: unknown) => (value) as number;
 
-const fromGrpcGoogleProtobufInt64Value = (value: unknown) => {
-  const message = value as { readonly value?: unknown };
-  return String(message.value ?? 0n);
-};
+const fromGrpcGoogleProtobufInt64Value = (value: unknown) =>
+  String(
+    typeof value === "bigint"
+      ? value
+      : ((value as { readonly value?: unknown }).value ?? 0n)
+  );
 
-const toGrpcGoogleProtobufInt64Value = (value: unknown) => ({
-  value: BigInt((value) as string),
-});
+const toGrpcGoogleProtobufInt64Value = (value: unknown) => BigInt((value) as string);
 
-const fromGrpcGoogleProtobufUInt64Value = (value: unknown) => {
-  const message = value as { readonly value?: unknown };
-  return String(message.value ?? 0n);
-};
+const fromGrpcGoogleProtobufUInt64Value = (value: unknown) =>
+  String(
+    typeof value === "bigint"
+      ? value
+      : ((value as { readonly value?: unknown }).value ?? 0n)
+  );
 
-const toGrpcGoogleProtobufUInt64Value = (value: unknown) => ({
-  value: BigInt((value) as string),
-});
+const toGrpcGoogleProtobufUInt64Value = (value: unknown) => BigInt((value) as string);
 
-const fromGrpcGoogleProtobufStringValue = (value: unknown) => {
-  const message = value as { readonly value?: unknown };
-  return (message.value ?? "") as string;
-};
+const fromGrpcGoogleProtobufStringValue = (value: unknown) =>
+  (
+    typeof value === "string"
+      ? value
+      : ((value as { readonly value?: unknown }).value ?? "")
+  ) as string;
 
-const toGrpcGoogleProtobufStringValue = (value: unknown) => ({
+const toGrpcGoogleProtobufStringValue = (value: unknown) => (value) as string;
+
+const toGrpcGoogleProtobufStringValueMessage = (value: unknown) => ({
   value: (value) as string,
 });
 
-const fromGrpcGoogleProtobufBytesValue = (value: unknown) => {
-  const message = value as { readonly value?: unknown };
-  return fromBytes((message.value ?? new Uint8Array()) as Uint8Array);
-};
+const fromGrpcGoogleProtobufBytesValue = (value: unknown) =>
+  fromBytes((
+    value instanceof Uint8Array
+      ? value
+      : ((value as { readonly value?: unknown }).value ?? new Uint8Array())
+  ) as Uint8Array);
 
-const toGrpcGoogleProtobufBytesValue = (value: unknown) => ({
-  value: toBytes(value),
-});
+const toGrpcGoogleProtobufBytesValue = (value: unknown) => toBytes(value);
 
 const fromGrpcGoogleProtobufAny = (value: unknown) => {
   const message = value as { readonly typeUrl?: string; readonly value?: Uint8Array };
@@ -1133,7 +1141,7 @@ const toFieldShapeValues_choiceOneof = (value: unknown): unknown => {
     case "createdAt":
       return { case: "createdAt", value: toGrpcGoogleProtobufTimestamp(message.value) };
     case "note":
-      return { case: "note", value: toGrpcGoogleProtobufStringValue(message.value) };
+      return { case: "note", value: toGrpcGoogleProtobufStringValueMessage(message.value) };
     case "state":
       return { case: "state", value: message.value as number };
     case undefined:

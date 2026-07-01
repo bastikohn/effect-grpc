@@ -12,5 +12,4 @@ plugins:
       - target=ts
       - import_extension=js
       - errors=grpc-status
-      - methods=unary,server-streaming
       - int64=bigint

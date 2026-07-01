@@ -3,19 +3,23 @@
  * plugin's own option keys (see that package's `options.ts`) so the CLI stays a
  * thin front-end over the existing generator.
  */
+export type MethodKind =
+  | "unary"
+  | "server-streaming"
+  | "client-streaming"
+  | "bidi-streaming";
+
 export interface PluginOptions {
   readonly importExtension: "js" | "ts";
   readonly errors: "grpc-status";
-  readonly methods: ReadonlyArray<"unary" | "server-streaming">;
-  readonly ignoreUnsupportedMethods: boolean;
+  readonly methods: ReadonlyArray<MethodKind>;
   readonly int64: "bigint";
 }
 
 export const defaultPluginOptions: PluginOptions = {
   importExtension: "js",
   errors: "grpc-status",
-  methods: ["unary", "server-streaming"],
-  ignoreUnsupportedMethods: false,
+  methods: ["unary", "server-streaming", "client-streaming", "bidi-streaming"],
   int64: "bigint",
 };
 
@@ -39,10 +43,6 @@ export const toParameterString = (options: PluginOptions): string => {
   if (options.methods.length > 0) {
     const [first, ...rest] = options.methods;
     tokens.push(`methods=${first}`, ...rest);
-  }
-
-  if (options.ignoreUnsupportedMethods) {
-    tokens.push("ignore_unsupported_methods=true");
   }
 
   return tokens.join(",");

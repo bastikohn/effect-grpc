@@ -33,6 +33,7 @@ export const generateRegistry = (file: GeneratorFile) => [
       `      service: ${service.name},`,
       `      localName: "${method.localName}",`,
       `      payloadSchema: ${method.inputType}Schema,`,
+      `      successSchema: ${method.outputType}Schema,`,
       `      toGrpcRequest: ${toRegistryConverter(method.inputType)},`,
       `      fromGrpcRequest: from${method.inputType},`,
       `      toGrpcResponse: ${toRegistryConverter(method.outputType)},`,

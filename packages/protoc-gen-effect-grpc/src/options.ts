@@ -1,16 +1,25 @@
+import type { MethodModel } from "./types.js";
+
+export type MethodKindOption = MethodModel["kind"];
+
+const methodKinds: ReadonlyArray<MethodKindOption> = [
+  "unary",
+  "server-streaming",
+  "client-streaming",
+  "bidi-streaming",
+];
+
 export interface GeneratorOptions {
   readonly importExtension: "js" | "ts";
   readonly errors: "grpc-status";
-  readonly methods: ReadonlySet<"unary" | "server-streaming">;
-  readonly ignoreUnsupportedMethods: boolean;
+  readonly methods: ReadonlySet<MethodKindOption>;
   readonly int64: "bigint";
 }
 
 export const defaultOptions: GeneratorOptions = {
   importExtension: "js",
   errors: "grpc-status",
-  methods: new Set(["unary", "server-streaming"]),
-  ignoreUnsupportedMethods: false,
+  methods: new Set(methodKinds),
   int64: "bigint",
 };
 
@@ -20,7 +29,6 @@ export const parseOptions = (
   let importExtension: "js" | "ts" = defaultOptions.importExtension;
   let errors: "grpc-status" = defaultOptions.errors;
   let methods = defaultOptions.methods;
-  let ignoreUnsupportedMethods = false;
   let int64: GeneratorOptions["int64"] = defaultOptions.int64;
 
   for (const option of rawOptions) {
@@ -46,22 +54,15 @@ export const parseOptions = (
           option.value
             .split(",")
             .map((item) => item.trim())
-            .filter(Boolean) as Array<"unary" | "server-streaming">,
+            .filter(Boolean)
+            .map(parseMethodKind),
         );
-        for (const method of methods) {
-          if (method !== "unary" && method !== "server-streaming") {
-            throw new Error(`Unsupported methods option: ${method}.`);
-          }
-        }
         break;
       case "unary":
       case "server-streaming":
+      case "client-streaming":
+      case "bidi-streaming":
         methods = new Set([...methods, option.key]);
-        break;
-      case "ignore_unsupported_methods":
-      case "ignore-unsupported-methods":
-        ignoreUnsupportedMethods =
-          option.value === "" || option.value === "true";
         break;
       case "int64":
         if (option.value !== "bigint") {
@@ -80,7 +81,14 @@ export const parseOptions = (
     importExtension,
     errors,
     methods,
-    ignoreUnsupportedMethods,
     int64,
   };
+};
+
+const parseMethodKind = (value: string): MethodKindOption => {
+  const kind = methodKinds.find((item) => item === value);
+  if (!kind) {
+    throw new Error(`Unsupported methods option: ${value}.`);
+  }
+  return kind;
 };

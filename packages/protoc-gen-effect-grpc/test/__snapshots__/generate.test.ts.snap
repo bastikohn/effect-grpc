@@ -5,7 +5,7 @@ exports[`generateFile > generates schemas, RPCs, registry, client, and server gl
 
 import { Context, Effect, Layer, Schema, Stream } from "effect";
 import { Rpc, RpcClient, RpcClientError, RpcGroup } from "effect/unstable/rpc";
-import { CodegenSupport, GrpcMethodRegistry, GrpcStatusError } from "@effect-grpc/effect-grpc";
+import { CodegenSupport, GrpcClientProtocol, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc";
 import {
   UserService,
 } from "./user_service_pb.js";
@@ -141,6 +141,7 @@ export const UserServiceGrpcRegistry = new Map<string, GrpcMethodRegistry.GrpcMe
       service: UserService,
       localName: "getUser",
       payloadSchema: GetUserRequestSchema,
+      successSchema: GetUserResponseSchema,
       toGrpcRequest: toGetUserRequest,
       fromGrpcRequest: fromGetUserRequest,
       toGrpcResponse: toGetUserResponse,
@@ -155,8 +156,39 @@ export const UserServiceGrpcRegistry = new Map<string, GrpcMethodRegistry.GrpcMe
       service: UserService,
       localName: "watchUsers",
       payloadSchema: WatchUsersRequestSchema,
+      successSchema: UserEventSchema,
       toGrpcRequest: toWatchUsersRequest,
       fromGrpcRequest: fromWatchUsersRequest,
+      toGrpcResponse: toUserEvent,
+      fromGrpcResponse: fromUserEvent,
+    },
+  ],
+  [
+    "demo.v1.UserService/UploadUsers",
+    {
+      kind: "client-streaming",
+      tag: "demo.v1.UserService/UploadUsers",
+      service: UserService,
+      localName: "uploadUsers",
+      payloadSchema: UserSchema,
+      successSchema: GetUserResponseSchema,
+      toGrpcRequest: toUser,
+      fromGrpcRequest: fromUser,
+      toGrpcResponse: toGetUserResponse,
+      fromGrpcResponse: fromGetUserResponse,
+    },
+  ],
+  [
+    "demo.v1.UserService/ChatUsers",
+    {
+      kind: "bidi-streaming",
+      tag: "demo.v1.UserService/ChatUsers",
+      service: UserService,
+      localName: "chatUsers",
+      payloadSchema: UserEventSchema,
+      successSchema: UserEventSchema,
+      toGrpcRequest: toUserEvent,
+      fromGrpcRequest: fromUserEvent,
       toGrpcResponse: toUserEvent,
       fromGrpcResponse: fromUserEvent,
     },
@@ -168,13 +200,18 @@ export type UserServiceClientError = GrpcStatusError.GrpcStatusError | RpcClient
 export interface UserServiceClientService {
   readonly getUser: (request: GetUserRequest, options?: CodegenSupport.GrpcCallOptions) => Effect.Effect<GetUserResponse, UserServiceClientError>;
   readonly watchUsers: (request: WatchUsersRequest, options?: CodegenSupport.GrpcCallOptions) => Stream.Stream<UserEvent, UserServiceClientError>;
+  readonly uploadUsers: <E>(requests: Stream.Stream<User, E>, options?: CodegenSupport.GrpcCallOptions) => Effect.Effect<GetUserResponse, UserServiceClientError | E>;
+  readonly chatUsers: <E>(requests: Stream.Stream<UserEvent, E>, options?: CodegenSupport.GrpcCallOptions) => Stream.Stream<UserEvent, UserServiceClientError | E>;
 }
 
 const makeUserServiceClient = Effect.gen(function* () {
   const client = yield* RpcClient.make(UserServiceRpcGroup);
+  const streaming = yield* GrpcClientProtocol.GrpcStreamingClient;
   return {
     getUser: (request, options) => client["demo.v1.UserService/GetUser"](request, { headers: CodegenSupport.headersFromOptions(options) }),
     watchUsers: (request, options) => client["demo.v1.UserService/WatchUsers"](request, { headers: CodegenSupport.headersFromOptions(options) }),
+    uploadUsers: ((requests, options) => streaming.clientStreaming("demo.v1.UserService/UploadUsers", requests, options)) as UserServiceClientService["uploadUsers"],
+    chatUsers: ((requests, options) => streaming.bidiStreaming("demo.v1.UserService/ChatUsers", requests, options)) as UserServiceClientService["chatUsers"],
   } satisfies UserServiceClientService;
 });
 
@@ -187,16 +224,28 @@ export const UserServiceClientLayer = Layer.effect(UserServiceClient, UserServic
 export interface UserServiceImplementation<R = never> {
   readonly getUser: (request: GetUserRequest, context: CodegenSupport.GrpcServerContext) => Effect.Effect<GetUserResponse, GrpcStatusError.GrpcStatusError, R>;
   readonly watchUsers: (request: WatchUsersRequest, context: CodegenSupport.GrpcServerContext) => Stream.Stream<UserEvent, GrpcStatusError.GrpcStatusError, R>;
+  readonly uploadUsers: (requests: Stream.Stream<User, GrpcStatusError.GrpcStatusError>, context: CodegenSupport.GrpcServerContext) => Effect.Effect<GetUserResponse, GrpcStatusError.GrpcStatusError, R>;
+  readonly chatUsers: (requests: Stream.Stream<UserEvent, GrpcStatusError.GrpcStatusError>, context: CodegenSupport.GrpcServerContext) => Stream.Stream<UserEvent, GrpcStatusError.GrpcStatusError, R>;
 }
 
 export const UserServiceHandlersLayer = <R>(
   implementation: UserServiceImplementation<R>,
-): Layer.Layer<Rpc.ToHandler<UserServiceRpcs>, never, R> =>
-  UserServiceRpcGroup.toLayer({
-    "demo.v1.UserService/GetUser": (request, options) => implementation.getUser(request, CodegenSupport.serverContext(options)),
-    "demo.v1.UserService/WatchUsers": (request, options) => implementation.watchUsers(request, CodegenSupport.serverContext(options)),
-  }) as Layer.Layer<Rpc.ToHandler<
-    UserServiceRpcs
-  >, never, R>;
+): Layer.Layer<Rpc.ToHandler<UserServiceRpcs> | GrpcServerProtocol.GrpcStreamingHandlers, never, R> =>
+  Layer.mergeAll(
+    UserServiceRpcGroup.toLayer({
+      "demo.v1.UserService/GetUser": (request, options) => implementation.getUser(request, CodegenSupport.serverContext(options)),
+      "demo.v1.UserService/WatchUsers": (request, options) => implementation.watchUsers(request, CodegenSupport.serverContext(options)),
+    }) as Layer.Layer<Rpc.ToHandler<UserServiceRpcs>, never, R>,
+    GrpcServerProtocol.streamingHandlersLayer<R>({
+      "demo.v1.UserService/UploadUsers": {
+        kind: "client-streaming",
+        handler: (requests, context) => implementation.uploadUsers(requests as Stream.Stream<User, GrpcStatusError.GrpcStatusError>, context),
+      },
+      "demo.v1.UserService/ChatUsers": {
+        kind: "bidi-streaming",
+        handler: (requests, context) => implementation.chatUsers(requests as Stream.Stream<UserEvent, GrpcStatusError.GrpcStatusError>, context),
+      },
+    }),
+  );
 "
 `;

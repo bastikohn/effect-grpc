@@ -12,6 +12,7 @@ import {
   FieldDescriptorProtoSchema,
   FileDescriptorProtoSchema,
   MessageOptionsSchema,
+  type MethodDescriptorProto,
   MethodDescriptorProtoSchema,
   type OneofDescriptorProto,
   OneofDescriptorProtoSchema,
@@ -23,7 +24,6 @@ import { generateFile } from "../src/generate.js";
 import { parseOptions } from "../src/options.js";
 import { detectImportCycles, plugin } from "../src/pluginDefinition.js";
 import type { GeneratorFile } from "../src/types.js";
-import { supportedMethodKind } from "../src/unsupported.js";
 
 const demoFile: GeneratorFile = {
   protoFileName: "demo/v1/user_service.proto",
@@ -91,6 +91,20 @@ const demoFile: GeneratorFile = {
           inputType: "WatchUsersRequest",
           outputType: "UserEvent",
         },
+        {
+          name: "UploadUsers",
+          localName: "uploadUsers",
+          kind: "client-streaming",
+          inputType: "User",
+          outputType: "GetUserResponse",
+        },
+        {
+          name: "ChatUsers",
+          localName: "chatUsers",
+          kind: "bidi-streaming",
+          inputType: "UserEvent",
+          outputType: "UserEvent",
+        },
       ],
     },
   ],
@@ -115,6 +129,28 @@ describe("generateFile", () => {
     expect(output).toContain("export interface UserServiceImplementation");
     expect(output).toContain("UserServiceHandlersLayer");
     expect(output).toMatchSnapshot();
+  });
+
+  it("routes request-streaming methods through the direct bridge", () => {
+    const output = generateFile(demoFile);
+
+    // No Effect RPC for request-streaming methods: the protocol has no
+    // client-to-server stream.
+    expect(output).not.toContain('Rpc.make("demo.v1.UserService/UploadUsers"');
+    expect(output).not.toContain('Rpc.make("demo.v1.UserService/ChatUsers"');
+    expect(output).toContain(
+      'streaming.clientStreaming("demo.v1.UserService/UploadUsers", requests, options)',
+    );
+    expect(output).toContain(
+      'streaming.bidiStreaming("demo.v1.UserService/ChatUsers", requests, options)',
+    );
+    expect(output).toContain("GrpcServerProtocol.streamingHandlersLayer<R>({");
+    expect(output).toContain('kind: "client-streaming"');
+    expect(output).toContain('kind: "bidi-streaming"');
+    expect(output).toContain(
+      "requests: Stream.Stream<User, GrpcStatusError.GrpcStatusError>",
+    );
+    expect(output).toContain("successSchema: GetUserResponseSchema");
   });
 });
 
@@ -356,31 +392,74 @@ describe("parseOptions", () => {
       "Unsupported int64 option",
     );
   });
+
+  it("defaults methods to all four kinds and validates values", () => {
+    expect([...parseOptions([]).methods]).toEqual([
+      "unary",
+      "server-streaming",
+      "client-streaming",
+      "bidi-streaming",
+    ]);
+    expect([
+      ...parseOptions([{ key: "methods", value: "unary,client-streaming" }])
+        .methods,
+    ]).toEqual(["unary", "client-streaming"]);
+    expect(() =>
+      parseOptions([{ key: "methods", value: "full-duplex" }]),
+    ).toThrow("Unsupported methods option: full-duplex.");
+  });
 });
 
-describe("supportedMethodKind", () => {
-  it("fails on client-streaming by default", () => {
-    expect(() =>
-      supportedMethodKind({
-        serviceTypeName: "demo.v1.UserService",
-        methodName: "Upload",
-        methodKind: "client_streaming",
-        ignoreUnsupportedMethods: false,
+describe("streaming methods", () => {
+  it("generates the direct bridge for client-streaming and bidi methods", () => {
+    const response = plugin.run(
+      fixtureRequest([], {
+        extraMethods: [
+          create(MethodDescriptorProtoSchema, {
+            name: "UploadUsers",
+            inputType: ".demo.v1.User",
+            outputType: ".demo.v1.GetUserResponse",
+            clientStreaming: true,
+          }),
+          create(MethodDescriptorProtoSchema, {
+            name: "ChatUsers",
+            inputType: ".demo.v1.User",
+            outputType: ".demo.v1.User",
+            clientStreaming: true,
+            serverStreaming: true,
+          }),
+        ],
       }),
-    ).toThrow(
-      "demo.v1.UserService/Upload is client-streaming.\nThe first prototype supports only unary and server-streaming.",
     );
+
+    const content = response.file[0]?.content;
+    expect(content).toContain(
+      'streaming.clientStreaming("demo.v1.UserService/UploadUsers"',
+    );
+    expect(content).toContain(
+      'streaming.bidiStreaming("demo.v1.UserService/ChatUsers"',
+    );
+    expect(content).not.toContain('Rpc.make("demo.v1.UserService/UploadUsers"');
+    expect(content).toContain("GrpcServerProtocol.streamingHandlersLayer");
   });
 
-  it("fails on bidirectional-streaming by default", () => {
-    expect(() =>
-      supportedMethodKind({
-        serviceTypeName: "demo.v1.UserService",
-        methodName: "Chat",
-        methodKind: "bidi_streaming",
-        ignoreUnsupportedMethods: false,
+  it("skips streaming methods when the methods option excludes them", () => {
+    const response = plugin.run(
+      fixtureRequest([], {
+        parameter:
+          "target=ts,import_extension=js,errors=grpc-status,methods=unary,server-streaming",
+        extraMethods: [
+          create(MethodDescriptorProtoSchema, {
+            name: "UploadUsers",
+            inputType: ".demo.v1.User",
+            outputType: ".demo.v1.GetUserResponse",
+            clientStreaming: true,
+          }),
+        ],
       }),
-    ).toThrow("demo.v1.UserService/Chat is bidirectional-streaming.");
+    );
+
+    expect(response.file[0]?.content).not.toContain("UploadUsers");
   });
 });
 
@@ -390,6 +469,8 @@ const fixtureRequest = (
     readonly dependency?: ReadonlyArray<string>;
     readonly enumType?: ReadonlyArray<EnumDescriptorProto>;
     readonly extraFiles?: ReadonlyArray<FileDescriptorProto>;
+    readonly extraMethods?: ReadonlyArray<MethodDescriptorProto>;
+    readonly parameter?: string;
     readonly requestNestedEnums?: ReadonlyArray<EnumDescriptorProto>;
     readonly requestNestedTypes?: ReadonlyArray<DescriptorProto>;
     readonly requestOneofs?: ReadonlyArray<OneofDescriptorProto>;
@@ -401,7 +482,7 @@ const fixtureRequest = (
   create(CodeGeneratorRequestSchema, {
     fileToGenerate: ["demo/v1/user_service.proto"],
     parameter:
-      "target=ts,import_extension=js,errors=grpc-status,methods=unary,server-streaming",
+      options?.parameter ?? "target=ts,import_extension=js,errors=grpc-status",
     protoFile: [
       ...(options?.extraFiles ?? []),
       create(FileDescriptorProtoSchema, {
@@ -445,6 +526,7 @@ const fixtureRequest = (
                 outputType:
                   options?.methodOutputType ?? ".demo.v1.GetUserResponse",
               }),
+              ...(options?.extraMethods ?? []),
             ],
           }),
         ],

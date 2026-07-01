@@ -1,7 +1,9 @@
 # Getting Started
 
-`effect-grpc` is a build-time codegen plus runtime bridge for native gRPC unary
-and server-streaming calls backed by `effect/unstable/rpc`.
+`effect-grpc` is a build-time codegen plus runtime bridge for native gRPC
+calls. Unary and server-streaming methods are backed by `effect/unstable/rpc`;
+client-streaming and bidi-streaming methods bridge `Stream` and connect
+iterables directly over the same transport.
 
 1. Generate protobuf-es output with `protoc-gen-es`.
 2. Generate Effect RPC glue with `protoc-gen-effect-grpc`.

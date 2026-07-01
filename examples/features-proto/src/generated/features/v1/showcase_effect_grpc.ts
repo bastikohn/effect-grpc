@@ -3,7 +3,7 @@
 import { Buffer } from "node:buffer";
 import { Context, Effect, Layer, Schema, Stream } from "effect";
 import { Rpc, RpcClient, RpcClientError, RpcGroup } from "effect/unstable/rpc";
-import { CodegenSupport, GrpcMethodRegistry, GrpcStatusError } from "@effect-grpc/effect-grpc";
+import { CodegenSupport, GrpcClientProtocol, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc";
 import {
   FeatureShowcaseService,
 } from "./showcase_pb.js";
@@ -50,6 +50,18 @@ export const FeatureResponseSchema = Schema.Struct({
   summary: Schema.String,
 });
 export type FeatureResponse = Schema.Schema.Type<typeof FeatureResponseSchema>;
+
+export const UploadSummarySchema = Schema.Struct({
+  count: Schema.Number,
+  joined: Schema.String,
+});
+export type UploadSummary = Schema.Schema.Type<typeof UploadSummarySchema>;
+
+export const ChatMessageSchema = Schema.Struct({
+  text: Schema.String,
+  sequence: Schema.Number,
+});
+export type ChatMessage = Schema.Schema.Type<typeof ChatMessageSchema>;
 
 export const FeatureShowcaseService_DescribeRpc = Rpc.make("features.v1.FeatureShowcaseService/Describe", {
   payload: FeatureRequestSchema,
@@ -200,6 +212,32 @@ export const toNote = (value: unknown): Record<string, unknown> => {
   });
 };
 
+export const fromUploadSummary = (message: unknown): unknown => compact({
+  count: (readField(message, "count")) as number,
+  joined: (readField(message, "joined")) as string,
+});
+
+export const toUploadSummary = (value: unknown): Record<string, unknown> => {
+  const message = value as Record<string, unknown>;
+  return compact({
+    count: (readField(message, "count")) as number,
+    joined: (readField(message, "joined")) as string,
+  });
+};
+
+export const fromChatMessage = (message: unknown): unknown => compact({
+  text: (readField(message, "text")) as string,
+  sequence: (readField(message, "sequence")) as number,
+});
+
+export const toChatMessage = (value: unknown): Record<string, unknown> => {
+  const message = value as Record<string, unknown>;
+  return compact({
+    text: (readField(message, "text")) as string,
+    sequence: (readField(message, "sequence")) as number,
+  });
+};
+
 export const fromLocalUser = (message: unknown): unknown => compact({
   id: (readField(message, "id")) as string,
   role: (readField(message, "role")) as string,
@@ -222,10 +260,41 @@ export const FeatureShowcaseServiceGrpcRegistry = new Map<string, GrpcMethodRegi
       service: FeatureShowcaseService,
       localName: "describe",
       payloadSchema: FeatureRequestSchema,
+      successSchema: FeatureResponseSchema,
       toGrpcRequest: toFeatureRequest,
       fromGrpcRequest: fromFeatureRequest,
       toGrpcResponse: toFeatureResponse,
       fromGrpcResponse: fromFeatureResponse,
+    },
+  ],
+  [
+    "features.v1.FeatureShowcaseService/UploadNotes",
+    {
+      kind: "client-streaming",
+      tag: "features.v1.FeatureShowcaseService/UploadNotes",
+      service: FeatureShowcaseService,
+      localName: "uploadNotes",
+      payloadSchema: NoteSchema,
+      successSchema: UploadSummarySchema,
+      toGrpcRequest: toNote,
+      fromGrpcRequest: fromNote,
+      toGrpcResponse: toUploadSummary,
+      fromGrpcResponse: fromUploadSummary,
+    },
+  ],
+  [
+    "features.v1.FeatureShowcaseService/Chat",
+    {
+      kind: "bidi-streaming",
+      tag: "features.v1.FeatureShowcaseService/Chat",
+      service: FeatureShowcaseService,
+      localName: "chat",
+      payloadSchema: ChatMessageSchema,
+      successSchema: ChatMessageSchema,
+      toGrpcRequest: toChatMessage,
+      fromGrpcRequest: fromChatMessage,
+      toGrpcResponse: toChatMessage,
+      fromGrpcResponse: fromChatMessage,
     },
   ],
 ]);
@@ -234,12 +303,17 @@ export type FeatureShowcaseServiceClientError = GrpcStatusError.GrpcStatusError 
 
 export interface FeatureShowcaseServiceClientService {
   readonly describe: (request: FeatureRequest, options?: CodegenSupport.GrpcCallOptions) => Effect.Effect<FeatureResponse, FeatureShowcaseServiceClientError>;
+  readonly uploadNotes: <E>(requests: Stream.Stream<Note, E>, options?: CodegenSupport.GrpcCallOptions) => Effect.Effect<UploadSummary, FeatureShowcaseServiceClientError | E>;
+  readonly chat: <E>(requests: Stream.Stream<ChatMessage, E>, options?: CodegenSupport.GrpcCallOptions) => Stream.Stream<ChatMessage, FeatureShowcaseServiceClientError | E>;
 }
 
 const makeFeatureShowcaseServiceClient = Effect.gen(function* () {
   const client = yield* RpcClient.make(FeatureShowcaseServiceRpcGroup);
+  const streaming = yield* GrpcClientProtocol.GrpcStreamingClient;
   return {
     describe: (request, options) => client["features.v1.FeatureShowcaseService/Describe"](request, { headers: CodegenSupport.headersFromOptions(options) }),
+    uploadNotes: ((requests, options) => streaming.clientStreaming("features.v1.FeatureShowcaseService/UploadNotes", requests, options)) as FeatureShowcaseServiceClientService["uploadNotes"],
+    chat: ((requests, options) => streaming.bidiStreaming("features.v1.FeatureShowcaseService/Chat", requests, options)) as FeatureShowcaseServiceClientService["chat"],
   } satisfies FeatureShowcaseServiceClientService;
 });
 
@@ -251,14 +325,26 @@ export const FeatureShowcaseServiceClientLayer = Layer.effect(FeatureShowcaseSer
 
 export interface FeatureShowcaseServiceImplementation<R = never> {
   readonly describe: (request: FeatureRequest, context: CodegenSupport.GrpcServerContext) => Effect.Effect<FeatureResponse, GrpcStatusError.GrpcStatusError, R>;
+  readonly uploadNotes: (requests: Stream.Stream<Note, GrpcStatusError.GrpcStatusError>, context: CodegenSupport.GrpcServerContext) => Effect.Effect<UploadSummary, GrpcStatusError.GrpcStatusError, R>;
+  readonly chat: (requests: Stream.Stream<ChatMessage, GrpcStatusError.GrpcStatusError>, context: CodegenSupport.GrpcServerContext) => Stream.Stream<ChatMessage, GrpcStatusError.GrpcStatusError, R>;
 }
 
 export const FeatureShowcaseServiceHandlersLayer = <R>(
   implementation: FeatureShowcaseServiceImplementation<R>,
-): Layer.Layer<Rpc.ToHandler<FeatureShowcaseServiceRpcs>, never, R> =>
-  FeatureShowcaseServiceRpcGroup.toLayer({
-    "features.v1.FeatureShowcaseService/Describe": (request, options) => implementation.describe(request, CodegenSupport.serverContext(options)),
-  }) as Layer.Layer<Rpc.ToHandler<
-    FeatureShowcaseServiceRpcs
-  >, never, R>;
+): Layer.Layer<Rpc.ToHandler<FeatureShowcaseServiceRpcs> | GrpcServerProtocol.GrpcStreamingHandlers, never, R> =>
+  Layer.mergeAll(
+    FeatureShowcaseServiceRpcGroup.toLayer({
+      "features.v1.FeatureShowcaseService/Describe": (request, options) => implementation.describe(request, CodegenSupport.serverContext(options)),
+    }) as Layer.Layer<Rpc.ToHandler<FeatureShowcaseServiceRpcs>, never, R>,
+    GrpcServerProtocol.streamingHandlersLayer<R>({
+      "features.v1.FeatureShowcaseService/UploadNotes": {
+        kind: "client-streaming",
+        handler: (requests, context) => implementation.uploadNotes(requests as Stream.Stream<Note, GrpcStatusError.GrpcStatusError>, context),
+      },
+      "features.v1.FeatureShowcaseService/Chat": {
+        kind: "bidi-streaming",
+        handler: (requests, context) => implementation.chat(requests as Stream.Stream<ChatMessage, GrpcStatusError.GrpcStatusError>, context),
+      },
+    }),
+  );
 

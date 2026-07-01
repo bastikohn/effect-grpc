@@ -2,10 +2,23 @@ import * as net from "node:net";
 
 import { createClient } from "@connectrpc/connect";
 import { createGrpcTransport } from "@connectrpc/connect-node";
-import { Duration, Effect, Layer, Stream } from "effect";
+import {
+  Cause,
+  Deferred,
+  Duration,
+  Effect,
+  Exit,
+  Layer,
+  Option,
+  Stream,
+} from "effect";
 import { describe, expect, it } from "vitest";
 
-import { GrpcClientProtocol, GrpcNodeServer } from "@effect-grpc/effect-grpc";
+import {
+  GrpcClientProtocol,
+  GrpcNodeServer,
+  GrpcStatusError,
+} from "@effect-grpc/effect-grpc";
 import {
   UserServiceClient,
   UserServiceClientLayer,
@@ -47,6 +60,40 @@ const implementation: FeatureShowcaseServiceImplementation = {
       request,
       summary: summary(request),
     }),
+  uploadNotes: (requests) =>
+    requests.pipe(
+      Stream.mapEffect((note) =>
+        note.text === "boom"
+          ? Effect.fail(
+              GrpcStatusError.make({
+                code: "failed_precondition",
+                message: "boom note",
+              }),
+            )
+          : Effect.succeed(note.text),
+      ),
+      Stream.runCollect,
+      Effect.map((texts) => ({
+        count: texts.length,
+        joined: texts.join(","),
+      })),
+    ),
+  chat: (requests) =>
+    requests.pipe(
+      Stream.mapEffect((message) =>
+        message.text === "boom"
+          ? Effect.fail(
+              GrpcStatusError.make({
+                code: "failed_precondition",
+                message: "boom message",
+              }),
+            )
+          : Effect.succeed({
+              text: `echo:${message.text}`,
+              sequence: message.sequence + 1,
+            }),
+      ),
+    ),
 };
 
 const userImplementation: UserServiceImplementation = {
@@ -148,6 +195,233 @@ describe("features demo e2e", () => {
       name: "Secondary User",
     });
   });
+
+  it("round-trips a client-streaming upload through the Effect client", async () => {
+    const uploaded = await Effect.runPromise(
+      withServer((baseUrl) =>
+        Effect.gen(function* () {
+          const client = yield* FeatureShowcaseServiceClient;
+          return yield* client.uploadNotes(
+            Stream.make({ text: "alpha" }, { text: "beta" }, { text: "gamma" }),
+          );
+        }).pipe(Effect.provide(clientLayer(baseUrl))),
+      ),
+    );
+
+    expect(uploaded).toEqual({ count: 3, joined: "alpha,beta,gamma" });
+  });
+
+  it("round-trips a bidi chat through the Effect client", async () => {
+    const echoes = await Effect.runPromise(
+      withServer((baseUrl) =>
+        Effect.gen(function* () {
+          const client = yield* FeatureShowcaseServiceClient;
+          return yield* Stream.runCollect(
+            client.chat(
+              Stream.make(
+                { text: "hi", sequence: 1 },
+                { text: "there", sequence: 2 },
+              ),
+            ),
+          );
+        }).pipe(Effect.provide(clientLayer(baseUrl))),
+      ),
+    );
+
+    expect(echoes).toEqual([
+      { text: "echo:hi", sequence: 2 },
+      { text: "echo:there", sequence: 3 },
+    ]);
+  });
+
+  it("propagates a mid-stream server failure to the client-streaming caller", async () => {
+    const error = await Effect.runPromise(
+      withServer((baseUrl) =>
+        Effect.gen(function* () {
+          const client = yield* FeatureShowcaseServiceClient;
+          return yield* client
+            .uploadNotes(
+              Stream.make({ text: "ok" }, { text: "boom" }, { text: "late" }),
+            )
+            .pipe(Effect.flip);
+        }).pipe(Effect.provide(clientLayer(baseUrl))),
+      ),
+    );
+
+    expect(error).toMatchObject({
+      _tag: "GrpcStatusError",
+      code: "failed_precondition",
+      message: "boom note",
+    });
+  });
+
+  it("fails the bidi response stream when the server fails mid-stream", async () => {
+    const result = await Effect.runPromise(
+      withServer((baseUrl) =>
+        Effect.gen(function* () {
+          const client = yield* FeatureShowcaseServiceClient;
+          const collected: Array<{ text: string; sequence: number }> = [];
+          const error = yield* client
+            .chat(
+              Stream.make(
+                { text: "hi", sequence: 1 },
+                { text: "boom", sequence: 2 },
+              ),
+            )
+            .pipe(
+              Stream.tap((message) =>
+                Effect.sync(() => collected.push(message)),
+              ),
+              Stream.runDrain,
+              Effect.flip,
+            );
+          return { collected, error };
+        }).pipe(Effect.provide(clientLayer(baseUrl))),
+      ),
+    );
+
+    expect(result.collected).toEqual([{ text: "echo:hi", sequence: 2 }]);
+    expect(result.error).toMatchObject({
+      _tag: "GrpcStatusError",
+      code: "failed_precondition",
+      message: "boom message",
+    });
+  });
+
+  it("cancels the call and surfaces the original error when the request stream fails", async () => {
+    const failure = { _tag: "UploadSourceFailure" as const };
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const observed =
+          yield* Deferred.make<
+            Exit.Exit<unknown, GrpcStatusError.GrpcStatusError>
+          >();
+        const received = yield* Deferred.make<void>();
+        const uploadNotes: FeatureShowcaseServiceImplementation["uploadNotes"] =
+          (requests) =>
+            requests.pipe(
+              Stream.tap(() => Deferred.succeed(received, undefined)),
+              Stream.runCollect,
+              // Keep the handler busy after the stream ends so the
+              // cancellation is observable even if connect-node delivers the
+              // abort a beat after the request stream closes.
+              Effect.andThen(Effect.sleep("500 millis")),
+              Effect.as({ count: 0, joined: "" }),
+              Effect.onExit((exit) => Deferred.succeed(observed, exit)),
+            );
+        const exit = yield* withServer(
+          (baseUrl) =>
+            Effect.gen(function* () {
+              const client = yield* FeatureShowcaseServiceClient;
+              return yield* client.uploadNotes(
+                Stream.concat(
+                  Stream.make({ text: "first" }),
+                  // Fail only after the server has consumed the first note, so
+                  // the cancellation is observable server-side.
+                  Stream.fromEffect(
+                    Deferred.await(received).pipe(
+                      Effect.andThen(Effect.fail(failure)),
+                    ),
+                  ),
+                ),
+              );
+            }).pipe(Effect.provide(clientLayer(baseUrl)), Effect.exit),
+          { uploadNotes },
+        );
+        const serverExit = yield* Deferred.await(observed);
+        return { exit, serverExit };
+      }),
+    );
+
+    expect(result.exit._tag).toBe("Failure");
+    if (result.exit._tag === "Failure") {
+      expect(Cause.squash(result.exit.cause)).toBe(failure);
+    }
+    // The server observes the cancellation either as a failed request stream
+    // or as an interruption of the handler fiber.
+    expect(result.serverExit._tag).toBe("Failure");
+    if (result.serverExit._tag === "Failure") {
+      const error = Cause.findErrorOption(result.serverExit.cause);
+      expect(
+        Cause.hasInterrupts(result.serverExit.cause) ||
+          (Option.isSome(error) && error.value.code === "cancelled"),
+      ).toBe(true);
+    }
+  });
+
+  it("stops the server handler when the bidi consumer stops early", async () => {
+    const echoes = await Effect.runPromise(
+      Effect.gen(function* () {
+        const finished = yield* Deferred.make<void>();
+        const chat: FeatureShowcaseServiceImplementation["chat"] = (requests) =>
+          requests.pipe(
+            Stream.map((message) => ({
+              text: `echo:${message.text}`,
+              sequence: message.sequence + 1,
+            })),
+            Stream.ensuring(Deferred.succeed(finished, undefined)),
+          );
+        return yield* withServer(
+          (baseUrl) =>
+            Effect.gen(function* () {
+              const client = yield* FeatureShowcaseServiceClient;
+              const echoes = yield* client
+                .chat(
+                  Stream.forever(Stream.make({ text: "ping", sequence: 1 })),
+                )
+                .pipe(Stream.take(2), Stream.runCollect);
+              // The handler must terminate through cancellation while the
+              // server is still running.
+              yield* Deferred.await(finished);
+              return echoes;
+            }).pipe(Effect.provide(clientLayer(baseUrl))),
+          { chat },
+        );
+      }),
+    );
+
+    expect(echoes).toEqual([
+      { text: "echo:ping", sequence: 2 },
+      { text: "echo:ping", sequence: 2 },
+    ]);
+  });
+
+  it("serves native connect streaming clients", async () => {
+    const result = await Effect.runPromise(
+      withServer((baseUrl) =>
+        Effect.promise(async () => {
+          const client = createClient(
+            FeatureShowcaseService,
+            createGrpcTransport({
+              baseUrl: baseUrl.toString().replace(/\/$/, ""),
+            }),
+          );
+
+          const uploaded = await client.uploadNotes(
+            (async function* () {
+              yield { text: "native" };
+              yield { text: "grpc" };
+            })(),
+          );
+          const echoes: Array<{ text: string; sequence: number }> = [];
+          for await (const message of client.chat(
+            (async function* () {
+              yield { text: "hello", sequence: 41 };
+            })(),
+          )) {
+            echoes.push({ text: message.text, sequence: message.sequence });
+          }
+          return {
+            uploaded: { count: uploaded.count, joined: uploaded.joined },
+            echoes,
+          };
+        }),
+      ),
+    );
+
+    expect(result.uploaded).toEqual({ count: 2, joined: "native,grpc" });
+    expect(result.echoes).toEqual([{ text: "echo:hello", sequence: 42 }]);
+  });
 });
 
 const summary = (request: FeatureRequest) =>
@@ -182,6 +456,7 @@ const expectRuntimeRequest = (request: FeatureRequest | undefined) => {
 
 const withServer = <A, E, R>(
   use: (baseUrl: URL) => Effect.Effect<A, E, R>,
+  overrides?: Partial<FeatureShowcaseServiceImplementation>,
 ): Effect.Effect<A, E, R> =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -193,7 +468,10 @@ const withServer = <A, E, R>(
           {
             group: FeatureShowcaseServiceRpcGroup,
             registry: FeatureShowcaseServiceGrpcRegistry,
-            handlers: FeatureShowcaseServiceHandlersLayer(implementation),
+            handlers: FeatureShowcaseServiceHandlersLayer({
+              ...implementation,
+              ...overrides,
+            }),
           },
           {
             group: UserServiceRpcGroup,

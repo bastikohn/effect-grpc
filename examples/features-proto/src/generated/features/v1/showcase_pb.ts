@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file features/v1/showcase.proto.
  */
 export const file_features_v1_showcase: GenFile = /*@__PURE__*/
-  fileDesc("ChpmZWF0dXJlcy92MS9zaG93Y2FzZS5wcm90bxILZmVhdHVyZXMudjEiyAUKDkZlYXR1cmVSZXF1ZXN0EgwKBHRhZ3MYASADKAkSDgoGc2NvcmVzGAIgAygFEiAKBW5vdGVzGAMgAygLMhEuZmVhdHVyZXMudjEuTm90ZRIlCgVzdGF0ZRgEIAEoDjIWLmZlYXR1cmVzLnYxLlVzZXJTdGF0ZRInCgVvd25lchgFIAEoCzIYLmZlYXR1cmVzLnYxLkZlYXR1cmVVc2VyEjcKBmxhYmVscxgGIAMoCzInLmZlYXR1cmVzLnYxLkZlYXR1cmVSZXF1ZXN0LkxhYmVsc0VudHJ5EjcKBmNvdW50cxgHIAMoCzInLmZlYXR1cmVzLnYxLkZlYXR1cmVSZXF1ZXN0LkNvdW50c0VudHJ5Ej0KCXJldmlld2VycxgIIAMoCzIqLmZlYXR1cmVzLnYxLkZlYXR1cmVSZXF1ZXN0LlJldmlld2Vyc0VudHJ5Ei4KCmNyZWF0ZWRfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiYKA3R0bBgKIAEoCzIZLmdvb2dsZS5wcm90b2J1Zi5EdXJhdGlvbhIPCgdwYXlsb2FkGAsgASgMEhAKCHNlcXVlbmNlGAwgASgDEhcKDWNvbnRhY3RfZW1haWwYDSABKAlIABIuCgxjb250YWN0X3VzZXIYDiABKAsyFi5mZWF0dXJlcy52MS5Mb2NhbFVzZXJIABotCgtMYWJlbHNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBGi0KC0NvdW50c0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoBToCOAEaSAoOUmV2aWV3ZXJzRW50cnkSCwoDa2V5GAEgASgJEiUKBXZhbHVlGAIgASgLMhYuZmVhdHVyZXMudjEuTG9jYWxVc2VyOgI4AUIJCgdjb250YWN0IlAKD0ZlYXR1cmVSZXNwb25zZRIsCgdyZXF1ZXN0GAEgASgLMhsuZmVhdHVyZXMudjEuRmVhdHVyZVJlcXVlc3QSDwoHc3VtbWFyeRgCIAEoCSIUCgROb3RlEgwKBHRleHQYASABKAkiJQoJTG9jYWxVc2VyEgoKAmlkGAEgASgJEgwKBHJvbGUYAiABKAkqVwoJVXNlclN0YXRlEhoKFlVTRVJfU1RBVEVfVU5TUEVDSUZJRUQQABIVChFVU0VSX1NUQVRFX0FDVElWRRABEhcKE1VTRVJfU1RBVEVfRElTQUJMRUQQAjJfChZGZWF0dXJlU2hvd2Nhc2VTZXJ2aWNlEkUKCERlc2NyaWJlEhsuZmVhdHVyZXMudjEuRmVhdHVyZVJlcXVlc3QaHC5mZWF0dXJlcy52MS5GZWF0dXJlUmVzcG9uc2ViBnByb3RvMw", [file_features_v1_common, file_google_protobuf_duration, file_google_protobuf_timestamp]);
+  fileDesc("ChpmZWF0dXJlcy92MS9zaG93Y2FzZS5wcm90bxILZmVhdHVyZXMudjEiyAUKDkZlYXR1cmVSZXF1ZXN0EgwKBHRhZ3MYASADKAkSDgoGc2NvcmVzGAIgAygFEiAKBW5vdGVzGAMgAygLMhEuZmVhdHVyZXMudjEuTm90ZRIlCgVzdGF0ZRgEIAEoDjIWLmZlYXR1cmVzLnYxLlVzZXJTdGF0ZRInCgVvd25lchgFIAEoCzIYLmZlYXR1cmVzLnYxLkZlYXR1cmVVc2VyEjcKBmxhYmVscxgGIAMoCzInLmZlYXR1cmVzLnYxLkZlYXR1cmVSZXF1ZXN0LkxhYmVsc0VudHJ5EjcKBmNvdW50cxgHIAMoCzInLmZlYXR1cmVzLnYxLkZlYXR1cmVSZXF1ZXN0LkNvdW50c0VudHJ5Ej0KCXJldmlld2VycxgIIAMoCzIqLmZlYXR1cmVzLnYxLkZlYXR1cmVSZXF1ZXN0LlJldmlld2Vyc0VudHJ5Ei4KCmNyZWF0ZWRfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiYKA3R0bBgKIAEoCzIZLmdvb2dsZS5wcm90b2J1Zi5EdXJhdGlvbhIPCgdwYXlsb2FkGAsgASgMEhAKCHNlcXVlbmNlGAwgASgDEhcKDWNvbnRhY3RfZW1haWwYDSABKAlIABIuCgxjb250YWN0X3VzZXIYDiABKAsyFi5mZWF0dXJlcy52MS5Mb2NhbFVzZXJIABotCgtMYWJlbHNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBGi0KC0NvdW50c0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoBToCOAEaSAoOUmV2aWV3ZXJzRW50cnkSCwoDa2V5GAEgASgJEiUKBXZhbHVlGAIgASgLMhYuZmVhdHVyZXMudjEuTG9jYWxVc2VyOgI4AUIJCgdjb250YWN0IlAKD0ZlYXR1cmVSZXNwb25zZRIsCgdyZXF1ZXN0GAEgASgLMhsuZmVhdHVyZXMudjEuRmVhdHVyZVJlcXVlc3QSDwoHc3VtbWFyeRgCIAEoCSIUCgROb3RlEgwKBHRleHQYASABKAkiLgoNVXBsb2FkU3VtbWFyeRINCgVjb3VudBgBIAEoBRIOCgZqb2luZWQYAiABKAkiLQoLQ2hhdE1lc3NhZ2USDAoEdGV4dBgBIAEoCRIQCghzZXF1ZW5jZRgCIAEoBSIlCglMb2NhbFVzZXISCgoCaWQYASABKAkSDAoEcm9sZRgCIAEoCSpXCglVc2VyU3RhdGUSGgoWVVNFUl9TVEFURV9VTlNQRUNJRklFRBAAEhUKEVVTRVJfU1RBVEVfQUNUSVZFEAESFwoTVVNFUl9TVEFURV9ESVNBQkxFRBACMt8BChZGZWF0dXJlU2hvd2Nhc2VTZXJ2aWNlEkUKCERlc2NyaWJlEhsuZmVhdHVyZXMudjEuRmVhdHVyZVJlcXVlc3QaHC5mZWF0dXJlcy52MS5GZWF0dXJlUmVzcG9uc2USPgoLVXBsb2FkTm90ZXMSES5mZWF0dXJlcy52MS5Ob3RlGhouZmVhdHVyZXMudjEuVXBsb2FkU3VtbWFyeSgBEj4KBENoYXQSGC5mZWF0dXJlcy52MS5DaGF0TWVzc2FnZRoYLmZlYXR1cmVzLnYxLkNoYXRNZXNzYWdlKAEwAWIGcHJvdG8z", [file_features_v1_common, file_google_protobuf_duration, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message features.v1.FeatureRequest
@@ -145,6 +145,50 @@ export const NoteSchema: GenMessage<Note> = /*@__PURE__*/
   messageDesc(file_features_v1_showcase, 2);
 
 /**
+ * @generated from message features.v1.UploadSummary
+ */
+export type UploadSummary = Message<"features.v1.UploadSummary"> & {
+  /**
+   * @generated from field: int32 count = 1;
+   */
+  count: number;
+
+  /**
+   * @generated from field: string joined = 2;
+   */
+  joined: string;
+};
+
+/**
+ * Describes the message features.v1.UploadSummary.
+ * Use `create(UploadSummarySchema)` to create a new message.
+ */
+export const UploadSummarySchema: GenMessage<UploadSummary> = /*@__PURE__*/
+  messageDesc(file_features_v1_showcase, 3);
+
+/**
+ * @generated from message features.v1.ChatMessage
+ */
+export type ChatMessage = Message<"features.v1.ChatMessage"> & {
+  /**
+   * @generated from field: string text = 1;
+   */
+  text: string;
+
+  /**
+   * @generated from field: int32 sequence = 2;
+   */
+  sequence: number;
+};
+
+/**
+ * Describes the message features.v1.ChatMessage.
+ * Use `create(ChatMessageSchema)` to create a new message.
+ */
+export const ChatMessageSchema: GenMessage<ChatMessage> = /*@__PURE__*/
+  messageDesc(file_features_v1_showcase, 4);
+
+/**
  * @generated from message features.v1.LocalUser
  */
 export type LocalUser = Message<"features.v1.LocalUser"> & {
@@ -164,7 +208,7 @@ export type LocalUser = Message<"features.v1.LocalUser"> & {
  * Use `create(LocalUserSchema)` to create a new message.
  */
 export const LocalUserSchema: GenMessage<LocalUser> = /*@__PURE__*/
-  messageDesc(file_features_v1_showcase, 3);
+  messageDesc(file_features_v1_showcase, 5);
 
 /**
  * @generated from enum features.v1.UserState
@@ -203,6 +247,22 @@ export const FeatureShowcaseService: GenService<{
     methodKind: "unary";
     input: typeof FeatureRequestSchema;
     output: typeof FeatureResponseSchema;
+  },
+  /**
+   * @generated from rpc features.v1.FeatureShowcaseService.UploadNotes
+   */
+  uploadNotes: {
+    methodKind: "client_streaming";
+    input: typeof NoteSchema;
+    output: typeof UploadSummarySchema;
+  },
+  /**
+   * @generated from rpc features.v1.FeatureShowcaseService.Chat
+   */
+  chat: {
+    methodKind: "bidi_streaming";
+    input: typeof ChatMessageSchema;
+    output: typeof ChatMessageSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_features_v1_showcase, 0);

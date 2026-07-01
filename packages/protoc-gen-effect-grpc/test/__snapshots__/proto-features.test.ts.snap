@@ -83,6 +83,7 @@ export const RepeatedScalarFeatureGrpcRegistry = new Map<string, GrpcMethodRegis
       service: RepeatedScalarFeature,
       localName: "echo",
       payloadSchema: RepeatedScalarsSchema,
+      successSchema: RepeatedScalarsSchema,
       toGrpcRequest: toRepeatedScalars,
       fromGrpcRequest: fromRepeatedScalars,
       toGrpcResponse: toRepeatedScalars,
@@ -119,9 +120,7 @@ export const RepeatedScalarFeatureHandlersLayer = <R>(
 ): Layer.Layer<Rpc.ToHandler<RepeatedScalarFeatureRpcs>, never, R> =>
   RepeatedScalarFeatureRpcGroup.toLayer({
     "features.v1.RepeatedScalarFeature/Echo": (request, options) => implementation.echo(request, CodegenSupport.serverContext(options)),
-  }) as Layer.Layer<Rpc.ToHandler<
-    RepeatedScalarFeatureRpcs
-  >, never, R>;
+  }) as Layer.Layer<Rpc.ToHandler<RepeatedScalarFeatureRpcs>, never, R>;
 
 ",
   ],
@@ -221,6 +220,7 @@ export const RepeatedMessageFeatureGrpcRegistry = new Map<string, GrpcMethodRegi
       service: RepeatedMessageFeature,
       localName: "echo",
       payloadSchema: UserListSchema,
+      successSchema: UserListSchema,
       toGrpcRequest: toUserList,
       fromGrpcRequest: fromUserList,
       toGrpcResponse: toUserList,
@@ -257,9 +257,7 @@ export const RepeatedMessageFeatureHandlersLayer = <R>(
 ): Layer.Layer<Rpc.ToHandler<RepeatedMessageFeatureRpcs>, never, R> =>
   RepeatedMessageFeatureRpcGroup.toLayer({
     "features.v1.RepeatedMessageFeature/Echo": (request, options) => implementation.echo(request, CodegenSupport.serverContext(options)),
-  }) as Layer.Layer<Rpc.ToHandler<
-    RepeatedMessageFeatureRpcs
-  >, never, R>;
+  }) as Layer.Layer<Rpc.ToHandler<RepeatedMessageFeatureRpcs>, never, R>;
 
 ",
   ],
@@ -333,6 +331,7 @@ export const EnumFeatureGrpcRegistry = new Map<string, GrpcMethodRegistry.GrpcMe
       service: EnumFeature,
       localName: "echo",
       payloadSchema: EnumUserSchema,
+      successSchema: EnumUserSchema,
       toGrpcRequest: toEnumUser,
       fromGrpcRequest: fromEnumUser,
       toGrpcResponse: toEnumUser,
@@ -369,9 +368,7 @@ export const EnumFeatureHandlersLayer = <R>(
 ): Layer.Layer<Rpc.ToHandler<EnumFeatureRpcs>, never, R> =>
   EnumFeatureRpcGroup.toLayer({
     "features.v1.EnumFeature/Echo": (request, options) => implementation.echo(request, CodegenSupport.serverContext(options)),
-  }) as Layer.Layer<Rpc.ToHandler<
-    EnumFeatureRpcs
-  >, never, R>;
+  }) as Layer.Layer<Rpc.ToHandler<EnumFeatureRpcs>, never, R>;
 
 ",
   ],
@@ -488,6 +485,7 @@ export const ImportedMessageFeatureGrpcRegistry = new Map<string, GrpcMethodRegi
       service: ImportedMessageFeature,
       localName: "echo",
       payloadSchema: GetImportedUserResponseSchema,
+      successSchema: GetImportedUserResponseSchema,
       toGrpcRequest: toGetImportedUserResponse,
       fromGrpcRequest: fromGetImportedUserResponse,
       toGrpcResponse: toGetImportedUserResponse,
@@ -524,9 +522,7 @@ export const ImportedMessageFeatureHandlersLayer = <R>(
 ): Layer.Layer<Rpc.ToHandler<ImportedMessageFeatureRpcs>, never, R> =>
   ImportedMessageFeatureRpcGroup.toLayer({
     "features.v1.ImportedMessageFeature/Echo": (request, options) => implementation.echo(request, CodegenSupport.serverContext(options)),
-  }) as Layer.Layer<Rpc.ToHandler<
-    ImportedMessageFeatureRpcs
-  >, never, R>;
+  }) as Layer.Layer<Rpc.ToHandler<ImportedMessageFeatureRpcs>, never, R>;
 
 ",
   ],
@@ -603,6 +599,7 @@ export const Int64BigintFeatureGrpcRegistry = new Map<string, GrpcMethodRegistry
       service: Int64BigintFeature,
       localName: "echo",
       payloadSchema: Int64ScalarsSchema,
+      successSchema: Int64ScalarsSchema,
       toGrpcRequest: toInt64Scalars,
       fromGrpcRequest: fromInt64Scalars,
       toGrpcResponse: toInt64Scalars,
@@ -639,9 +636,7 @@ export const Int64BigintFeatureHandlersLayer = <R>(
 ): Layer.Layer<Rpc.ToHandler<Int64BigintFeatureRpcs>, never, R> =>
   Int64BigintFeatureRpcGroup.toLayer({
     "features.v1.Int64BigintFeature/Echo": (request, options) => implementation.echo(request, CodegenSupport.serverContext(options)),
-  }) as Layer.Layer<Rpc.ToHandler<
-    Int64BigintFeatureRpcs
-  >, never, R>;
+  }) as Layer.Layer<Rpc.ToHandler<Int64BigintFeatureRpcs>, never, R>;
 
 ",
   ],
@@ -787,6 +782,7 @@ export const WellKnownTypeFeatureGrpcRegistry = new Map<string, GrpcMethodRegist
       service: WellKnownTypeFeature,
       localName: "echo",
       payloadSchema: WellKnownValuesSchema,
+      successSchema: WellKnownValuesSchema,
       toGrpcRequest: toWellKnownValues,
       fromGrpcRequest: fromWellKnownValues,
       toGrpcResponse: toWellKnownValues,
@@ -801,6 +797,7 @@ export const WellKnownTypeFeatureGrpcRegistry = new Map<string, GrpcMethodRegist
       service: WellKnownTypeFeature,
       localName: "echoTimestamp",
       payloadSchema: GrpcGoogleProtobufTimestampSchema,
+      successSchema: GrpcGoogleProtobufTimestampSchema,
       toGrpcRequest: toGrpcGoogleProtobufTimestamp,
       fromGrpcRequest: fromGrpcGoogleProtobufTimestamp,
       toGrpcResponse: toGrpcGoogleProtobufTimestamp,
@@ -815,6 +812,7 @@ export const WellKnownTypeFeatureGrpcRegistry = new Map<string, GrpcMethodRegist
       service: WellKnownTypeFeature,
       localName: "echoDuration",
       payloadSchema: GrpcGoogleProtobufDurationSchema,
+      successSchema: GrpcGoogleProtobufDurationSchema,
       toGrpcRequest: toGrpcGoogleProtobufDuration,
       fromGrpcRequest: fromGrpcGoogleProtobufDuration,
       toGrpcResponse: toGrpcGoogleProtobufDuration,
@@ -829,6 +827,7 @@ export const WellKnownTypeFeatureGrpcRegistry = new Map<string, GrpcMethodRegist
       service: WellKnownTypeFeature,
       localName: "echoBoolValue",
       payloadSchema: GrpcGoogleProtobufBoolValueSchema,
+      successSchema: GrpcGoogleProtobufBoolValueSchema,
       toGrpcRequest: toGrpcGoogleProtobufBoolValueMessage,
       fromGrpcRequest: fromGrpcGoogleProtobufBoolValue,
       toGrpcResponse: toGrpcGoogleProtobufBoolValueMessage,
@@ -877,9 +876,7 @@ export const WellKnownTypeFeatureHandlersLayer = <R>(
     "features.v1.WellKnownTypeFeature/EchoTimestamp": (request, options) => implementation.echoTimestamp(request, CodegenSupport.serverContext(options)),
     "features.v1.WellKnownTypeFeature/EchoDuration": (request, options) => implementation.echoDuration(request, CodegenSupport.serverContext(options)),
     "features.v1.WellKnownTypeFeature/EchoBoolValue": (request, options) => implementation.echoBoolValue(request, CodegenSupport.serverContext(options)),
-  }) as Layer.Layer<Rpc.ToHandler<
-    WellKnownTypeFeatureRpcs
-  >, never, R>;
+  }) as Layer.Layer<Rpc.ToHandler<WellKnownTypeFeatureRpcs>, never, R>;
 
 ",
   ],
@@ -1216,6 +1213,7 @@ export const FieldShapeFeatureGrpcRegistry = new Map<string, GrpcMethodRegistry.
       service: FieldShapeFeature,
       localName: "echo",
       payloadSchema: FieldShapeValuesSchema,
+      successSchema: FieldShapeValuesSchema,
       toGrpcRequest: toFieldShapeValues,
       fromGrpcRequest: fromFieldShapeValues,
       toGrpcResponse: toFieldShapeValues,
@@ -1252,9 +1250,7 @@ export const FieldShapeFeatureHandlersLayer = <R>(
 ): Layer.Layer<Rpc.ToHandler<FieldShapeFeatureRpcs>, never, R> =>
   FieldShapeFeatureRpcGroup.toLayer({
     "features.v1.FieldShapeFeature/Echo": (request, options) => implementation.echo(request, CodegenSupport.serverContext(options)),
-  }) as Layer.Layer<Rpc.ToHandler<
-    FieldShapeFeatureRpcs
-  >, never, R>;
+  }) as Layer.Layer<Rpc.ToHandler<FieldShapeFeatureRpcs>, never, R>;
 
 ",
   ],
@@ -1341,6 +1337,7 @@ export const MapFeatureGrpcRegistry = new Map<string, GrpcMethodRegistry.GrpcMet
       service: MapFeature,
       localName: "echo",
       payloadSchema: MapValuesSchema,
+      successSchema: MapValuesSchema,
       toGrpcRequest: toMapValues,
       fromGrpcRequest: fromMapValues,
       toGrpcResponse: toMapValues,
@@ -1377,9 +1374,7 @@ export const MapFeatureHandlersLayer = <R>(
 ): Layer.Layer<Rpc.ToHandler<MapFeatureRpcs>, never, R> =>
   MapFeatureRpcGroup.toLayer({
     "features.v1.MapFeature/Echo": (request, options) => implementation.echo(request, CodegenSupport.serverContext(options)),
-  }) as Layer.Layer<Rpc.ToHandler<
-    MapFeatureRpcs
-  >, never, R>;
+  }) as Layer.Layer<Rpc.ToHandler<MapFeatureRpcs>, never, R>;
 
 ",
   ],
@@ -1493,6 +1488,7 @@ export const OneofFeatureGrpcRegistry = new Map<string, GrpcMethodRegistry.GrpcM
       service: OneofFeature,
       localName: "echo",
       payloadSchema: SearchRequestSchema,
+      successSchema: SearchRequestSchema,
       toGrpcRequest: toSearchRequest,
       fromGrpcRequest: fromSearchRequest,
       toGrpcResponse: toSearchRequest,
@@ -1529,9 +1525,7 @@ export const OneofFeatureHandlersLayer = <R>(
 ): Layer.Layer<Rpc.ToHandler<OneofFeatureRpcs>, never, R> =>
   OneofFeatureRpcGroup.toLayer({
     "features.v1.OneofFeature/Echo": (request, options) => implementation.echo(request, CodegenSupport.serverContext(options)),
-  }) as Layer.Layer<Rpc.ToHandler<
-    OneofFeatureRpcs
-  >, never, R>;
+  }) as Layer.Layer<Rpc.ToHandler<OneofFeatureRpcs>, never, R>;
 
 ",
   ],
@@ -1652,6 +1646,7 @@ export const NestedMessageFeatureGrpcRegistry = new Map<string, GrpcMethodRegist
       service: NestedMessageFeature,
       localName: "echo",
       payloadSchema: NestedOuterSchema,
+      successSchema: NestedOuterSchema,
       toGrpcRequest: toNestedOuter,
       fromGrpcRequest: fromNestedOuter,
       toGrpcResponse: toNestedOuter,
@@ -1688,9 +1683,7 @@ export const NestedMessageFeatureHandlersLayer = <R>(
 ): Layer.Layer<Rpc.ToHandler<NestedMessageFeatureRpcs>, never, R> =>
   NestedMessageFeatureRpcGroup.toLayer({
     "features.v1.NestedMessageFeature/Echo": (request, options) => implementation.echo(request, CodegenSupport.serverContext(options)),
-  }) as Layer.Layer<Rpc.ToHandler<
-    NestedMessageFeatureRpcs
-  >, never, R>;
+  }) as Layer.Layer<Rpc.ToHandler<NestedMessageFeatureRpcs>, never, R>;
 
 ",
   ],
@@ -1850,6 +1843,7 @@ export const CrossPackageFeatureGrpcRegistry = new Map<string, GrpcMethodRegistr
       service: CrossPackageFeature,
       localName: "echo",
       payloadSchema: CrossPackageRequestSchema,
+      successSchema: CrossPackageRequestSchema,
       toGrpcRequest: toCrossPackageRequest,
       fromGrpcRequest: fromCrossPackageRequest,
       toGrpcResponse: toCrossPackageRequest,
@@ -1864,6 +1858,7 @@ export const CrossPackageFeatureGrpcRegistry = new Map<string, GrpcMethodRegistr
       service: CrossPackageFeature,
       localName: "getUser",
       payloadSchema: CommonUserSchema,
+      successSchema: CommonUserSchema,
       toGrpcRequest: toCommonUser,
       fromGrpcRequest: fromCommonUser,
       toGrpcResponse: toCommonUser,
@@ -1904,9 +1899,7 @@ export const CrossPackageFeatureHandlersLayer = <R>(
   CrossPackageFeatureRpcGroup.toLayer({
     "features.v1.CrossPackageFeature/Echo": (request, options) => implementation.echo(request, CodegenSupport.serverContext(options)),
     "features.v1.CrossPackageFeature/GetUser": (request, options) => implementation.getUser(request, CodegenSupport.serverContext(options)),
-  }) as Layer.Layer<Rpc.ToHandler<
-    CrossPackageFeatureRpcs
-  >, never, R>;
+  }) as Layer.Layer<Rpc.ToHandler<CrossPackageFeatureRpcs>, never, R>;
 
 ",
   ],
@@ -1996,6 +1989,7 @@ export const OptionalScalarFeatureGrpcRegistry = new Map<string, GrpcMethodRegis
       service: OptionalScalarFeature,
       localName: "echo",
       payloadSchema: OptionalScalarsSchema,
+      successSchema: OptionalScalarsSchema,
       toGrpcRequest: toOptionalScalars,
       fromGrpcRequest: fromOptionalScalars,
       toGrpcResponse: toOptionalScalars,
@@ -2032,9 +2026,7 @@ export const OptionalScalarFeatureHandlersLayer = <R>(
 ): Layer.Layer<Rpc.ToHandler<OptionalScalarFeatureRpcs>, never, R> =>
   OptionalScalarFeatureRpcGroup.toLayer({
     "features.v1.OptionalScalarFeature/Echo": (request, options) => implementation.echo(request, CodegenSupport.serverContext(options)),
-  }) as Layer.Layer<Rpc.ToHandler<
-    OptionalScalarFeatureRpcs
-  >, never, R>;
+  }) as Layer.Layer<Rpc.ToHandler<OptionalScalarFeatureRpcs>, never, R>;
 
 ",
   ],

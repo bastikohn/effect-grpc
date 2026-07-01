@@ -1,9 +1,9 @@
 # Testing
 
-Use the demo E2E suite as the reference vertical slice for native gRPC unary and
-server-streaming behavior. It covers success, status failures, metadata, trace
-headers, deadlines, stream failures, interruption, and protocol scope
-finalization.
+Use the demo E2E suites as the reference vertical slice for native gRPC
+behavior across all four method kinds. They cover success, status failures,
+metadata, trace headers, deadlines, mid-stream failures, request-stream
+failures, cancellation in both directions, and protocol scope finalization.
 
 Runtime protocol tests should cover behavior that can be asserted without a real
 socket, including call-state backpressure and server protocol cleanup.

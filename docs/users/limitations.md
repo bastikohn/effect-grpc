@@ -6,7 +6,7 @@ ignore unsupported methods.
 
 ## Effect Compatibility
 
-This prototype currently targets `effect@4.0.0-beta.79`. It uses
+This prototype currently targets `effect@4.0.0-beta.92`. It uses
 `effect/unstable/rpc`, so compatibility is intentionally pinned. Effect beta
 upgrades must update tests, generated code, and package smoke together.
 

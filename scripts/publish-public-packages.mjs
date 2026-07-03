@@ -10,12 +10,14 @@ const publishArgs = [
   "publish",
   "--access",
   "public",
-  // Alpha releases must land on the `alpha` dist-tag, never `latest`. The
-  // changeset pre.json tag is the source of truth; we mirror it here so a
-  // mistake in pre mode can't silently publish a prerelease as `latest`.
+  // Prereleases must never land on `latest`. Any changeset pre-mode release
+  // (e.g. the v4 `1.0.0-beta.x` line) publishes to the `next` dist-tag; only
+  // stable releases (the v3 `0.1.x` line, pre mode exited) go to `latest`.
+  // pre.json is the source of truth for which line we're on, so a mistake in
+  // pre mode can't silently publish a prerelease as `latest`.
   ...(args.some((arg) => arg === "--tag" || arg.startsWith("--tag="))
     ? []
-    : ["--tag", readPrereleaseTag()]),
+    : ["--tag", readDistTag()]),
   ...(dryRun && !args.includes("--no-git-checks") ? ["--no-git-checks"] : []),
   ...args,
 ];
@@ -52,15 +54,16 @@ function publish(name) {
   });
 }
 
-// Returns the dist-tag to publish under. In changeset pre mode we use the
-// configured pre tag (e.g. `alpha`); otherwise stable releases go to `latest`.
-function readPrereleaseTag() {
+// Returns the dist-tag to publish under. Any changeset pre-mode release is a
+// prerelease and publishes to `next` (regardless of the prerelease identifier
+// in the version string, e.g. `beta`); stable releases go to `latest`.
+function readDistTag() {
   try {
     const pre = JSON.parse(
       readFileSync(join(root, ".changeset", "pre.json"), "utf8"),
     );
-    if (pre.mode === "pre" && typeof pre.tag === "string") {
-      return pre.tag;
+    if (pre.mode === "pre") {
+      return "next";
     }
   } catch {
     // No pre.json (or unreadable): not in pre mode.

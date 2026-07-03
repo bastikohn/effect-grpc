@@ -8,6 +8,8 @@ import "google/protobuf/timestamp.proto";
 
 service FeatureShowcaseService {
   rpc Describe(FeatureRequest) returns (FeatureResponse);
+  rpc UploadNotes(stream Note) returns (UploadSummary);
+  rpc Chat(stream ChatMessage) returns (stream ChatMessage);
 }
 
 enum UserState {
@@ -42,6 +44,16 @@ message FeatureResponse {
 
 message Note {
   string text = 1;
+}
+
+message UploadSummary {
+  int32 count = 1;
+  string joined = 2;
+}
+
+message ChatMessage {
+  string text = 1;
+  int32 sequence = 2;
 }
 
 message LocalUser {

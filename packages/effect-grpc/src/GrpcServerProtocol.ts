@@ -1,11 +1,26 @@
 import type { ConnectRouter, HandlerContext } from "@connectrpc/connect";
-import { Effect, Exit, Option, Queue, Schema, Scope } from "effect";
-import type * as Tracer from "effect/Tracer";
+import {
+  Cause,
+  Context,
+  Effect,
+  Exit,
+  Layer,
+  Option,
+  Queue,
+  Schema,
+  Scope,
+  Stream,
+} from "effect";
+import * as Tracer from "effect/Tracer";
 import * as Headers from "effect/unstable/http/Headers";
 import * as HttpTraceContext from "effect/unstable/http/HttpTraceContext";
+import { ServerClient } from "effect/unstable/rpc/Rpc";
 import * as RpcServer from "effect/unstable/rpc/RpcServer";
 import type { FromClientEncoded } from "effect/unstable/rpc/RpcMessage";
+import { RequestId } from "effect/unstable/rpc/RpcMessage";
 
+import type { GrpcServerContext } from "./CodegenSupport.js";
+import * as GrpcMetadata from "./GrpcMetadata.js";
 import type {
   GrpcMethodEntry,
   GrpcMethodRegistry,
@@ -13,13 +28,95 @@ import type {
 import type { GrpcStatusCode } from "./GrpcStatusCode.js";
 import * as GrpcStatusError from "./GrpcStatusError.js";
 import * as CallState from "./internal/callState.js";
+import { entryCodecs } from "./internal/codec.js";
 import { eof, requestId } from "./internal/effectRpc.js";
 import { errorFromExit } from "./internal/status.js";
 import * as GrpcTracing from "./internal/tracing.js";
 
 export interface GrpcServerProtocolOptions {
   readonly registry: GrpcMethodRegistry;
+  readonly streamingHandlers?: GrpcStreamingHandlers;
 }
+
+/**
+ * Handlers for client-streaming and bidi-streaming methods. Effect RPC's wire
+ * protocol has no client-to-server chunk variant, so these methods bypass
+ * `RpcServer` and bridge connect's `AsyncIterable` requests to `Stream`
+ * directly.
+ */
+export interface GrpcClientStreamingHandler<R = never> {
+  readonly kind: "client-streaming";
+  readonly handler: (
+    requests: Stream.Stream<unknown, GrpcStatusError.GrpcStatusError>,
+    context: GrpcServerContext,
+  ) => Effect.Effect<unknown, GrpcStatusError.GrpcStatusError, R>;
+}
+
+export interface GrpcBidiStreamingHandler<R = never> {
+  readonly kind: "bidi-streaming";
+  readonly handler: (
+    requests: Stream.Stream<unknown, GrpcStatusError.GrpcStatusError>,
+    context: GrpcServerContext,
+  ) => Stream.Stream<unknown, GrpcStatusError.GrpcStatusError, R>;
+}
+
+export type GrpcStreamingHandler<R = never> =
+  | GrpcClientStreamingHandler<R>
+  | GrpcBidiStreamingHandler<R>;
+
+export type GrpcStreamingHandlers = ReadonlyMap<string, GrpcStreamingHandler>;
+
+/**
+ * Carries the streaming handlers of a generated service inside its handlers
+ * layer, so `GrpcNodeServer.serveAll` can collect them without changing the
+ * user-facing service wiring.
+ */
+export const GrpcStreamingHandlers = Context.Service<GrpcStreamingHandlers>(
+  "@effect-grpc/effect-grpc/GrpcStreamingHandlers",
+);
+
+/**
+ * Builds the layer generated `*HandlersLayer` functions use to publish
+ * streaming handlers. Captures the context so handler requirements `R` are
+ * resolved where the layer is built.
+ */
+export const streamingHandlersLayer = <R = never>(
+  handlers: Record<string, GrpcStreamingHandler<R>>,
+): Layer.Layer<GrpcStreamingHandlers, never, R> =>
+  Layer.effect(
+    GrpcStreamingHandlers,
+    Effect.gen(function* () {
+      const context = yield* Effect.context<R>();
+      return new Map(
+        Object.entries(handlers).map(([tag, handler]) => [
+          tag,
+          bindStreamingHandler(handler, context),
+        ]),
+      );
+    }),
+  );
+
+const bindStreamingHandler = <R>(
+  entry: GrpcStreamingHandler<R>,
+  context: Context.Context<R>,
+): GrpcStreamingHandler =>
+  entry.kind === "client-streaming"
+    ? {
+        kind: entry.kind,
+        handler: (requests, serverContext) =>
+          Effect.provideContext(
+            entry.handler(requests, serverContext),
+            context,
+          ),
+      }
+    : {
+        kind: entry.kind,
+        handler: (requests, serverContext) =>
+          Stream.provideContext(
+            entry.handler(requests, serverContext),
+            context,
+          ),
+      };
 
 export interface GrpcServerProtocolResult {
   readonly protocol: RpcServer.Protocol["Service"];
@@ -294,16 +391,157 @@ export const make = (
       }
     };
 
+    const handleClientStreaming = async (
+      entry: GrpcMethodEntry,
+      streaming: GrpcClientStreamingHandler,
+      requests: AsyncIterable<unknown>,
+      handlerContext: HandlerContext,
+    ): Promise<unknown> => {
+      const headers = Array.from(handlerContext.requestHeader.entries());
+      try {
+        return await run(
+          Effect.gen(function* () {
+            const span = yield* Effect.currentSpan.pipe(Effect.orDie);
+            const recordStatus = GrpcTracing.statusRecorder(span);
+            const result = yield* streaming
+              .handler(
+                streamingRequests(entry, requests, handlerContext.signal),
+                streamingServerContext(headers),
+              )
+              .pipe(
+                Effect.flatMap((value) =>
+                  encodeStreamingResponse(entry, value),
+                ),
+                Effect.exit,
+              );
+            if (result._tag === "Failure") {
+              const error = streamingCauseError(result.cause);
+              recordStatus(error.code);
+              return yield* Effect.fail(error);
+            }
+            recordStatus("ok");
+            return result.value;
+          }).pipe(
+            Effect.withSpan(
+              GrpcTracing.spanName(entry),
+              GrpcTracing.serverSpanOptions(entry, traceParent(headers)),
+            ),
+          ),
+          { signal: handlerContext.signal },
+        );
+      } catch (cause) {
+        throw GrpcStatusError.toConnectError(
+          streamingRejectionError(cause, handlerContext.signal),
+        );
+      }
+    };
+
+    const handleBidiStreaming = async function* (
+      entry: GrpcMethodEntry,
+      streaming: GrpcBidiStreamingHandler,
+      requests: AsyncIterable<unknown>,
+      handlerContext: HandlerContext,
+    ): AsyncIterable<unknown> {
+      const headers = Array.from(handlerContext.requestHeader.entries());
+      const spanScope = await run(Scope.make());
+      const span = await run(
+        Effect.makeSpanScoped(
+          GrpcTracing.spanName(entry),
+          GrpcTracing.serverSpanOptions(entry, traceParent(headers)),
+        ).pipe(Scope.provide(spanScope)),
+      );
+      const recordStatus = GrpcTracing.statusRecorder(span);
+      let spanExit: Exit.Exit<void, GrpcStatusError.GrpcStatusError> =
+        Exit.void;
+      let completed = false;
+      const responses = streaming
+        .handler(
+          streamingRequests(entry, requests, handlerContext.signal),
+          streamingServerContext(headers),
+        )
+        .pipe(
+          Stream.mapEffect((value) => encodeStreamingResponse(entry, value)),
+        );
+      const iterator = Stream.toAsyncIterableWith(
+        responses,
+        Context.add(context, Tracer.ParentSpan, span),
+      )[Symbol.asyncIterator]();
+      // Closing the iterator interrupts the handler fiber, so a pending pull
+      // settles when the client goes away mid-stream.
+      const onAbort = () => {
+        void Promise.resolve(iterator.return?.(undefined as never)).catch(
+          () => undefined,
+        );
+      };
+      handlerContext.signal.addEventListener("abort", onAbort, { once: true });
+
+      try {
+        while (true) {
+          const next = await iterator.next();
+          if (next.done) break;
+          yield next.value;
+        }
+        completed = true;
+        recordStatus(handlerContext.signal.aborted ? "cancelled" : "ok");
+      } catch (cause) {
+        completed = true;
+        const error = streamingRejectionError(cause, handlerContext.signal);
+        recordStatus(error.code);
+        spanExit = Exit.fail(error);
+        throw GrpcStatusError.toConnectError(error);
+      } finally {
+        handlerContext.signal.removeEventListener("abort", onAbort);
+        if (!completed) {
+          const error = GrpcStatusError.cancelled("RPC cancelled");
+          recordStatus(error.code);
+          spanExit = Exit.fail(error);
+        }
+        try {
+          await Promise.resolve(iterator.return?.(undefined as never)).catch(
+            () => undefined,
+          );
+        } finally {
+          await run(Scope.close(spanScope, spanExit));
+        }
+      }
+    };
+
+    const streamingImplementation = (entry: GrpcMethodEntry) => {
+      const streaming = (
+        options.streamingHandlers ?? emptyStreamingHandlers
+      ).get(entry.tag);
+      if (!streaming || streaming.kind !== entry.kind) {
+        return missingStreamingImplementation(entry);
+      }
+      return streaming.kind === "client-streaming"
+        ? (requests: AsyncIterable<unknown>, context: HandlerContext) =>
+            handleClientStreaming(entry, streaming, requests, context)
+        : (requests: AsyncIterable<unknown>, context: HandlerContext) =>
+            handleBidiStreaming(entry, streaming, requests, context);
+    };
+
     const routes = (router: ConnectRouter) => {
       for (const [service, entries] of groupByService(options.registry)) {
         const implementation: Record<string, unknown> = {};
         for (const entry of entries) {
-          implementation[entry.localName] =
-            entry.kind === "unary"
-              ? (request: unknown, context: HandlerContext) =>
-                  handleUnary(entry, request, context)
-              : (request: unknown, context: HandlerContext) =>
-                  handleServerStreaming(entry, request, context);
+          switch (entry.kind) {
+            case "unary":
+              implementation[entry.localName] = (
+                request: unknown,
+                context: HandlerContext,
+              ) => handleUnary(entry, request, context);
+              break;
+            case "server-streaming":
+              implementation[entry.localName] = (
+                request: unknown,
+                context: HandlerContext,
+              ) => handleServerStreaming(entry, request, context);
+              break;
+            case "client-streaming":
+            case "bidi-streaming":
+              implementation[entry.localName] = streamingImplementation(entry);
+              break;
+          }
         }
         router.service(service as never, implementation as never);
       }
@@ -312,6 +550,91 @@ export const make = (
 
     return { protocol, routes };
   });
+
+const emptyStreamingHandlers: GrpcStreamingHandlers = new Map();
+
+const streamingServerContext = (
+  headers: ReadonlyArray<readonly [string, string]>,
+): GrpcServerContext => ({
+  client: new ServerClient(0),
+  requestId: RequestId(0n),
+  metadata: GrpcMetadata.fromHeaders(headers),
+});
+
+const streamingRequests = (
+  entry: GrpcMethodEntry,
+  requests: AsyncIterable<unknown>,
+  signal: AbortSignal,
+): Stream.Stream<unknown, GrpcStatusError.GrpcStatusError> => {
+  const codecs = entryCodecs(entry);
+  return Stream.fromAsyncIterable(requests, (cause) =>
+    GrpcStatusError.fromConnectError(cause),
+  ).pipe(
+    Stream.mapEffect((message) =>
+      Effect.try({
+        try: () =>
+          codecs.decodePayload(entry.fromGrpcRequest(message as never)),
+        catch: (cause) =>
+          GrpcStatusError.invalidArgument(
+            "Invalid gRPC request payload",
+            cause,
+          ),
+      }),
+    ),
+    // connect-node surfaces a client cancellation as a clean end of the
+    // request iterable plus an aborted handler signal; distinguish it from a
+    // half-close so handlers do not treat a truncated stream as complete.
+    Stream.concat(
+      Stream.suspend(() =>
+        signal.aborted
+          ? Stream.fail(GrpcStatusError.cancelled("RPC cancelled"))
+          : Stream.empty,
+      ),
+    ),
+  );
+};
+
+const encodeStreamingResponse = (entry: GrpcMethodEntry, value: unknown) =>
+  Effect.try({
+    try: () => entry.toGrpcResponse(entryCodecs(entry).encodeSuccess(value)),
+    catch: (cause) =>
+      GrpcStatusError.internal("Invalid gRPC response payload", cause),
+  });
+
+const streamingCauseError = (
+  cause: Cause.Cause<GrpcStatusError.GrpcStatusError>,
+): GrpcStatusError.GrpcStatusError =>
+  Option.getOrElse(Cause.findErrorOption(cause), () =>
+    Cause.hasInterrupts(cause)
+      ? GrpcStatusError.cancelled("RPC cancelled")
+      : GrpcStatusError.internal("RPC handler defect", Cause.squash(cause)),
+  );
+
+const streamingRejectionError = (
+  cause: unknown,
+  signal: AbortSignal,
+): GrpcStatusError.GrpcStatusError =>
+  cause instanceof GrpcStatusError.GrpcStatusError
+    ? cause
+    : signal.aborted
+      ? GrpcStatusError.cancelled("RPC cancelled", cause)
+      : GrpcStatusError.internal("RPC handler defect", cause);
+
+const missingStreamingImplementation = (entry: GrpcMethodEntry) => {
+  const error = () =>
+    GrpcStatusError.toConnectError(
+      GrpcStatusError.unimplemented(
+        `Missing streaming handler for ${entry.tag}`,
+      ),
+    );
+  return entry.kind === "client-streaming"
+    ? () => Promise.reject(error())
+    : (): AsyncIterable<unknown> => ({
+        [Symbol.asyncIterator]: () => ({
+          next: () => Promise.reject(error()),
+        }),
+      });
+};
 
 const groupByService = (registry: GrpcMethodRegistry) => {
   const groups = new Map<GrpcMethodEntry["service"], Array<GrpcMethodEntry>>();

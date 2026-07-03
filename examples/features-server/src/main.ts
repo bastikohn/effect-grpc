@@ -1,5 +1,5 @@
 import { NodeRuntime } from "@effect/platform-node";
-import { Effect } from "effect";
+import { Effect, Stream } from "effect";
 
 import { GrpcNodeServer } from "@effect-grpc/effect-grpc";
 import {
@@ -33,6 +33,18 @@ const implementation: FeatureShowcaseServiceImplementation = {
         `contact=${request.contact.case ?? "none"}`,
       ].join(" "),
     }),
+  uploadNotes: (requests) =>
+    Stream.runCollect(requests).pipe(
+      Effect.map((notes) => ({
+        count: notes.length,
+        joined: notes.map((note) => note.text).join(","),
+      })),
+    ),
+  chat: (requests) =>
+    Stream.map(requests, (message) => ({
+      text: `echo: ${message.text}`,
+      sequence: message.sequence + 1,
+    })),
 };
 
 const program = Effect.scoped(

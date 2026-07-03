@@ -6,11 +6,17 @@ import type {
 } from "@bufbuild/protobuf";
 import type { Schema } from "effect";
 
-export type GrpcMethodKind = "unary" | "server-streaming";
+export type GrpcMethodKind =
+  | "unary"
+  | "server-streaming"
+  | "client-streaming"
+  | "bidi-streaming";
 
 export type GrpcMethodEntry =
   | GrpcUnaryMethodEntry
-  | GrpcServerStreamingMethodEntry;
+  | GrpcServerStreamingMethodEntry
+  | GrpcClientStreamingMethodEntry
+  | GrpcBidiStreamingMethodEntry;
 
 export interface GrpcMethodEntryBase<
   Request extends DescMessage = DescMessage,
@@ -21,6 +27,7 @@ export interface GrpcMethodEntryBase<
   readonly service: DescService;
   readonly localName: string;
   readonly payloadSchema: Schema.Codec<unknown>;
+  readonly successSchema: Schema.Codec<unknown>;
   readonly toGrpcRequest: (
     encodedPayload: unknown,
   ) => MessageInitShape<Request>;
@@ -43,6 +50,20 @@ export interface GrpcServerStreamingMethodEntry<
   Response extends DescMessage = DescMessage,
 > extends GrpcMethodEntryBase<Request, Response> {
   readonly kind: "server-streaming";
+}
+
+export interface GrpcClientStreamingMethodEntry<
+  Request extends DescMessage = DescMessage,
+  Response extends DescMessage = DescMessage,
+> extends GrpcMethodEntryBase<Request, Response> {
+  readonly kind: "client-streaming";
+}
+
+export interface GrpcBidiStreamingMethodEntry<
+  Request extends DescMessage = DescMessage,
+  Response extends DescMessage = DescMessage,
+> extends GrpcMethodEntryBase<Request, Response> {
+  readonly kind: "bidi-streaming";
 }
 
 export type GrpcMethodRegistry = ReadonlyMap<string, GrpcMethodEntry>;

@@ -126,7 +126,19 @@ export interface ServiceModel {
 export interface MethodModel {
   readonly name: string;
   readonly localName: string;
-  readonly kind: "unary" | "server-streaming";
+  readonly kind:
+    | "unary"
+    | "server-streaming"
+    | "client-streaming"
+    | "bidi-streaming";
   readonly inputType: string;
   readonly outputType: string;
 }
+
+/**
+ * Client-streaming and bidi-streaming methods cannot be expressed as Effect
+ * RPCs (the protocol has no client-to-server stream), so they bypass
+ * `Rpc.make`/`RpcGroup` and use the direct streaming bridge instead.
+ */
+export const isRequestStreaming = (method: MethodModel): boolean =>
+  method.kind === "client-streaming" || method.kind === "bidi-streaming";

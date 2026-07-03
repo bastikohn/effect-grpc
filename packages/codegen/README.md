@@ -24,8 +24,8 @@ effect-grpc-codegen -i <glob...> -o <dir> [options]
       --clean                        delete <dir> before writing
       --import-extension <js|ts>     generated import extension (default: js)
       --errors <grpc-status>         error model (default: grpc-status)
-      --methods <list>               comma list of unary,server-streaming
-      --ignore-unsupported-methods   skip unsupported methods instead of failing
+      --methods <list>               comma list of unary,server-streaming,
+                                     client-streaming,bidi-streaming
       --int64 <bigint>               64-bit integer representation (default: bigint)
 ```
 

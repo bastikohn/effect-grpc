@@ -7,11 +7,11 @@ settings:
 catalogs:
   default:
     '@effect/platform-node':
-      specifier: 4.0.0-beta.79
-      version: 4.0.0-beta.79
+      specifier: 4.0.0-beta.92
+      version: 4.0.0-beta.92
     effect:
-      specifier: 4.0.0-beta.79
-      version: 4.0.0-beta.79
+      specifier: 4.0.0-beta.92
+      version: 4.0.0-beta.92
 
 importers:
 
@@ -73,10 +73,10 @@ importers:
         version: link:../features-proto
       '@effect/platform-node':
         specifier: 'catalog:'
-        version: 4.0.0-beta.79(effect@4.0.0-beta.79)(ioredis@5.11.1)
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92)(ioredis@5.11.1)
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-beta.79
+        version: 4.0.0-beta.92
     devDependencies:
       '@effect-grpc/simple-proto':
         specifier: workspace:*
@@ -95,7 +95,7 @@ importers:
         version: link:../../packages/effect-grpc
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-beta.79
+        version: 4.0.0-beta.92
     devDependencies:
       '@effect-grpc/protoc-gen-effect-grpc':
         specifier: workspace:*
@@ -117,10 +117,10 @@ importers:
         version: link:../features-proto
       '@effect/platform-node':
         specifier: 'catalog:'
-        version: 4.0.0-beta.79(effect@4.0.0-beta.79)(ioredis@5.11.1)
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92)(ioredis@5.11.1)
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-beta.79
+        version: 4.0.0-beta.92
 
   examples/simple-client:
     dependencies:
@@ -138,14 +138,14 @@ importers:
         version: link:../simple-proto
       '@effect/platform-node':
         specifier: 'catalog:'
-        version: 4.0.0-beta.79(effect@4.0.0-beta.79)(ioredis@5.11.1)
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92)(ioredis@5.11.1)
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-beta.79
+        version: 4.0.0-beta.92
     devDependencies:
       '@effect/opentelemetry':
-        specifier: 4.0.0-beta.79
-        version: 4.0.0-beta.79(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.8.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.8.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.41.1)(effect@4.0.0-beta.79)
+        specifier: 4.0.0-beta.92
+        version: 4.0.0-beta.92(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.8.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.8.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.41.1)(effect@4.0.0-beta.92)
       '@opentelemetry/api':
         specifier: ^1.9.0
         version: 1.9.1
@@ -166,7 +166,7 @@ importers:
         version: link:../../packages/effect-grpc
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-beta.79
+        version: 4.0.0-beta.92
     devDependencies:
       '@effect-grpc/protoc-gen-effect-grpc':
         specifier: workspace:*
@@ -188,10 +188,10 @@ importers:
         version: link:../simple-proto
       '@effect/platform-node':
         specifier: 'catalog:'
-        version: 4.0.0-beta.79(effect@4.0.0-beta.79)(ioredis@5.11.1)
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92)(ioredis@5.11.1)
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-beta.79
+        version: 4.0.0-beta.92
 
   packages/codegen:
     dependencies:
@@ -209,10 +209,10 @@ importers:
         version: link:../protoc-gen-effect-grpc
       '@effect/platform-node':
         specifier: 'catalog:'
-        version: 4.0.0-beta.79(effect@4.0.0-beta.79)(ioredis@5.11.1)
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92)(ioredis@5.11.1)
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-beta.79
+        version: 4.0.0-beta.92
 
   packages/effect-grpc:
     dependencies:
@@ -220,8 +220,8 @@ importers:
         specifier: ^2.0.0
         version: 2.1.1(@bufbuild/protobuf@2.12.0)(@connectrpc/connect@2.1.1(@bufbuild/protobuf@2.12.0))
       effect:
-        specifier: 4.0.0-beta.79
-        version: 4.0.0-beta.79
+        specifier: 4.0.0-beta.92
+        version: 4.0.0-beta.92
     devDependencies:
       '@bufbuild/protobuf':
         specifier: ^2.0.0
@@ -400,8 +400,8 @@ packages:
     resolution: {integrity: sha512-mrXfnyHiY6FDNYF+MFkHCW/oBcCubQXG2Ma0B4iH0YMoue+6Cxv+CSiiUql22rLBAhea4re2TlV+9+FBarLSGA==}
     hasBin: true
 
-  '@effect/opentelemetry@4.0.0-beta.79':
-    resolution: {integrity: sha512-SI+7Z3CWV7bqgGILhYvUhr1hezd5OAhdzEbnJDWXGkMwyeU1eFtUkcpGU5yU+LyHgCyqygpp3kWXw0bHuzUSOg==}
+  '@effect/opentelemetry@4.0.0-beta.92':
+    resolution: {integrity: sha512-EenWwMgOtwR+s9enP0XoFlEsCzmlwDGfIMmbGuQ6dCsiEiCp0knq7AgwF7SI8j2WHk7Uky6GJp4qUT2XxZJTHQ==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
       '@opentelemetry/api': ^1.9
@@ -413,7 +413,7 @@ packages:
       '@opentelemetry/sdk-trace-node': ^2.0.0
       '@opentelemetry/sdk-trace-web': ^2.0.0
       '@opentelemetry/semantic-conventions': ^1.33.0
-      effect: ^4.0.0-beta.79
+      effect: ^4.0.0-beta.92
     peerDependenciesMeta:
       '@opentelemetry/api':
         optional: true
@@ -432,17 +432,17 @@ packages:
       '@opentelemetry/sdk-trace-web':
         optional: true
 
-  '@effect/platform-node-shared@4.0.0-beta.79':
-    resolution: {integrity: sha512-wWOFCQgQWvPaDt/wBH6xTURMc0t8kvlenT4GcDVck6kR4+odHJG5d+qfBM583d7BtuYuab/vbJrFAEKGhbSinQ==}
+  '@effect/platform-node-shared@4.0.0-beta.92':
+    resolution: {integrity: sha512-156ADSfmWcqz0mC8VxlHN9IHyT97AbYsBc3wJxyz2ceiWyGJOWkIRd6H/n5Be4hd6dQ4IegSt6J3HinBIJ9S/A==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
-      effect: ^4.0.0-beta.79
+      effect: ^4.0.0-beta.92
 
-  '@effect/platform-node@4.0.0-beta.79':
-    resolution: {integrity: sha512-gJrBa+7X04F+C49/Elwp7ah1E7MyacDYq1adeLktVCdT7iUa+YaoiienJJ8Fj4wH1D5iwwckA59xrZzi7iiEEw==}
+  '@effect/platform-node@4.0.0-beta.92':
+    resolution: {integrity: sha512-ZNcwKqBb99yw+cj+KQBMgw0xoQl3GDbUtQjnN3cLsIRpfYS/AVcSp4wfURMczvX5PzoR131yOWkqds5Vmm5tLg==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
-      effect: ^4.0.0-beta.79
+      effect: ^4.0.0-beta.92
       ioredis: ^5.7.0
 
   '@emnapi/core@1.10.0':
@@ -1553,8 +1553,8 @@ packages:
       oxc-resolver:
         optional: true
 
-  effect@4.0.0-beta.79:
-    resolution: {integrity: sha512-AwtiZ1zsbau3HS/zXlB9jRFAjRB8VoANjSwipTH0NtaMUwYPoVokgCF08FmJt9eOGPmeCQy1KRDvsuaYrP5Bhw==}
+  effect@4.0.0-beta.92:
+    resolution: {integrity: sha512-et6Fy8X9cxhzV/w4U372lB7YCP/B9a8FYVxlx9UMzSgnmwWKxpldnaHz7mHpZHh+OU+ENhU9DO/rTAakmT0sEA==}
 
   empathic@2.0.1:
     resolution: {integrity: sha512-YGRs8knHhKHVShLkFET/rWAU8kmHbOV5LwN938RHI0pljAJ1Gf6SzXsSmRaEzcXTtOOmVqJ5+WtQPL5uigY50Q==}
@@ -2550,28 +2550,28 @@ snapshots:
 
   '@effect/language-service@0.39.0': {}
 
-  '@effect/opentelemetry@4.0.0-beta.79(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.8.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.8.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.41.1)(effect@4.0.0-beta.79)':
+  '@effect/opentelemetry@4.0.0-beta.92(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.8.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.8.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.41.1)(effect@4.0.0-beta.92)':
     dependencies:
       '@opentelemetry/semantic-conventions': 1.41.1
-      effect: 4.0.0-beta.79
+      effect: 4.0.0-beta.92
     optionalDependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/resources': 2.8.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-trace-base': 2.8.0(@opentelemetry/api@1.9.1)
 
-  '@effect/platform-node-shared@4.0.0-beta.79(effect@4.0.0-beta.79)':
+  '@effect/platform-node-shared@4.0.0-beta.92(effect@4.0.0-beta.92)':
     dependencies:
       '@types/ws': 8.18.1
-      effect: 4.0.0-beta.79
+      effect: 4.0.0-beta.92
       ws: 8.21.0
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
 
-  '@effect/platform-node@4.0.0-beta.79(effect@4.0.0-beta.79)(ioredis@5.11.1)':
+  '@effect/platform-node@4.0.0-beta.92(effect@4.0.0-beta.92)(ioredis@5.11.1)':
     dependencies:
-      '@effect/platform-node-shared': 4.0.0-beta.79(effect@4.0.0-beta.79)
-      effect: 4.0.0-beta.79
+      '@effect/platform-node-shared': 4.0.0-beta.92(effect@4.0.0-beta.92)
+      effect: 4.0.0-beta.92
       ioredis: 5.11.1
       mime: 4.1.0
       undici: 8.4.1
@@ -3266,7 +3266,7 @@ snapshots:
 
   dts-resolver@2.1.3: {}
 
-  effect@4.0.0-beta.79:
+  effect@4.0.0-beta.92:
     dependencies:
       '@standard-schema/spec': 1.1.0
       fast-check: 4.8.0

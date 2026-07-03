@@ -6,7 +6,13 @@ import { Command, Flag } from "effect/unstable/cli";
 import { CodegenError, formatUnknown } from "./errors.js";
 import { generate } from "./run.js";
 
-type Method = "unary" | "server-streaming";
+const methodKinds = [
+  "unary",
+  "server-streaming",
+  "client-streaming",
+  "bidi-streaming",
+] as const;
+type Method = (typeof methodKinds)[number];
 
 const parseMethods = (
   value: string,
@@ -17,7 +23,7 @@ const parseMethods = (
       .map((item) => item.trim())
       .filter(Boolean);
     const unsupported = methods.find(
-      (method) => method !== "unary" && method !== "server-streaming",
+      (method) => !methodKinds.includes(method as Method),
     );
 
     if (unsupported !== undefined) {
@@ -83,12 +89,8 @@ export const codegenCommand = Command.make(
       Flag.withDescription("error model"),
     ),
     methods: Flag.string("methods").pipe(
-      Flag.withDefault("unary,server-streaming"),
-      Flag.withDescription("comma list of unary,server-streaming"),
-    ),
-    ignoreUnsupportedMethods: Flag.boolean("ignore-unsupported-methods").pipe(
-      Flag.withDefault(false),
-      Flag.withDescription("skip unsupported methods instead of failing"),
+      Flag.withDefault(methodKinds.join(",")),
+      Flag.withDescription(`comma list of ${methodKinds.join(",")}`),
     ),
     int64: Flag.choice("int64", ["bigint"]).pipe(
       Flag.withDefault("bigint"),
@@ -108,7 +110,6 @@ export const codegenCommand = Command.make(
           importExtension: config.importExtension,
           errors: config.errors,
           methods,
-          ignoreUnsupportedMethods: config.ignoreUnsupportedMethods,
           int64: config.int64,
         },
       });

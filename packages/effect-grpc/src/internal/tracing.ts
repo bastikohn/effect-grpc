@@ -49,6 +49,15 @@ export const annotateSpanStatus = (
   }
 };
 
+export const statusRecorder = (span: Tracer.Span) => {
+  let recorded = false;
+  return (code: GrpcStatusCode) => {
+    if (recorded) return;
+    recorded = true;
+    annotateSpanStatus(span, code);
+  };
+};
+
 export const statusAttributes = (
   code: GrpcStatusCode,
 ): Record<string, string> => {

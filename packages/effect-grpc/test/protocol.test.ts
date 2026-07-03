@@ -1,5 +1,5 @@
 import type { ConnectRouter, HandlerContext } from "@connectrpc/connect";
-import { Deferred, Effect, Fiber, Queue, Ref, Schema } from "effect";
+import { Deferred, Effect, Fiber, Queue, Ref, Schema, Stream } from "effect";
 import * as RpcClient from "effect/unstable/rpc/RpcClient";
 import type { FromServerEncoded } from "effect/unstable/rpc/RpcMessage";
 import { describe, expect, it } from "vitest";
@@ -334,6 +334,187 @@ describe("GrpcServerProtocol", () => {
   });
 });
 
+describe("GrpcServerProtocol streaming bridge", () => {
+  it("bridges client-streaming requests to the handler", async () => {
+    const result = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const { routes } = yield* GrpcServerProtocol.make({
+            registry: new Map([
+              [clientStreamingEntry.tag, clientStreamingEntry],
+            ]),
+            streamingHandlers: new Map<
+              string,
+              GrpcServerProtocol.GrpcStreamingHandler
+            >([
+              [
+                clientStreamingEntry.tag,
+                {
+                  kind: "client-streaming",
+                  handler: (requests) =>
+                    Stream.runCollect(requests).pipe(
+                      Effect.map((items) => ({ items })),
+                    ),
+                },
+              ],
+            ]),
+          });
+          const implementation = captureUnaryImplementation(routes);
+
+          return yield* Effect.promise(() =>
+            implementation.upload(
+              (async function* () {
+                yield { id: "1" };
+                yield { id: "2" };
+              })() as never,
+              handlerContext(),
+            ),
+          );
+        }),
+      ),
+    );
+
+    expect(result).toEqual({ items: [{ id: "1" }, { id: "2" }] });
+  });
+
+  it("bridges bidi streams and maps mid-stream handler failures", async () => {
+    const result = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const { routes } = yield* GrpcServerProtocol.make({
+            registry: new Map([[bidiStreamingEntry.tag, bidiStreamingEntry]]),
+            streamingHandlers: new Map<
+              string,
+              GrpcServerProtocol.GrpcStreamingHandler
+            >([
+              [
+                bidiStreamingEntry.tag,
+                {
+                  kind: "bidi-streaming",
+                  handler: (requests) =>
+                    Stream.mapEffect(requests, (request) =>
+                      (request as { readonly id: string }).id === "boom"
+                        ? Effect.fail(GrpcStatusError.notFound("boom"))
+                        : Effect.succeed(request),
+                    ),
+                },
+              ],
+            ]),
+          });
+          const implementation = captureServerStreamingImplementation(routes);
+
+          return yield* Effect.promise(async () => {
+            const received: Array<unknown> = [];
+            try {
+              for await (const value of implementation.chat(
+                (async function* () {
+                  yield { id: "1" };
+                  yield { id: "boom" };
+                })() as never,
+                handlerContext(),
+              )) {
+                received.push(value);
+              }
+            } catch (cause) {
+              return {
+                received,
+                error: GrpcStatusError.fromConnectError(cause),
+              };
+            }
+            throw new Error("Expected bidi handler failure");
+          });
+        }),
+      ),
+    );
+
+    expect(result.received).toEqual([{ id: "1" }]);
+    expect(result.error).toMatchObject({
+      code: "not_found",
+      message: "boom",
+    });
+  });
+
+  it("rejects streaming methods without a registered handler as unimplemented", async () => {
+    const error = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const { routes } = yield* GrpcServerProtocol.make({
+            registry: new Map([
+              [clientStreamingEntry.tag, clientStreamingEntry],
+            ]),
+          });
+          const implementation = captureUnaryImplementation(routes);
+
+          return yield* Effect.promise(async () => {
+            try {
+              await implementation.upload(
+                (async function* () {})() as never,
+                handlerContext(),
+              );
+            } catch (cause) {
+              return GrpcStatusError.fromConnectError(cause);
+            }
+            throw new Error("Expected missing handler to fail");
+          });
+        }),
+      ),
+    );
+
+    expect(error).toMatchObject({
+      code: "unimplemented",
+      message: "Missing streaming handler for demo.v1.TestService/Upload",
+    });
+  });
+
+  it("maps invalid streamed request payloads to invalid_argument", async () => {
+    const error = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const entry = {
+            ...clientStreamingEntry,
+            payloadSchema: Schema.Struct({ id: Schema.String }),
+          } satisfies GrpcMethodEntry;
+          const { routes } = yield* GrpcServerProtocol.make({
+            registry: new Map([[entry.tag, entry]]),
+            streamingHandlers: new Map<
+              string,
+              GrpcServerProtocol.GrpcStreamingHandler
+            >([
+              [
+                entry.tag,
+                {
+                  kind: "client-streaming",
+                  handler: (requests) => Stream.runDrain(requests),
+                },
+              ],
+            ]),
+          });
+          const implementation = captureUnaryImplementation(routes);
+
+          return yield* Effect.promise(async () => {
+            try {
+              await implementation.upload(
+                (async function* () {
+                  yield { id: 42 };
+                })() as never,
+                handlerContext(),
+              );
+            } catch (cause) {
+              return GrpcStatusError.fromConnectError(cause);
+            }
+            throw new Error("Expected streamed payload validation to fail");
+          });
+        }),
+      ),
+    );
+
+    expect(error).toMatchObject({
+      code: "invalid_argument",
+      message: "Invalid gRPC request payload",
+    });
+  });
+});
+
 describe("call state", () => {
   it("queues server-streaming chunks and terminal exits", async () => {
     const values = await Effect.runPromise(
@@ -420,6 +601,7 @@ const unaryEntry: GrpcMethodEntry = {
   service: {} as GrpcMethodEntry["service"],
   localName: "get",
   payloadSchema: Schema.Unknown,
+  successSchema: Schema.Unknown,
   toGrpcRequest: (value) => value as never,
   fromGrpcRequest: (message) => message,
   toGrpcResponse: (value) => value as never,
@@ -431,6 +613,20 @@ const serverStreamingEntry: GrpcMethodEntry = {
   kind: "server-streaming",
   tag: "demo.v1.TestService/Watch",
   localName: "watch",
+};
+
+const clientStreamingEntry: GrpcMethodEntry = {
+  ...unaryEntry,
+  kind: "client-streaming",
+  tag: "demo.v1.TestService/Upload",
+  localName: "upload",
+};
+
+const bidiStreamingEntry: GrpcMethodEntry = {
+  ...unaryEntry,
+  kind: "bidi-streaming",
+  tag: "demo.v1.TestService/Chat",
+  localName: "chat",
 };
 
 const captureUnaryImplementation = (

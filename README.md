@@ -1,11 +1,13 @@
 # effect-grpc
 
-Effect RPC-backed native gRPC prototypes for unary and server-streaming methods.
+Effect RPC-backed native gRPC prototypes for unary, server-streaming,
+client-streaming, and bidi-streaming methods.
 
 This workspace is new and intentionally small. The first prototype proves that
 native gRPC paths can map through generated registries into `@effect/Rpc`
-handlers and clients without introducing runtime `.proto` loading or unsupported
-method kinds.
+handlers and clients without introducing runtime `.proto` loading. Methods with
+a client-side stream bridge `Stream` and connect iterables directly over the
+same transport, since the Effect RPC protocol has no client-to-server stream.
 
 ## Packages
 
@@ -20,12 +22,12 @@ method kinds.
 
 - Unary gRPC methods.
 - Server-streaming gRPC methods.
+- Client-streaming and bidi-streaming gRPC methods.
 - Generic `GrpcStatusError` failures for generated RPCs.
 - Build-time `.proto` code generation with Buf/protoc.
 
 ## Not Supported Yet
 
-- Client-streaming and bidirectional-streaming methods.
 - Runtime `.proto` loading or reflection.
 - Typed protobuf error options.
 - TLS/mTLS, gRPC-Web, health checks, retries, and custom interceptors.
@@ -105,7 +107,6 @@ plugins:
       - target=ts
       - import_extension=js
       - errors=grpc-status
-      - methods=unary,server-streaming
 ```
 
 Then run the generator. Buf resolves the `local:` plugins from `node_modules`,
@@ -130,19 +131,18 @@ A typical project wires this into a `generate` script (the demo proto uses
 Pass these under `opt:` in `buf.gen.yaml` (or as `--effect-grpc_opt` flags when
 invoking `protoc` directly):
 
-| Option                       | Values                                    | Default                  | Description                                          |
-| ---------------------------- | ----------------------------------------- | ------------------------ | ---------------------------------------------------- |
-| `import_extension`           | `js`, `ts`                                | `js`                     | Extension used in generated import paths.            |
-| `errors`                     | `grpc-status`                             | `grpc-status`            | Error model for generated RPCs.                      |
-| `methods`                    | comma list of `unary`, `server-streaming` | `unary,server-streaming` | Method kinds to emit.                                |
-| `ignore_unsupported_methods` | `true`, `false`                           | `false`                  | Skip unsupported methods instead of failing codegen. |
-| `int64`                      | `bigint`                                  | `bigint`                 | TypeScript representation for 64-bit integers.       |
+| Option             | Values                                                                          | Default       | Description                                    |
+| ------------------ | ------------------------------------------------------------------------------- | ------------- | ---------------------------------------------- |
+| `import_extension` | `js`, `ts`                                                                      | `js`          | Extension used in generated import paths.      |
+| `errors`           | `grpc-status`                                                                   | `grpc-status` | Error model for generated RPCs.                |
+| `methods`          | comma list of `unary`, `server-streaming`, `client-streaming`, `bidi-streaming` | all kinds     | Method kinds to emit.                          |
+| `int64`            | `bigint`                                                                        | `bigint`      | TypeScript representation for 64-bit integers. |
 
 Unknown options and unsupported values fail codegen with a clear error.
 
 ## Effect Compatibility
 
-This prototype currently targets `effect@4.0.0-beta.79`. It uses
+This prototype currently targets `effect@4.0.0-beta.92`. It uses
 `effect/unstable/rpc`, so compatibility is intentionally pinned. Effect beta
 upgrades must update tests, generated code, and package smoke together.
 

@@ -20,9 +20,9 @@ import {
 } from "./options.js";
 import {
   isWellKnownType,
+  methodKindModel,
   scalarKind,
   supportedField,
-  supportedMethodKind,
 } from "./unsupported.js";
 import type {
   EnumModel,
@@ -452,13 +452,8 @@ const serviceModel = (
   name: service.name,
   typeName: service.typeName,
   methods: service.methods.flatMap((method): ReadonlyArray<MethodModel> => {
-    const kind = supportedMethodKind({
-      serviceTypeName: service.typeName,
-      methodName: method.name,
-      methodKind: method.methodKind,
-      ignoreUnsupportedMethods: options.ignoreUnsupportedMethods,
-    });
-    if (!kind || !options.methods.has(kind)) return [];
+    const kind = methodKindModel(method.methodKind);
+    if (!options.methods.has(kind)) return [];
     return [
       {
         name: method.name,

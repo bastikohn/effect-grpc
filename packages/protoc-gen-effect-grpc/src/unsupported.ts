@@ -9,36 +9,22 @@ import { FeatureSet_FieldPresence } from "@bufbuild/protobuf/wkt";
 import type { MethodModel, ScalarKind } from "./types.js";
 import { wellKnownKind } from "./wellKnown.js";
 
-export const supportedMethodKind = (options: {
-  readonly serviceTypeName: string;
-  readonly methodName: string;
-  readonly methodKind:
+export const methodKindModel = (
+  methodKind:
     | "unary"
     | "server_streaming"
     | "client_streaming"
-    | "bidi_streaming";
-  readonly ignoreUnsupportedMethods: boolean;
-}): MethodModel["kind"] | undefined => {
-  switch (options.methodKind) {
+    | "bidi_streaming",
+): MethodModel["kind"] => {
+  switch (methodKind) {
     case "unary":
       return "unary";
     case "server_streaming":
       return "server-streaming";
     case "client_streaming":
-    case "bidi_streaming": {
-      if (options.ignoreUnsupportedMethods) return undefined;
-      const kind =
-        options.methodKind === "client_streaming"
-          ? "client-streaming"
-          : "bidirectional-streaming";
-      throw new Error(
-        [
-          "Unsupported gRPC method kind:",
-          `  ${options.serviceTypeName}/${options.methodName} is ${kind}.`,
-          "The first prototype supports only unary and server-streaming.",
-        ].join("\n"),
-      );
-    }
+      return "client-streaming";
+    case "bidi_streaming":
+      return "bidi-streaming";
   }
 };
 

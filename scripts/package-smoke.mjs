@@ -139,7 +139,6 @@ plugins:
       - target=ts
       - import_extension=js
       - errors=grpc-status
-      - methods=unary,server-streaming
 `,
   );
   writeFileSync(
@@ -150,6 +149,7 @@ package demo.v1;
 
 service UserService {
   rpc GetUser(GetUserRequest) returns (GetUserResponse);
+  rpc UploadUsers(stream User) returns (GetUserResponse);
 }
 
 message GetUserRequest {
@@ -168,7 +168,7 @@ message User {
   );
   writeFileSync(
     join(consumerDir, "smoke.ts"),
-    `import { Effect, Layer } from "effect";
+    `import { Effect, Layer, Stream } from "effect";
 import { GrpcClientProtocol, GrpcMethodRegistry, GrpcStatusError } from "@effect-grpc/effect-grpc";
 import { plugin } from "@effect-grpc/protoc-gen-effect-grpc";
 import {
@@ -183,13 +183,16 @@ const registry: GrpcMethodRegistry.GrpcMethodRegistry = UserServiceGrpcRegistry;
 const implementation: UserServiceImplementation = {
   getUser: (request) => Effect.succeed({
     user: { id: request.id, name: "Demo User" }
-  })
+  }),
+  uploadUsers: (requests) => Stream.runCollect(requests).pipe(
+    Effect.map((users) => ({ user: users[0] }))
+  )
 };
 const handlers = UserServiceHandlersLayer(implementation);
 const clientLayer = UserServiceClientLayer.pipe(
   Layer.provide(
     GrpcClientProtocol.layer({
-      baseUrl: new URL("http://127.0.0.1:50051"),
+      baseUrl: "http://127.0.0.1:50051",
       registry
     })
   )

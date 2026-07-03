@@ -138,6 +138,7 @@ export const UserServiceGrpcRegistry = new Map<string, GrpcMethodRegistry.GrpcMe
       service: UserService,
       localName: "getUser",
       payloadSchema: GetUserRequestSchema,
+      successSchema: GetUserResponseSchema,
       toGrpcRequest: toGetUserRequest,
       fromGrpcRequest: fromGetUserRequest,
       toGrpcResponse: toGetUserResponse,
@@ -152,6 +153,7 @@ export const UserServiceGrpcRegistry = new Map<string, GrpcMethodRegistry.GrpcMe
       service: UserService,
       localName: "watchUsers",
       payloadSchema: WatchUsersRequestSchema,
+      successSchema: UserEventSchema,
       toGrpcRequest: toWatchUsersRequest,
       fromGrpcRequest: fromWatchUsersRequest,
       toGrpcResponse: toUserEvent,
@@ -192,7 +194,5 @@ export const UserServiceHandlersLayer = <R>(
   UserServiceRpcGroup.toLayer({
     "demo.v1.UserService/GetUser": (request, options) => implementation.getUser(request, CodegenSupport.serverContext(options)),
     "demo.v1.UserService/WatchUsers": (request, options) => implementation.watchUsers(request, CodegenSupport.serverContext(options)),
-  }) as Layer.Layer<Rpc.ToHandler<
-    UserServiceRpcs
-  >, never, R>;
+  }) as Layer.Layer<Rpc.ToHandler<UserServiceRpcs>, never, R>;
 

@@ -16,3 +16,33 @@ shuts the queue down so waiting consumers do not hang.
 
 Bridge callbacks capture the current Effect context once during protocol
 construction and run async boundary effects with that context.
+
+## Direct Streaming Bridge
+
+The Effect RPC wire protocol has no client-to-server chunk variant
+(`FromClientEncoded` is `Request | Ack | Interrupt | Ping | Eof`), so
+client-streaming and bidi-streaming methods cannot flow through
+`RpcClient`/`RpcServer`. They use a parallel path over the same connect
+transport and registry:
+
+- `GrpcClientProtocol.GrpcStreamingClient` converts the caller's `Stream` into
+  the `AsyncIterable` a connect client method expects, applying the registry's
+  JSON codecs and converters per message. An `AbortController` ties Effect
+  interruption to call cancellation. If the request stream fails, the call is
+  cancelled and the original error is replayed to the caller.
+- `GrpcServerProtocol` registers connect handlers that wrap the incoming
+  `AsyncIterable` as a `Stream` (decoding per message) and run the streaming
+  handler; bidi responses are pulled back out through
+  `Stream.toAsyncIterableWith`, so backpressure falls out of pull semantics and
+  HTTP/2 flow control.
+- Generated `*HandlersLayer` functions publish streaming handlers through the
+  `GrpcServerProtocol.GrpcStreamingHandlers` context key inside the handlers
+  layer; `GrpcNodeServer.serveAll` builds each layer and collects the maps.
+- connect-node surfaces a client cancellation server-side as a clean end of the
+  request iterable plus an aborted handler signal, so the request stream fails
+  with `cancelled` when the signal is aborted at end-of-stream, and the handler
+  fiber is interrupted through the same signal.
+
+Because both paths share the transport, interceptors and metadata behave
+identically; anything hung off Effect RPC middleware applies only to the RPC
+path.

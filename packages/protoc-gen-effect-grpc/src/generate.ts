@@ -4,19 +4,42 @@ import { generateRpcs } from "./generateRpcs.js";
 import { generateSchemas } from "./generateSchemas.js";
 import { generateServer } from "./generateServer.js";
 import { effectImportPath, pbImportPath } from "./naming.js";
-import type { FieldModel, FieldValueModel, GeneratorFile } from "./types.js";
+import {
+  isRequestStreaming,
+  type FieldModel,
+  type FieldValueModel,
+  type GeneratorFile,
+} from "./types.js";
 import { wellKnownJsonSchemaName } from "./wellKnown.js";
 
 export const generateFile = (file: GeneratorFile): string => {
   const pbImport = pbImportPath(file.protoFileName, file.importExtension);
   const descriptorImports = file.services.map((service) => service.name);
   const hasServices = file.services.length > 0;
+  const hasRpcMethods = file.services.some((service) =>
+    service.methods.some((method) => !isRequestStreaming(method)),
+  );
+  const hasStreamingMethods = file.services.some((service) =>
+    service.methods.some(isRequestStreaming),
+  );
   const jsonWellKnownImports = jsonWellKnownSchemaImports(file);
   const needsBuffer = usesBase64Bytes(file);
   const effectImports = [
     ...(hasServices ? ["Context", "Effect", "Layer"] : []),
     "Schema",
     ...(hasServices ? ["Stream"] : []),
+  ];
+  const rpcImports = [
+    ...(hasRpcMethods ? ["Rpc", "RpcClient"] : []),
+    "RpcClientError",
+    "RpcGroup",
+  ];
+  const effectGrpcImports = [
+    "CodegenSupport",
+    ...(hasStreamingMethods ? ["GrpcClientProtocol"] : []),
+    "GrpcMethodRegistry",
+    ...(hasStreamingMethods ? ["GrpcServerProtocol"] : []),
+    "GrpcStatusError",
   ];
 
   const lines = [
@@ -36,8 +59,8 @@ export const generateFile = (file: GeneratorFile): string => {
     `import { ${effectImports.join(", ")} } from "effect";`,
     ...(hasServices
       ? [
-          'import { Rpc, RpcClient, RpcClientError, RpcGroup } from "effect/unstable/rpc";',
-          'import { CodegenSupport, GrpcMethodRegistry, GrpcStatusError } from "@effect-grpc/effect-grpc";',
+          `import { ${rpcImports.join(", ")} } from "effect/unstable/rpc";`,
+          `import { ${effectGrpcImports.join(", ")} } from "@effect-grpc/effect-grpc";`,
           "import {",
           ...descriptorImports.map((item) => `  ${item},`),
           `} from "${pbImport}";`,

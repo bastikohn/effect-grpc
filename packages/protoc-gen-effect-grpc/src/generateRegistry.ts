@@ -83,12 +83,14 @@ const generateConverters = (file: GeneratorFile) => {
       ...message.fields.flatMap((field) =>
         field.kind === "oneof" ? oneofConverters(field) : [],
       ),
-      `export const from${message.name} = (message: unknown): unknown => compact({`,
+      `export const from${message.name} = (${message.fields.length === 0 ? "_message" : "message"}: unknown): unknown => compact({`,
       ...message.fields.map((field) => `  ${field.name}: ${fromField(field)},`),
       "});",
       "",
-      `export const to${message.name} = (value: unknown): Record<string, unknown> => {`,
-      "  const message = value as Record<string, unknown>;",
+      `export const to${message.name} = (${message.fields.length === 0 ? "_value" : "value"}: unknown): Record<string, unknown> => {`,
+      ...(message.fields.length === 0
+        ? []
+        : ["  const message = value as Record<string, unknown>;"]),
       "  return compact({",
       ...message.fields.map((field) => `    ${field.name}: ${toField(field)},`),
       "  });",

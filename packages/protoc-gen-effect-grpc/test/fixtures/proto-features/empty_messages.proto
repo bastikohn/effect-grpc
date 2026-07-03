@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package features.v1;
+
+service EmptyMessageFeature {
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+}
+
+message GetStatusRequest {}
+
+message GetStatusResponse {
+  string status = 1;
+}

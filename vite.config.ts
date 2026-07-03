@@ -6,6 +6,9 @@ const generatedPatterns = [
   "node_modules",
   ".pnpm-store",
   "**/src/generated/**",
+  // Changesets regenerates CHANGELOG.md on every release; leave it untouched
+  // so the auto-generated "Version packages" PR passes fmt/lint checks.
+  "**/CHANGELOG.md",
   "pnpm-lock.yaml",
   "*.tsbuildinfo",
 ];

@@ -5,9 +5,9 @@ import { fileURLToPath } from "node:url";
 import { fromBinary } from "@bufbuild/protobuf";
 import type { FileDescriptorSet } from "@bufbuild/protobuf/wkt";
 import { FileDescriptorSetSchema } from "@bufbuild/protobuf/wkt";
-import { Effect, Stream } from "effect";
-import { ChildProcess } from "effect/unstable/process";
-import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner";
+import * as Command from "@effect/platform/Command";
+import type * as CommandExecutor from "@effect/platform/CommandExecutor";
+import { Chunk, Effect, Stream } from "effect";
 
 import { BufBuildError, CodegenError, formatUnknown } from "./errors.js";
 
@@ -51,8 +51,8 @@ const resolveBufBin = (input: CompileInput, root: string) =>
     }
   });
 
-const concatChunks = (chunks: ReadonlyArray<Uint8Array>): Buffer =>
-  Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)));
+const concatChunks = (chunks: Iterable<Uint8Array>): Buffer =>
+  Buffer.concat(Array.from(chunks, (chunk) => Buffer.from(chunk)));
 
 const decodeDescriptorSet = (bytes: Uint8Array) =>
   Effect.suspend(() => {
@@ -81,7 +81,7 @@ export const compileProtos = (
 ): Effect.Effect<
   CompileResult,
   BufBuildError | CodegenError,
-  ChildProcessSpawner
+  CommandExecutor.CommandExecutor
 > =>
   Effect.gen(function* () {
     const root = input.importPaths[0] ?? ".";
@@ -108,7 +108,9 @@ export const compileProtos = (
       "-o",
       "-#format=binpb",
     ];
-    const handle = yield* ChildProcess.make(process.execPath, args).pipe(
+    const handle = yield* Command.start(
+      Command.make(process.execPath, ...args),
+    ).pipe(
       Effect.mapError(
         (cause) =>
           new BufBuildError({
@@ -137,7 +139,9 @@ export const compileProtos = (
           }),
       ),
     );
-    const stderr = concatChunks(output.stderr).toString("utf8");
+    const stderr = concatChunks(Chunk.toReadonlyArray(output.stderr)).toString(
+      "utf8",
+    );
     const exitCode = Number(output.exitCode);
 
     if (exitCode !== 0) {
@@ -154,6 +158,8 @@ export const compileProtos = (
       );
     }
 
-    const set = yield* decodeDescriptorSet(concatChunks(output.stdout));
+    const set = yield* decodeDescriptorSet(
+      concatChunks(Chunk.toReadonlyArray(output.stdout)),
+    );
     return { set, fileToGenerate };
   }).pipe(Effect.scoped);

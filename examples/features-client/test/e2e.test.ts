@@ -4,6 +4,7 @@ import { createClient } from "@connectrpc/connect";
 import { createGrpcTransport } from "@connectrpc/connect-node";
 import {
   Cause,
+  Chunk,
   Deferred,
   Duration,
   Effect,
@@ -73,6 +74,7 @@ const implementation: FeatureShowcaseServiceImplementation = {
           : Effect.succeed(note.text),
       ),
       Stream.runCollect,
+      Effect.map(Chunk.toReadonlyArray),
       Effect.map((texts) => ({
         count: texts.length,
         joined: texts.join(","),
@@ -223,7 +225,7 @@ describe("features demo e2e", () => {
                 { text: "there", sequence: 2 },
               ),
             ),
-          );
+          ).pipe(Effect.map(Chunk.toReadonlyArray));
         }).pipe(Effect.provide(clientLayer(baseUrl))),
       ),
     );
@@ -335,15 +337,19 @@ describe("features demo e2e", () => {
 
     expect(result.exit._tag).toBe("Failure");
     if (result.exit._tag === "Failure") {
-      expect(Cause.squash(result.exit.cause)).toBe(failure);
+      // The tracer captures the active span onto failure values via a proxy;
+      // unwrap it to compare against the original object.
+      expect(Cause.originalError(Cause.squash(result.exit.cause))).toBe(
+        failure,
+      );
     }
     // The server observes the cancellation either as a failed request stream
     // or as an interruption of the handler fiber.
     expect(result.serverExit._tag).toBe("Failure");
     if (result.serverExit._tag === "Failure") {
-      const error = Cause.findErrorOption(result.serverExit.cause);
+      const error = Cause.failureOption(result.serverExit.cause);
       expect(
-        Cause.hasInterrupts(result.serverExit.cause) ||
+        Cause.isInterrupted(result.serverExit.cause) ||
           (Option.isSome(error) && error.value.code === "cancelled"),
       ).toBe(true);
     }
@@ -369,7 +375,11 @@ describe("features demo e2e", () => {
                 .chat(
                   Stream.forever(Stream.make({ text: "ping", sequence: 1 })),
                 )
-                .pipe(Stream.take(2), Stream.runCollect);
+                .pipe(
+                  Stream.take(2),
+                  Stream.runCollect,
+                  Effect.map(Chunk.toReadonlyArray),
+                );
               // The handler must terminate through cancellation while the
               // server is still running.
               yield* Deferred.await(finished);
@@ -450,7 +460,7 @@ const expectRuntimeRequest = (request: FeatureRequest | undefined) => {
     contact: { case: "contactUser", value: { id: "user-1", role: "owner" } },
   });
   expect(request?.createdAt?.getTime()).toBe(1_500);
-  expect(Duration.toNanosUnsafe(request!.ttl!)).toBe(2_250_000_001n);
+  expect(Duration.unsafeToNanos(request!.ttl!)).toBe(2_250_000_001n);
   expect(request?.payload).toEqual(new Uint8Array([1, 2, 3]));
 };
 

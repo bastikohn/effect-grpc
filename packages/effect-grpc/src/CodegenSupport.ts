@@ -1,6 +1,4 @@
-import type { Headers as EffectHeaders } from "effect/unstable/http/Headers";
-import type { ServerClient } from "effect/unstable/rpc/Rpc";
-import type { RequestId } from "effect/unstable/rpc/RpcMessage";
+import type { Headers as EffectHeaders } from "@effect/platform/Headers";
 
 import * as GrpcMetadata from "./GrpcMetadata.js";
 import { headersFromCallOptions } from "./internal/metadata.js";
@@ -11,19 +9,16 @@ export interface GrpcCallOptions {
 }
 
 export interface GrpcServerContext {
-  readonly client: ServerClient;
-  readonly requestId: RequestId;
+  readonly clientId: number;
   readonly metadata: GrpcMetadata.GrpcMetadata;
 }
 
 export const headersFromOptions = headersFromCallOptions;
 
 export const serverContext = (options: {
-  readonly client: ServerClient;
-  readonly requestId: RequestId;
+  readonly clientId: number;
   readonly headers: EffectHeaders;
 }): GrpcServerContext => ({
-  client: options.client,
-  requestId: options.requestId,
+  clientId: options.clientId,
   metadata: GrpcMetadata.fromHeaders(Object.entries(options.headers)),
 });

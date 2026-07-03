@@ -2,7 +2,7 @@
 
 import { Buffer } from "node:buffer";
 import { Context, Effect, Layer, Schema, Stream } from "effect";
-import { Rpc, RpcClient, RpcClientError, RpcGroup } from "effect/unstable/rpc";
+import { Rpc, RpcClient, RpcClientError, RpcGroup } from "@effect/rpc";
 import { CodegenSupport, GrpcClientProtocol, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc";
 import {
   FeatureShowcaseService,
@@ -34,14 +34,14 @@ export const FeatureRequestSchema = Schema.Struct({
   notes: Schema.Array(Schema.suspend((): typeof NoteSchema => NoteSchema)),
   state: UserStateSchema,
   owner: Schema.optional(FeatureUserSchema),
-  labels: Schema.Record(Schema.String, Schema.String),
-  counts: Schema.Record(Schema.String, Schema.Number),
-  reviewers: Schema.Record(Schema.String, Schema.suspend((): typeof LocalUserSchema => LocalUserSchema)),
+  labels: Schema.Record({ key: Schema.String, value: Schema.String }),
+  counts: Schema.Record({ key: Schema.String, value: Schema.Number }),
+  reviewers: Schema.Record({ key: Schema.String, value: Schema.suspend((): typeof LocalUserSchema => LocalUserSchema) }),
   createdAt: Schema.optional(Schema.Date),
   ttl: Schema.optional(Schema.Duration),
-  payload: Schema.Uint8Array,
+  payload: Schema.Uint8ArrayFromBase64,
   sequence: Schema.BigInt,
-  contact: Schema.Union([Schema.Struct({ case: Schema.Literal("contactEmail"), value: Schema.String }), Schema.Struct({ case: Schema.Literal("contactUser"), value: Schema.suspend((): typeof LocalUserSchema => LocalUserSchema) }), Schema.Struct({ case: Schema.Undefined, value: Schema.optional(Schema.Undefined) })]),
+  contact: Schema.Union(Schema.Struct({ case: Schema.Literal("contactEmail"), value: Schema.String }), Schema.Struct({ case: Schema.Literal("contactUser"), value: Schema.suspend((): typeof LocalUserSchema => LocalUserSchema) }), Schema.Struct({ case: Schema.Undefined, value: Schema.optional(Schema.Undefined) })),
 });
 export type FeatureRequest = Schema.Schema.Type<typeof FeatureRequestSchema>;
 
@@ -108,15 +108,15 @@ const toGrpcGoogleProtobufTimestamp = (value: unknown) => {
 const fromGrpcGoogleProtobufDuration = (value: unknown) => {
   const message = value as { readonly seconds?: bigint | number; readonly nanos?: number };
   const nanos = BigInt(message.seconds ?? 0) * 1_000_000_000n + BigInt(message.nanos ?? 0);
-  return nanos % 1_000_000n === 0n ? { _tag: "Millis", value: Number(nanos / 1_000_000n) } : { _tag: "Nanos", value: String(nanos) };
+  return nanos % 1_000_000n === 0n ? { _tag: "Millis", millis: Number(nanos / 1_000_000n) } : { _tag: "Nanos", nanos: String(nanos) };
 };
 
 const toGrpcGoogleProtobufDuration = (value: unknown) => {
-  const duration = value as { readonly _tag?: string; readonly value?: unknown };
+  const duration = value as { readonly _tag?: string; readonly millis?: number; readonly nanos?: string };
   const nanos = duration._tag === "Millis"
-    ? BigInt(duration.value as number) * 1_000_000n
+    ? BigInt(duration.millis as number) * 1_000_000n
     : duration._tag === "Nanos"
-      ? BigInt(duration.value as string)
+      ? BigInt(duration.nanos as string)
       : (() => { throw new Error(`Unsupported Duration encoding: ${duration._tag}`); })();
   return {
     seconds: nanos / 1_000_000_000n,
@@ -132,7 +132,7 @@ const fromFeatureRequest_contactOneof = (value: unknown): unknown => {
     case "contactUser":
       return { case: "contactUser", value: fromLocalUser(oneof.value) };
     case undefined:
-      return { case: null };
+      return { case: undefined };
     default:
       throw new Error(`Unknown oneof case contact: ${oneof.case}`);
   }
@@ -308,20 +308,20 @@ export interface FeatureShowcaseServiceClientService {
 }
 
 const makeFeatureShowcaseServiceClient = Effect.gen(function* () {
-  const client = yield* RpcClient.make(FeatureShowcaseServiceRpcGroup);
+  const client = yield* RpcClient.make(FeatureShowcaseServiceRpcGroup, { flatten: true });
   const streaming = yield* GrpcClientProtocol.GrpcStreamingClient;
   return {
-    describe: (request, options) => client["features.v1.FeatureShowcaseService/Describe"](request, { headers: CodegenSupport.headersFromOptions(options) }),
+    describe: (request, options) => client("features.v1.FeatureShowcaseService/Describe", request, { headers: CodegenSupport.headersFromOptions(options) }),
     uploadNotes: ((requests, options) => streaming.clientStreaming("features.v1.FeatureShowcaseService/UploadNotes", requests, options)) as FeatureShowcaseServiceClientService["uploadNotes"],
     chat: ((requests, options) => streaming.bidiStreaming("features.v1.FeatureShowcaseService/Chat", requests, options)) as FeatureShowcaseServiceClientService["chat"],
   } satisfies FeatureShowcaseServiceClientService;
 });
 
-export class FeatureShowcaseServiceClient extends Context.Service<FeatureShowcaseServiceClient, FeatureShowcaseServiceClientService>()("features.v1.FeatureShowcaseService/FeatureShowcaseServiceClient", {
-  make: makeFeatureShowcaseServiceClient,
-}) {}
+export class FeatureShowcaseServiceClient extends Context.Tag("features.v1.FeatureShowcaseService/FeatureShowcaseServiceClient")<FeatureShowcaseServiceClient, FeatureShowcaseServiceClientService>() {
+  static readonly make = makeFeatureShowcaseServiceClient;
+}
 
-export const FeatureShowcaseServiceClientLayer = Layer.effect(FeatureShowcaseServiceClient, FeatureShowcaseServiceClient.make);
+export const FeatureShowcaseServiceClientLayer = Layer.scoped(FeatureShowcaseServiceClient, FeatureShowcaseServiceClient.make);
 
 export interface FeatureShowcaseServiceImplementation<R = never> {
   readonly describe: (request: FeatureRequest, context: CodegenSupport.GrpcServerContext) => Effect.Effect<FeatureResponse, GrpcStatusError.GrpcStatusError, R>;

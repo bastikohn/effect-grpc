@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { NodeServices } from "@effect/platform-node";
+import { NodeContext } from "@effect/platform-node";
 import { Effect } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -40,7 +40,7 @@ describe("generate", () => {
         inputs: [path.join(fixtureRoot, "well_known_types.proto")],
         outDir,
         importPaths: [fixtureRoot],
-      }).pipe(Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.provide(NodeContext.layer)),
     );
 
     expect(result.files.map((file) => path.basename(file)).sort()).toEqual([

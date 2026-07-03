@@ -30,7 +30,10 @@ export const generateClient = (file: GeneratorFile) =>
       `const make${serviceClientName(service.name)} = Effect.gen(function* () {`,
       ...(hasRpcMethods
         ? [
-            `  const client = yield* RpcClient.make(${serviceGroupName(service.name)});`,
+            // `flatten: true` keeps the full "<package>.<Service>/<Method>"
+            // tags callable; the default client shape would group them by the
+            // package prefix.
+            `  const client = yield* RpcClient.make(${serviceGroupName(service.name)}, { flatten: true });`,
           ]
         : []),
       ...(hasStreamingMethods
@@ -41,11 +44,11 @@ export const generateClient = (file: GeneratorFile) =>
       `  } satisfies ${serviceClientServiceName(service.name)};`,
       "});",
       "",
-      `export class ${serviceClientName(service.name)} extends Context.Service<${serviceClientName(service.name)}, ${serviceClientServiceName(service.name)}>()("${service.typeName}/${serviceClientName(service.name)}", {`,
-      `  make: make${serviceClientName(service.name)},`,
-      "}) {}",
+      `export class ${serviceClientName(service.name)} extends Context.Tag("${service.typeName}/${serviceClientName(service.name)}")<${serviceClientName(service.name)}, ${serviceClientServiceName(service.name)}>() {`,
+      `  static readonly make = make${serviceClientName(service.name)};`,
+      "}",
       "",
-      `export const ${serviceClientLayerName(service.name)} = Layer.effect(${serviceClientName(service.name)}, ${serviceClientName(service.name)}.make);`,
+      `export const ${serviceClientLayerName(service.name)} = Layer.scoped(${serviceClientName(service.name)}, ${serviceClientName(service.name)}.make);`,
       "",
     ];
   });
@@ -76,7 +79,7 @@ const clientMethodImpl = (
   switch (method.kind) {
     case "unary":
     case "server-streaming":
-      return `    ${method.localName}: (request, options) => client["${tag}"](request, { headers: CodegenSupport.headersFromOptions(options) }),`;
+      return `    ${method.localName}: (request, options) => client("${tag}", request, { headers: CodegenSupport.headersFromOptions(options) }),`;
     case "client-streaming":
       return `    ${method.localName}: ((requests, options) => streaming.clientStreaming("${tag}", requests, options)) as ${methodType},`;
     case "bidi-streaming":

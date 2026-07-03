@@ -14,7 +14,7 @@ export const spanName = (entry: GrpcMethodEntry): string => entry.tag;
 export const clientSpanOptions = (
   entry: GrpcMethodEntry,
   serverAddress?: URL,
-): Tracer.SpanOptionsNoTrace => ({
+): Tracer.SpanOptions => ({
   kind: "client",
   attributes: {
     ...commonAttributes(entry),
@@ -25,7 +25,7 @@ export const clientSpanOptions = (
 export const serverSpanOptions = (
   entry: GrpcMethodEntry,
   parent?: Tracer.ExternalSpan,
-): Tracer.SpanOptionsNoTrace => ({
+): Tracer.SpanOptions => ({
   kind: "server",
   ...(parent ? { parent } : {}),
   attributes: commonAttributes(entry),

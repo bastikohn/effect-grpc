@@ -1,5 +1,7 @@
 import type { CodeGeneratorResponse } from "@bufbuild/protobuf/wkt";
-import { Effect, FileSystem, Path } from "effect";
+import * as FileSystem from "@effect/platform/FileSystem";
+import * as Path from "@effect/platform/Path";
+import { Effect } from "effect";
 
 import { CodegenError, formatUnknown } from "./errors.js";
 

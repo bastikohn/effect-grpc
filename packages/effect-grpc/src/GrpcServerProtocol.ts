@@ -1,23 +1,22 @@
 import type { ConnectRouter, HandlerContext } from "@connectrpc/connect";
+import * as Headers from "@effect/platform/Headers";
+import * as HttpTraceContext from "@effect/platform/HttpTraceContext";
+import type { FromClientEncoded } from "@effect/rpc/RpcMessage";
+import * as RpcServer from "@effect/rpc/RpcServer";
 import {
   Cause,
   Context,
   Effect,
   Exit,
   Layer,
+  Mailbox,
   Option,
-  Queue,
+  Runtime,
   Schema,
   Scope,
   Stream,
 } from "effect";
 import * as Tracer from "effect/Tracer";
-import * as Headers from "effect/unstable/http/Headers";
-import * as HttpTraceContext from "effect/unstable/http/HttpTraceContext";
-import { ServerClient } from "effect/unstable/rpc/Rpc";
-import * as RpcServer from "effect/unstable/rpc/RpcServer";
-import type { FromClientEncoded } from "effect/unstable/rpc/RpcMessage";
-import { RequestId } from "effect/unstable/rpc/RpcMessage";
 
 import type { GrpcServerContext } from "./CodegenSupport.js";
 import * as GrpcMetadata from "./GrpcMetadata.js";
@@ -71,7 +70,7 @@ export type GrpcStreamingHandlers = ReadonlyMap<string, GrpcStreamingHandler>;
  * layer, so `GrpcNodeServer.serveAll` can collect them without changing the
  * user-facing service wiring.
  */
-export const GrpcStreamingHandlers = Context.Service<GrpcStreamingHandlers>(
+export const GrpcStreamingHandlers = Context.GenericTag<GrpcStreamingHandlers>(
   "@effect-grpc/effect-grpc/GrpcStreamingHandlers",
 );
 
@@ -104,10 +103,7 @@ const bindStreamingHandler = <R>(
     ? {
         kind: entry.kind,
         handler: (requests, serverContext) =>
-          Effect.provideContext(
-            entry.handler(requests, serverContext),
-            context,
-          ),
+          Effect.provide(entry.handler(requests, serverContext), context),
       }
     : {
         kind: entry.kind,
@@ -119,7 +115,7 @@ const bindStreamingHandler = <R>(
       };
 
 export interface GrpcServerProtocolResult {
-  readonly protocol: RpcServer.Protocol["Service"];
+  readonly protocol: RpcServer.Protocol["Type"];
   readonly routes: (router: ConnectRouter) => ConnectRouter;
 }
 
@@ -127,11 +123,22 @@ export const make = (
   options: GrpcServerProtocolOptions,
 ): Effect.Effect<GrpcServerProtocolResult, never, Scope.Scope> =>
   Effect.gen(function* () {
-    const context = yield* Effect.context<never>();
-    const run = Effect.runPromiseWith(context);
+    const runtime = yield* Effect.runtime<never>();
+    const runExit = Runtime.runPromiseExit(runtime);
+    // Rejections must carry the raw failure (a `ConnectError` /
+    // `GrpcStatusError`), not Effect's `FiberFailure` wrapper, so connect-node
+    // and the catch blocks below can map them to gRPC statuses.
+    const run = <A, E>(
+      effect: Effect.Effect<A, E>,
+      options?: { readonly signal?: AbortSignal },
+    ): Promise<A> =>
+      runExit(effect, options).then((exit) => {
+        if (exit._tag === "Success") return exit.value;
+        throw Cause.squash(exit.cause);
+      });
     const calls = new Map<number, CallState.CallState>();
     const clientIds = new Set<number>();
-    const disconnects = yield* Queue.unbounded<number>();
+    const disconnects = yield* Mailbox.make<number>();
     let nextClientId = 0;
     let writeRequest: (
       clientId: number,
@@ -176,7 +183,7 @@ export const make = (
       const signalDisconnect = () => {
         if (disconnected) return Promise.resolve();
         disconnected = true;
-        return run(Queue.offer(disconnects, clientId).pipe(Effect.asVoid));
+        return run(disconnects.offer(clientId).pipe(Effect.asVoid));
       };
       const release = async () => {
         if (released) return;
@@ -310,7 +317,7 @@ export const make = (
         Effect.makeSpanScoped(
           GrpcTracing.spanName(entry),
           GrpcTracing.serverSpanOptions(entry, traceParent(headers)),
-        ).pipe(Scope.provide(spanScope)),
+        ).pipe(Scope.extend(spanScope)),
       );
       const state = await run(CallState.makeServerStreaming);
       const clientId = allocate(state);
@@ -448,7 +455,7 @@ export const make = (
         Effect.makeSpanScoped(
           GrpcTracing.spanName(entry),
           GrpcTracing.serverSpanOptions(entry, traceParent(headers)),
-        ).pipe(Scope.provide(spanScope)),
+        ).pipe(Scope.extend(spanScope)),
       );
       const recordStatus = GrpcTracing.statusRecorder(span);
       let spanExit: Exit.Exit<void, GrpcStatusError.GrpcStatusError> =
@@ -462,9 +469,9 @@ export const make = (
         .pipe(
           Stream.mapEffect((value) => encodeStreamingResponse(entry, value)),
         );
-      const iterator = Stream.toAsyncIterableWith(
+      const iterator = Stream.toAsyncIterableRuntime(
         responses,
-        Context.add(context, Tracer.ParentSpan, span),
+        Runtime.updateContext(runtime, Context.add(Tracer.ParentSpan, span)),
       )[Symbol.asyncIterator]();
       // Closing the iterator interrupts the handler fiber, so a pending pull
       // settles when the client goes away mid-stream.
@@ -556,8 +563,7 @@ const emptyStreamingHandlers: GrpcStreamingHandlers = new Map();
 const streamingServerContext = (
   headers: ReadonlyArray<readonly [string, string]>,
 ): GrpcServerContext => ({
-  client: new ServerClient(0),
-  requestId: RequestId(0n),
+  clientId: 0,
   metadata: GrpcMetadata.fromHeaders(headers),
 });
 
@@ -604,8 +610,8 @@ const encodeStreamingResponse = (entry: GrpcMethodEntry, value: unknown) =>
 const streamingCauseError = (
   cause: Cause.Cause<GrpcStatusError.GrpcStatusError>,
 ): GrpcStatusError.GrpcStatusError =>
-  Option.getOrElse(Cause.findErrorOption(cause), () =>
-    Cause.hasInterrupts(cause)
+  Option.getOrElse(Cause.failureOption(cause), () =>
+    Cause.isInterrupted(cause)
       ? GrpcStatusError.cancelled("RPC cancelled")
       : GrpcStatusError.internal("RPC handler defect", Cause.squash(cause)),
   );
@@ -661,7 +667,7 @@ const fromGrpcRequest = (entry: GrpcMethodEntry, request: unknown) => {
 
 const validatePayload = (entry: GrpcMethodEntry, payload: unknown) => {
   try {
-    Schema.decodeUnknownSync(Schema.toCodecJson(entry.payloadSchema))(payload);
+    Schema.decodeUnknownSync(entry.payloadSchema)(payload);
   } catch (cause) {
     throw GrpcStatusError.toConnectError(
       GrpcStatusError.invalidArgument("Invalid gRPC request payload", cause),

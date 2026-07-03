@@ -194,15 +194,15 @@ const fieldSchema = (
     case "list":
       return `Schema.Array(${valueSchema(field.item, messageName, recursiveEdges)})`;
     case "map":
-      return `Schema.Record(${mapKeySchema(field.key.type)}, ${valueSchema(field.value, messageName, recursiveEdges)})`;
+      return `Schema.Record({ key: ${mapKeySchema(field.key.type)}, value: ${valueSchema(field.value, messageName, recursiveEdges)} })`;
     case "oneof":
-      return `Schema.Union([${[
+      return `Schema.Union(${[
         ...field.cases.map(
           (oneofCase) =>
             `Schema.Struct({ case: Schema.Literal("${oneofCase.name}"), value: ${valueSchema(oneofCase.value, messageName, recursiveEdges)} })`,
         ),
         "Schema.Struct({ case: Schema.Undefined, value: Schema.optional(Schema.Undefined) })",
-      ].join(", ")}])`;
+      ].join(", ")})`;
   }
 };
 
@@ -230,7 +230,7 @@ const messageSchema = (
 ) =>
   field.source === "local"
     ? recursiveEdges.has(`${currentMessageName}->${field.messageName}`)
-      ? `Schema.suspend((): Schema.Codec<unknown, unknown, never, never> => ${field.messageName}Schema)`
+      ? `Schema.suspend((): Schema.Schema<any, any, never> => ${field.messageName}Schema)`
       : `Schema.suspend((): typeof ${field.messageName}Schema => ${field.messageName}Schema)`
     : `${field.messageName}Schema`;
 
@@ -239,7 +239,9 @@ const mapKeySchema = (
 ) => {
   switch (type) {
     case "number":
-      return "Schema.Number";
+      // Record keys must be string-like; `${number}` keeps the numeric-key
+      // semantics of proto maps while validating the string form.
+      return "Schema.TemplateLiteral(Schema.Number)";
     case "string":
       return "Schema.String";
   }
@@ -254,10 +256,10 @@ const scalarSchema = (type: ScalarKind, unsigned?: boolean) => {
     case "boolean":
       return "Schema.Boolean";
     case "bytes":
-      return "Schema.Uint8Array";
+      return "Schema.Uint8ArrayFromBase64";
     case "bigint":
       return unsigned
-        ? "Schema.BigInt.check(Schema.isGreaterThanOrEqualToBigInt(0n))"
+        ? "Schema.BigInt.pipe(Schema.greaterThanOrEqualToBigInt(0n))"
         : "Schema.BigInt";
     default:
       return "Schema.Unknown";
@@ -285,7 +287,7 @@ const wellKnownSchema = (type: WellKnownKind) => {
     case "string-value":
       return "Schema.String";
     case "bytes-value":
-      return "Schema.Uint8Array";
+      return "Schema.Uint8ArrayFromBase64";
     case "any":
       return "Schema.Struct({ typeUrl: Schema.String, value: Schema.String })";
     case "struct":

@@ -1,7 +1,7 @@
 import type { ConnectRouter, HandlerContext } from "@connectrpc/connect";
-import { Deferred, Effect, Fiber, Queue, Ref, Schema, Stream } from "effect";
-import * as RpcClient from "effect/unstable/rpc/RpcClient";
-import type { FromServerEncoded } from "effect/unstable/rpc/RpcMessage";
+import { Chunk, Deferred, Effect, Fiber, Ref, Schema, Stream } from "effect";
+import * as RpcClient from "@effect/rpc/RpcClient";
+import type { FromServerEncoded } from "@effect/rpc/RpcMessage";
 import { describe, expect, it } from "vitest";
 
 import * as GrpcClientProtocol from "../src/GrpcClientProtocol.js";
@@ -20,13 +20,13 @@ describe("GrpcClientProtocol", () => {
           const received = yield* Deferred.make<FromServerEncoded>();
 
           yield* protocol
-            .run(0, (message) =>
+            .run((message) =>
               Deferred.succeed(received, message).pipe(Effect.asVoid),
             )
             .pipe(Effect.forkScoped);
-          yield* Effect.yieldNow;
+          yield* Effect.yieldNow();
 
-          yield* protocol.send(0, {
+          yield* protocol.send({
             _tag: "Request",
             id: "1",
             tag: "missing.Service/Call",
@@ -50,7 +50,7 @@ describe("GrpcClientProtocol", () => {
     if (response?._tag !== "Exit" || response.exit._tag !== "Failure") {
       throw new Error("Expected failure exit");
     }
-    expect(response.exit.cause[0]).toMatchObject({
+    expect(response.exit.cause).toMatchObject({
       _tag: "Fail",
       error: { code: "unimplemented" },
     });
@@ -117,7 +117,7 @@ describe("GrpcServerProtocol", () => {
           const response = yield* Effect.promise(() =>
             implementation.get({}, handlerContext()),
           );
-          const disconnected = yield* Queue.take(protocol.disconnects);
+          const disconnected = yield* protocol.disconnects.take;
           const clientIds = yield* protocol.clientIds;
           return { response, disconnected, clientIds };
         }),
@@ -157,7 +157,7 @@ describe("GrpcServerProtocol", () => {
             }
             throw new Error("Expected unary handler to fail");
           });
-          const disconnected = yield* Queue.take(protocol.disconnects);
+          const disconnected = yield* protocol.disconnects.take;
           const clientIds = yield* protocol.clientIds;
           return { error, disconnected, clientIds };
         }),
@@ -318,7 +318,7 @@ describe("GrpcServerProtocol", () => {
             }
             throw new Error("Expected streaming response conversion to fail");
           });
-          const disconnected = yield* Queue.take(protocol.disconnects);
+          const disconnected = yield* protocol.disconnects.take;
           const clientIds = yield* protocol.clientIds;
           return { error, disconnected, clientIds };
         }),
@@ -353,7 +353,9 @@ describe("GrpcServerProtocol streaming bridge", () => {
                   kind: "client-streaming",
                   handler: (requests) =>
                     Stream.runCollect(requests).pipe(
-                      Effect.map((items) => ({ items })),
+                      Effect.map((items) => ({
+                        items: Chunk.toReadonlyArray(items),
+                      })),
                     ),
                 },
               ],
@@ -562,7 +564,7 @@ describe("call state", () => {
         const fiber = yield* state
           .offer(chunk)
           .pipe(Effect.andThen(Deferred.succeed(offered, undefined)))
-          .pipe(Effect.forkChild);
+          .pipe(Effect.fork);
         const beforeDrain = yield* Deferred.await(offered).pipe(
           Effect.as("offered" as const),
           Effect.race(Effect.sleep("20 millis").pipe(Effect.as("blocked"))),

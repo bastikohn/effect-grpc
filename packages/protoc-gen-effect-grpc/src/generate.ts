@@ -59,7 +59,7 @@ export const generateFile = (file: GeneratorFile): string => {
     `import { ${effectImports.join(", ")} } from "effect";`,
     ...(hasServices
       ? [
-          `import { ${rpcImports.join(", ")} } from "effect/unstable/rpc";`,
+          `import { ${rpcImports.join(", ")} } from "@effect/rpc";`,
           `import { ${effectGrpcImports.join(", ")} } from "@effect-grpc/effect-grpc";`,
           "import {",
           ...descriptorImports.map((item) => `  ${item},`),

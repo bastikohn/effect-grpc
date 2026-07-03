@@ -189,16 +189,22 @@ const writeTypecheckProject = (
             "@effect-grpc/effect-grpc": ["packages/effect-grpc/src/index.ts"],
             "@effect-grpc/effect-grpc/*": ["packages/effect-grpc/src/*"],
             effect: [
-              "packages/effect-grpc/node_modules/effect/dist/index.d.ts",
+              "packages/effect-grpc/node_modules/effect/dist/dts/index.d.ts",
             ],
-            "effect/unstable/rpc": [
-              "packages/effect-grpc/node_modules/effect/dist/unstable/rpc/index.d.ts",
+            "effect/*": [
+              "packages/effect-grpc/node_modules/effect/dist/dts/*.d.ts",
             ],
-            "effect/unstable/rpc/*": [
-              "packages/effect-grpc/node_modules/effect/dist/unstable/rpc/*.d.ts",
+            "@effect/rpc": [
+              "packages/effect-grpc/node_modules/@effect/rpc/dist/dts/index.d.ts",
             ],
-            "effect/unstable/http/*": [
-              "packages/effect-grpc/node_modules/effect/dist/unstable/http/*.d.ts",
+            "@effect/rpc/*": [
+              "packages/effect-grpc/node_modules/@effect/rpc/dist/dts/*.d.ts",
+            ],
+            "@effect/platform": [
+              "packages/effect-grpc/node_modules/@effect/platform/dist/dts/index.d.ts",
+            ],
+            "@effect/platform/*": [
+              "packages/effect-grpc/node_modules/@effect/platform/dist/dts/*.d.ts",
             ],
           },
         },

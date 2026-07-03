@@ -17,6 +17,8 @@ const packageNames = [
   "@effect-grpc/protoc-gen-effect-grpc",
 ];
 const effectVersion = readWorkspaceCatalogVersion("effect");
+const effectPlatformVersion = readWorkspaceCatalogVersion("@effect/platform");
+const effectRpcVersion = readWorkspaceCatalogVersion("@effect/rpc");
 const workDir = mkdtempSync(join(tmpdir(), "effect-grpc-package-smoke-"));
 const packDir = join(workDir, "pack");
 const consumerDir = join(workDir, "consumer");
@@ -32,8 +34,9 @@ const run = (command, args, cwd) => {
 function readWorkspaceCatalogVersion(name) {
   const workspace = readFileSync(join(root, "pnpm-workspace.yaml"), "utf8");
   const catalog = workspace.match(/^catalog:\n(?<body>(?:  .+\n?)+)/m);
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
   const range = catalog?.groups?.body.match(
-    new RegExp(`^  ${name}: (?<range>\\S+)`, "m"),
+    new RegExp(`^  "?${escapedName}"?: (?<range>\\S+)`, "m"),
   )?.groups?.range;
 
   if (!range) {
@@ -101,6 +104,8 @@ try {
           "@bufbuild/protobuf": "^2.0.0",
           "@bufbuild/protoc-gen-es": "^2.0.0",
           "@connectrpc/connect": "^2.0.0",
+          "@effect/platform": effectPlatformVersion,
+          "@effect/rpc": effectRpcVersion,
           effect: effectVersion,
           typescript: "^5.0.0",
         },
@@ -168,7 +173,7 @@ message User {
   );
   writeFileSync(
     join(consumerDir, "smoke.ts"),
-    `import { Effect, Layer, Stream } from "effect";
+    `import { Chunk, Effect, Layer, Stream } from "effect";
 import { GrpcClientProtocol, GrpcMethodRegistry, GrpcStatusError } from "@effect-grpc/effect-grpc";
 import { plugin } from "@effect-grpc/protoc-gen-effect-grpc";
 import {
@@ -185,7 +190,7 @@ const implementation: UserServiceImplementation = {
     user: { id: request.id, name: "Demo User" }
   }),
   uploadUsers: (requests) => Stream.runCollect(requests).pipe(
-    Effect.map((users) => ({ user: users[0] }))
+    Effect.map((users) => ({ user: Chunk.toReadonlyArray(users)[0] }))
   )
 };
 const handlers = UserServiceHandlersLayer(implementation);

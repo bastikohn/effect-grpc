@@ -52,5 +52,8 @@
     "@bufbuild/protobuf": "^2.0.0",
     "@bufbuild/protoplugin": "^2.0.0"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "@effect/rpc": "catalog:",
+    "effect": "catalog:"
+  }
 }

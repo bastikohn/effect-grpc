@@ -242,7 +242,7 @@ describe("plugin fixture", () => {
     );
 
     expect(response.file[0]?.content).toContain(
-      "labels: Schema.Record(Schema.Number, Schema.String)",
+      "labels: Schema.Record({ key: Schema.TemplateLiteral(Schema.Number), value: Schema.String })",
     );
     expect(response.file[0]?.content).toContain(
       "map(([key, value]) => [Number(key), (value) as string])",
@@ -287,7 +287,7 @@ describe("plugin fixture", () => {
     );
 
     expect(response.file[0]?.content).toContain(
-      "states: Schema.Record(Schema.String, KindSchema)",
+      "states: Schema.Record({ key: Schema.String, value: KindSchema })",
     );
     expect(response.file[0]?.content).toContain("value as Kind");
   });

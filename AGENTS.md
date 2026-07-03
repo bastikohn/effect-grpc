@@ -10,6 +10,6 @@ This library is brand new - no active users. It's ok to introduce breaking chang
 
 ## `opensrc`
 
-- Use `opensrc` for raw source access to this project's `effect` v4 and `grpc` libraries.
+- Use `opensrc` for raw source access to this project's `effect` and `grpc` libraries (this branch targets Effect v3; `main` targets v4).
 - Feel free to search in `~/.opensrc/` directly. The repos may already exist. Treat this directory as a read-only reference source.
 - `opensrc` is not available in the host's `$PATH`, try using the project's flake or raw Nix commands to access/run it.

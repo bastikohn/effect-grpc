@@ -2,9 +2,13 @@ packages:
   - "packages/*"
   - "examples/*"
 catalog:
-  "@effect/platform-node": 4.0.0-beta.92
-  effect: 4.0.0-beta.92
+  "@effect/cli": ^0.75.2
+  "@effect/platform": ^0.96.2
+  "@effect/platform-node": ^0.107.0
+  "@effect/rpc": ^0.75.1
+  effect: ^3.21.4
 allowBuilds:
   "@bufbuild/buf": true
+  "@parcel/watcher": false
   esbuild: true
   msgpackr-extract: true

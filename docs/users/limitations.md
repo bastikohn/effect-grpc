@@ -5,7 +5,7 @@ client-streaming, and bidi-streaming.
 
 ## Streaming Semantics
 
-Unary and server-streaming methods run through `effect/unstable/rpc`
+Unary and server-streaming methods run through `@effect/rpc`
 (`RpcClient`/`RpcServer`). The Effect RPC wire protocol has no client-to-server
 stream, so client-streaming and bidi-streaming methods bypass it and bridge
 `Stream` and connect `AsyncIterable` directly over the same transport and
@@ -25,9 +25,11 @@ registry. Consequences:
 
 ## Effect Compatibility
 
-This prototype currently targets `effect@4.0.0-beta.92`. It uses
-`effect/unstable/rpc`, so compatibility is intentionally pinned. Effect beta
-upgrades must update tests, generated code, and package smoke together.
+This branch targets stable Effect v3 (`effect ^3.21.4`) with the v3 companion
+packages `@effect/rpc`, `@effect/platform`, `@effect/platform-node`, and
+`@effect/cli`. An Effect v4 version is maintained on the `main` branch and will
+become the primary target once v4 is released. Effect upgrades must update
+tests, generated code, and package smoke together.
 
 The generator currently supports:
 

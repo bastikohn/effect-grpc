@@ -48,7 +48,7 @@ current directory is used.
 The pipeline is also available programmatically:
 
 ```ts
-import { NodeServices } from "@effect/platform-node";
+import { NodeContext } from "@effect/platform-node";
 import { generate } from "@effect-grpc/codegen";
 import { Effect } from "effect";
 
@@ -57,6 +57,6 @@ await Effect.runPromise(
     inputs: ["proto/demo/v1/user_service.proto"],
     outDir: "src/generated",
     plugin: { methods: ["unary"] },
-  }).pipe(Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.provide(NodeContext.layer)),
 );
 ```

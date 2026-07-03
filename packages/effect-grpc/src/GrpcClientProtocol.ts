@@ -1,10 +1,22 @@
 import type { CallOptions, Interceptor, Transport } from "@connectrpc/connect";
 import { createGrpcTransport } from "@connectrpc/connect-node";
 import type { GrpcTransportOptions } from "@connectrpc/connect-node";
-import { Context, Effect, Exit, Layer, Scope, Stream } from "effect";
+import * as RpcClient from "@effect/rpc/RpcClient";
+import type {
+  FromClientEncoded,
+  FromServerEncoded,
+} from "@effect/rpc/RpcMessage";
+import {
+  Cause,
+  Context,
+  Effect,
+  Exit,
+  Layer,
+  Runtime,
+  Scope,
+  Stream,
+} from "effect";
 import type * as Tracer from "effect/Tracer";
-import * as RpcClient from "effect/unstable/rpc/RpcClient";
-import type { FromClientEncoded } from "effect/unstable/rpc/RpcMessage";
 
 import type { GrpcCallOptions } from "./CodegenSupport.js";
 import * as GrpcMetadata from "./GrpcMetadata.js";
@@ -72,9 +84,9 @@ export const makeTransport = (options: GrpcTransportOptions): Transport =>
 export const metadataInterceptor = <R>(
   resolve: Effect.Effect<GrpcMetadata.GrpcMetadata, never, R>,
 ): Effect.Effect<Interceptor, never, R> =>
-  Effect.context<R>().pipe(
-    Effect.map((context): Interceptor => {
-      const run = Effect.runPromiseWith(context);
+  Effect.runtime<R>().pipe(
+    Effect.map((runtime): Interceptor => {
+      const run = Runtime.runPromise(runtime);
       return (next) => async (req) => {
         const metadata = await run(resolve);
         const present = new Set<string>();
@@ -107,10 +119,9 @@ export interface GrpcStreamingClientService {
   ) => Stream.Stream<unknown, GrpcStatusError.GrpcStatusError | E>;
 }
 
-export class GrpcStreamingClient extends Context.Service<
-  GrpcStreamingClient,
-  GrpcStreamingClientService
->()("@effect-grpc/effect-grpc/GrpcStreamingClient") {}
+export class GrpcStreamingClient extends Context.Tag(
+  "@effect-grpc/effect-grpc/GrpcStreamingClient",
+)<GrpcStreamingClient, GrpcStreamingClientService>() {}
 
 /**
  * Builds the protocol layer. The common case: pass `baseUrl` plus any
@@ -133,17 +144,17 @@ export const layerFromTransport = (
   options: GrpcClientProtocolTransportOptions,
 ): Layer.Layer<RpcClient.Protocol | GrpcStreamingClient> =>
   Layer.mergeAll(
-    Layer.effect(RpcClient.Protocol, make(options)),
+    Layer.scoped(RpcClient.Protocol, make(options)),
     Layer.effect(GrpcStreamingClient, makeStreaming(options)),
   );
 
 const make = (
   options: GrpcClientProtocolTransportOptions,
-): Effect.Effect<RpcClient.Protocol["Service"], never, Scope.Scope> =>
+): Effect.Effect<RpcClient.Protocol["Type"], never, Scope.Scope> =>
   RpcClient.Protocol.make((writeResponse) =>
     Effect.gen(function* () {
-      const context = yield* Effect.context<never>();
-      const run = Effect.runPromiseWith(context);
+      const runtime = yield* Effect.runtime<never>();
+      const run = Runtime.runPromise(runtime);
       const transport = options.transport;
       const activeCalls = new Map<string, AbortController>();
 
@@ -156,20 +167,13 @@ const make = (
         }),
       );
 
-      const callKey = (clientId: number, requestId: string) =>
-        `${clientId}:${requestId}`;
-
-      const send = (
-        clientId: number,
-        message: FromClientEncoded,
-      ): Effect.Effect<void> => {
+      const send = (message: FromClientEncoded): Effect.Effect<void> => {
         switch (message._tag) {
           case "Request":
-            return sendRequest(message, clientId);
+            return sendRequest(message);
           case "Interrupt": {
-            const key = callKey(clientId, message.requestId);
-            activeCalls.get(key)?.abort();
-            activeCalls.delete(key);
+            activeCalls.get(message.requestId)?.abort();
+            activeCalls.delete(message.requestId);
             return Effect.void;
           }
           case "Ack":
@@ -181,12 +185,10 @@ const make = (
 
       const sendRequest = (
         request: Extract<FromClientEncoded, { readonly _tag: "Request" }>,
-        clientId: number,
       ): Effect.Effect<void> => {
         const entry = options.registry.get(request.tag);
         if (!entry) {
           return writeResponse(
-            clientId,
             failureExit(
               request.id,
               GrpcStatusError.unimplemented(
@@ -197,47 +199,52 @@ const make = (
         }
 
         const controller = new AbortController();
-        const key = callKey(clientId, request.id);
-        activeCalls.set(key, controller);
+        activeCalls.set(request.id, controller);
 
+        // Delivering the terminal exit resumes the caller, which immediately
+        // interrupts this send fiber. Finish all span bookkeeping first and
+        // write the terminal message only after the span has ended.
+        let terminal: FromServerEncoded | undefined;
         return Effect.gen(function* () {
           const span = yield* Effect.currentSpan.pipe(Effect.orDie);
-          const status = yield* Effect.promise(async (signal) => {
+          const result = yield* Effect.promise(async (signal) => {
             const abort = () => controller.abort();
             signal.addEventListener("abort", abort, { once: true });
             try {
-              return await invoke(
-                entry,
-                request,
-                clientId,
-                controller.signal,
-                span,
-              );
+              return await invoke(entry, request, controller.signal, span);
             } finally {
               signal.removeEventListener("abort", abort);
-              activeCalls.delete(key);
+              activeCalls.delete(request.id);
             }
           });
-          GrpcTracing.annotateSpanStatus(span, status);
-          if (status !== "ok") {
-            yield* Effect.fail(status);
+          terminal = result.terminal;
+          GrpcTracing.annotateSpanStatus(span, result.status);
+          if (result.status !== "ok") {
+            yield* Effect.fail(result.status);
           }
         }).pipe(
           Effect.withSpan(
             GrpcTracing.spanName(entry),
             GrpcTracing.clientSpanOptions(entry, options.serverAddress),
           ),
-          Effect.catch(() => Effect.void),
+          Effect.exit,
+          Effect.flatMap(() =>
+            terminal === undefined ? Effect.void : writeResponse(terminal),
+          ),
         );
       };
+
+      interface InvokeResult {
+        readonly status: GrpcStatusCode;
+        readonly terminal: FromServerEncoded;
+      }
 
       const invoke = async (
         entry: GrpcMethodEntry,
         request: Extract<FromClientEncoded, { readonly _tag: "Request" }>,
-        clientId: number,
         signal: AbortSignal,
         span: Tracer.Span,
-      ): Promise<GrpcStatusCode> => {
+      ): Promise<InvokeResult> => {
         const headers = headersWithTrace(request, span);
         const headerTimeoutMs = readTimeoutMs(request.headers);
         const callOptions: CallOptions = {
@@ -253,18 +260,15 @@ const make = (
         >;
         const method = client[entry.localName];
         if (typeof method !== "function") {
-          await run(
-            writeResponse(
-              clientId,
-              failureExit(
-                request.id,
-                GrpcStatusError.unimplemented(
-                  `gRPC client is missing method ${entry.localName}`,
-                ),
+          return {
+            status: "unimplemented",
+            terminal: failureExit(
+              request.id,
+              GrpcStatusError.unimplemented(
+                `gRPC client is missing method ${entry.localName}`,
               ),
             ),
-          );
-          return "unimplemented";
+          };
         }
 
         try {
@@ -275,16 +279,13 @@ const make = (
               grpcRequest,
               callOptions,
             );
-            await run(
-              writeResponse(
-                clientId,
-                successExit(
-                  request.id,
-                  entry.fromGrpcResponse(response as never),
-                ),
+            return {
+              status: "ok",
+              terminal: successExit(
+                request.id,
+                entry.fromGrpcResponse(response as never),
               ),
-            );
-            return "ok";
+            };
           }
 
           const responses = method.call(client, grpcRequest, callOptions) as
@@ -292,19 +293,20 @@ const make = (
             | Promise<AsyncIterable<unknown>>;
           for await (const response of await responses) {
             await run(
-              writeResponse(clientId, {
+              writeResponse({
                 _tag: "Chunk",
                 requestId: request.id,
                 values: [entry.fromGrpcResponse(response as never)],
               }),
             );
           }
-          await run(writeResponse(clientId, successExit(request.id, null)));
-          return "ok";
+          return { status: "ok", terminal: successExit(request.id, null) };
         } catch (cause) {
           const error = GrpcStatusError.fromConnectError(cause);
-          await run(writeResponse(clientId, failureExit(request.id, error)));
-          return error.code;
+          return {
+            status: error.code,
+            terminal: failureExit(request.id, error),
+          };
         }
       };
 
@@ -328,7 +330,7 @@ const makeStreaming = (
   options: GrpcClientProtocolTransportOptions,
 ): Effect.Effect<GrpcStreamingClientService> =>
   Effect.gen(function* () {
-    const context = yield* Effect.context<never>();
+    const runtime = yield* Effect.runtime<never>();
     const transport = options.transport;
 
     const resolveMethod = (entry: GrpcMethodEntry) => {
@@ -374,18 +376,23 @@ const makeStreaming = (
       state: StreamingCallState,
       controller: AbortController,
     ) => {
-      const iterator = Stream.toAsyncIterableWith(
+      const iterator = Stream.toAsyncIterableRuntime(
         Stream.mapEffect(requests, encodeRequest(entry)),
-        context,
+        runtime,
       )[Symbol.asyncIterator]();
       const next = async (): Promise<IteratorResult<unknown>> => {
         try {
           return await iterator.next();
         } catch (error) {
           // gRPC has no channel for client-side failures other than cancelling
-          // the call: remember the original error so the caller sees it while
-          // the server observes `cancelled`.
-          state.failure ??= { error };
+          // the call: remember the original error (unwrapped from the runtime's
+          // `FiberFailure`) so the caller sees it while the server observes
+          // `cancelled`.
+          state.failure ??= {
+            error: Runtime.isFiberFailure(error)
+              ? Cause.squash(error[Runtime.FiberFailureCauseId])
+              : error,
+          };
           controller.abort();
           throw error;
         }
@@ -493,7 +500,7 @@ const makeStreaming = (
           GrpcStatusError.unimplemented(`Unknown gRPC RPC tag: ${tag}`),
         );
       }
-      return Stream.unwrap(
+      return Stream.unwrapScoped(
         Effect.gen(function* () {
           const span = yield* Effect.makeSpanScoped(
             GrpcTracing.spanName(entry),
@@ -520,7 +527,7 @@ const makeStreaming = (
             Effect.promise(async () => {
               controller.abort();
               await pump.close();
-              record(Exit.hasInterrupts(exit) ? "cancelled" : "ok");
+              record(Exit.isInterrupted(exit) ? "cancelled" : "ok");
             }),
           );
           const responses = method(

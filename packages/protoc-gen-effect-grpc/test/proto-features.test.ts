@@ -7,7 +7,7 @@ import {
   type GeneratedProtoFeature,
   typecheckProtoFeature,
 } from "./protoFeatureFixtures.js";
-import { Schema } from "../../effect-grpc/node_modules/effect/dist/index.js";
+import { Schema } from "effect";
 
 interface ConverterEntry {
   readonly fromGrpcRequest: (message: unknown) => unknown;
@@ -484,7 +484,7 @@ describe("proto feature fixtures", () => {
 
     expect(decoded).toEqual({
       createdAt: "1970-01-01T00:00:01.500Z",
-      timeout: { _tag: "Millis", value: 2250 },
+      timeout: { _tag: "Millis", millis: 2250 },
       enabled: true,
     });
     expect(
@@ -502,7 +502,7 @@ describe("proto feature fixtures", () => {
     expect(
       entry.toGrpcRequest({
         createdAt: "1970-01-01T00:00:00.000Z",
-        timeout: { _tag: "Millis", value: 0 },
+        timeout: { _tag: "Millis", millis: 0 },
         enabled: true,
       }),
     ).toEqual({
@@ -513,7 +513,7 @@ describe("proto feature fixtures", () => {
     expect(
       entry.toGrpcRequest({
         createdAt: "1970-01-01T00:00:00.000Z",
-        timeout: { _tag: "Nanos", value: "1" },
+        timeout: { _tag: "Nanos", nanos: "1" },
         enabled: false,
       }),
     ).toEqual({
@@ -542,8 +542,8 @@ describe("proto feature fixtures", () => {
     );
     expect(
       durationEntry.fromGrpcRequest({ seconds: 2n, nanos: 250_000_000 }),
-    ).toEqual({ _tag: "Millis", value: 2250 });
-    expect(durationEntry.toGrpcRequest({ _tag: "Nanos", value: "1" })).toEqual({
+    ).toEqual({ _tag: "Millis", millis: 2250 });
+    expect(durationEntry.toGrpcRequest({ _tag: "Nanos", nanos: "1" })).toEqual({
       seconds: 0n,
       nanos: 1,
     });
@@ -616,7 +616,7 @@ describe("proto feature fixtures", () => {
           choice: { case: "timeout", value: { seconds: 1n, nanos: 0 } },
         }) as { readonly choice?: unknown }
       ).choice,
-    ).toEqual({ case: "timeout", value: { _tag: "Millis", value: 1000 } });
+    ).toEqual({ case: "timeout", value: { _tag: "Millis", millis: 1000 } });
     expect(
       (
         entry.fromGrpcRequest({
@@ -661,9 +661,9 @@ describe("proto feature fixtures", () => {
       "features.v1.OneofFeature/Echo",
     );
 
-    // The unset oneof case encodes as `null` (the JSON codec's `Schema.Undefined`
-    // representation), so it decodes back to the `undefined` case.
-    expect(entry.fromGrpcRequest({})).toEqual({ query: { case: null } });
+    // The unset oneof case keeps the `case` key with an `undefined` value so
+    // it decodes against the `Schema.Undefined` branch.
+    expect(entry.fromGrpcRequest({})).toEqual({ query: { case: undefined } });
     expect(
       entry.fromGrpcRequest({ query: { case: "id", value: "1" } }),
     ).toEqual({ query: { case: "id", value: "1" } });
@@ -699,7 +699,7 @@ describe("proto feature fixtures", () => {
     expect(entry.fromGrpcRequest({})).toEqual({
       items: [],
       byId: {},
-      choice: { case: null },
+      choice: { case: undefined },
     });
   });
 
@@ -728,7 +728,7 @@ describe("proto feature fixtures", () => {
       users: [],
       byId: {},
       states: [],
-      choice: { case: null },
+      choice: { case: undefined },
     });
   });
 

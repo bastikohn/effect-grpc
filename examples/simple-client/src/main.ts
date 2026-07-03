@@ -1,6 +1,6 @@
-import { NodeRuntime, NodeServices } from "@effect/platform-node";
+import { Command, HelpDoc, Options, ValidationError } from "@effect/cli";
+import { NodeContext, NodeRuntime } from "@effect/platform-node";
 import { Console, Effect, Layer, Stream } from "effect";
-import { CliError, Command, Flag } from "effect/unstable/cli";
 
 import { GrpcClientProtocol } from "@effect-grpc/effect-grpc";
 import {
@@ -75,28 +75,30 @@ const watchUsers = (baseUrl: URL, tenantId: string, count: number) =>
     }),
   );
 
-const baseUrl = Flag.string("base-url").pipe(
-  Flag.mapTryCatch(
+const baseUrl = Options.text("base-url").pipe(
+  Options.mapTryCatch(
     (value) => new URL(value),
     (error) =>
-      `Invalid URL: ${error instanceof Error ? error.message : String(error)}`,
+      HelpDoc.p(
+        `Invalid URL: ${error instanceof Error ? error.message : String(error)}`,
+      ),
   ),
-  Flag.withDefault(new URL("http://127.0.0.1:50051")),
-  Flag.withDescription("gRPC server URL"),
+  Options.withDefault(new URL("http://127.0.0.1:50051")),
+  Options.withDescription("gRPC server URL"),
 );
 
-const simpleClient = Command.make("effect-grpc-simple-client").pipe(
-  Command.withSharedFlags({ baseUrl }),
-  Command.withHandler(({ baseUrl }) => getUser(baseUrl, "123")),
-  Command.withDescription("Call the effect-grpc simple demo service"),
-);
+const simpleClient = Command.make(
+  "effect-grpc-simple-client",
+  { baseUrl },
+  ({ baseUrl }) => getUser(baseUrl, "123"),
+).pipe(Command.withDescription("Call the effect-grpc simple demo service"));
 
 const getUserCommand = Command.make(
   "get-user",
   {
-    id: Flag.string("id").pipe(
-      Flag.withDefault("123"),
-      Flag.withDescription("user id"),
+    id: Options.text("id").pipe(
+      Options.withDefault("123"),
+      Options.withDescription("user id"),
     ),
   },
   ({ id }) =>
@@ -109,13 +111,13 @@ const getUserCommand = Command.make(
 const watchUsersCommand = Command.make(
   "watch-users",
   {
-    tenantId: Flag.string("tenant-id").pipe(
-      Flag.withDefault("demo"),
-      Flag.withDescription("tenant id"),
+    tenantId: Options.text("tenant-id").pipe(
+      Options.withDefault("demo"),
+      Options.withDescription("tenant id"),
     ),
-    count: Flag.integer("count").pipe(
-      Flag.withDefault(3),
-      Flag.withDescription("number of events to request"),
+    count: Options.integer("count").pipe(
+      Options.withDefault(3),
+      Options.withDescription("number of events to request"),
     ),
   },
   ({ tenantId, count }) =>
@@ -129,12 +131,15 @@ const setFailureExitCode = Effect.sync(() => {
   process.exitCode = 1;
 });
 
-simpleClient.pipe(
-  Command.withSubcommands([getUserCommand, watchUsersCommand]),
-  Command.run({ version: "0.0.0" }),
-  Effect.catch((error) =>
-    CliError.isCliError(error) ? setFailureExitCode : Effect.fail(error),
+const cli = Command.run(
+  simpleClient.pipe(
+    Command.withSubcommands([getUserCommand, watchUsersCommand]),
   ),
-  Effect.provide(NodeServices.layer),
+  { name: "effect-grpc-simple-client", version: "0.0.0" },
+);
+
+cli(process.argv).pipe(
+  Effect.catchIf(ValidationError.isValidationError, () => setFailureExitCode),
+  Effect.provide(NodeContext.layer),
   NodeRuntime.runMain,
 );

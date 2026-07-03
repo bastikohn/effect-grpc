@@ -7,10 +7,10 @@ export type GrpcMetadata = ReadonlyArray<
 >;
 
 export const schema = Schema.Array(
-  Schema.Tuple([
+  Schema.Tuple(
     Schema.String,
-    Schema.Union([Schema.String, Schema.Uint8Array]),
-  ]),
+    Schema.Union(Schema.String, Schema.Uint8ArrayFromBase64),
+  ),
 );
 
 export const empty: GrpcMetadata = [];

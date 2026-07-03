@@ -7,8 +7,10 @@ import {
   type CodeGeneratorResponse,
 } from "@bufbuild/protobuf/wkt";
 import { plugin as effectGrpcPlugin } from "@effect-grpc/protoc-gen-effect-grpc";
-import { Effect, FileSystem, Path } from "effect";
-import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner";
+import type * as CommandExecutor from "@effect/platform/CommandExecutor";
+import * as FileSystem from "@effect/platform/FileSystem";
+import * as Path from "@effect/platform/Path";
+import { Effect } from "effect";
 
 import { compileProtos } from "./compile.js";
 import { CodegenError, formatUnknown } from "./errors.js";
@@ -86,7 +88,7 @@ export const generate = (
 ): Effect.Effect<
   GenerateResult,
   CodegenError,
-  ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+  CommandExecutor.CommandExecutor | FileSystem.FileSystem | Path.Path
 > =>
   Effect.gen(function* () {
     if (options.inputs.length === 0) {

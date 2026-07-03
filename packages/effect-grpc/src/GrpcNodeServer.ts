@@ -1,9 +1,9 @@
 import * as http2 from "node:http2";
 import type { ConnectRouter } from "@connectrpc/connect";
 import { connectNodeAdapter } from "@connectrpc/connect-node";
+import type * as RpcGroup from "@effect/rpc/RpcGroup";
+import * as RpcServer from "@effect/rpc/RpcServer";
 import { Context, Effect, Layer, Option, Scope } from "effect";
-import type * as RpcGroup from "effect/unstable/rpc/RpcGroup";
-import * as RpcServer from "effect/unstable/rpc/RpcServer";
 
 import type {
   GrpcMethodEntry,
@@ -60,7 +60,7 @@ export const serveAll = <
       );
       yield* RpcServer.make(group).pipe(
         Effect.provideService(RpcServer.Protocol, protocol),
-        Effect.provideContext(contexts.reduce(Context.merge)),
+        Effect.provide(contexts.reduce(Context.merge)),
         Effect.forkScoped,
       );
     }

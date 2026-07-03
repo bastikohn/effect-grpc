@@ -142,9 +142,11 @@ Unknown options and unsupported values fail codegen with a clear error.
 
 ## Effect Compatibility
 
-This prototype currently targets `effect@4.0.0-beta.92`. It uses
-`effect/unstable/rpc`, so compatibility is intentionally pinned. Effect beta
-upgrades must update tests, generated code, and package smoke together.
+This branch targets stable Effect v3 (`effect ^3.21.4`) with the v3 companion
+packages `@effect/rpc`, `@effect/platform`, `@effect/platform-node`, and
+`@effect/cli`. An Effect v4 version is maintained on the `main` branch and will
+become the primary target once v4 is released. Effect upgrades must update
+tests, generated code, and package smoke together.
 
 ## Error Model
 

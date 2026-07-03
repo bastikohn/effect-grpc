@@ -4,7 +4,7 @@ Runtime support for generated Effect RPC-backed native gRPC clients and
 servers.
 
 All four gRPC method kinds are supported. Unary and server-streaming methods
-run through `effect/unstable/rpc`; client-streaming and bidi-streaming methods
+run through `@effect/rpc`; client-streaming and bidi-streaming methods
 bridge `Stream` and connect iterables directly over the same transport (the
 Effect RPC protocol has no client-to-server stream). Generated RPCs use
 `GrpcStatusError` as their generic error schema.

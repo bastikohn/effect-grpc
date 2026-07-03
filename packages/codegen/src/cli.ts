@@ -1,7 +1,7 @@
 import { glob } from "node:fs/promises";
 
+import { Command, Options } from "@effect/cli";
 import { Console, Effect } from "effect";
-import { Command, Flag } from "effect/unstable/cli";
 
 import { CodegenError, formatUnknown } from "./errors.js";
 import { generate } from "./run.js";
@@ -62,39 +62,38 @@ const expandInputGlobs = (
 export const codegenCommand = Command.make(
   "effect-grpc-codegen",
   {
-    input: Flag.string("input").pipe(
-      Flag.withAlias("i"),
-      Flag.atLeast(1),
-      Flag.withDescription(".proto file or glob"),
+    input: Options.text("input").pipe(
+      Options.withAlias("i"),
+      Options.atLeast(1),
+      Options.withDescription(".proto file or glob"),
     ),
-    output: Flag.string("output").pipe(
-      Flag.withAlias("o"),
-      Flag.withDescription("output directory"),
+    output: Options.text("output").pipe(
+      Options.withAlias("o"),
+      Options.withDescription("output directory"),
     ),
-    protoPath: Flag.string("proto-path").pipe(
-      Flag.withAlias("I"),
-      Flag.atMost(Number.MAX_SAFE_INTEGER),
-      Flag.withDescription("import root"),
+    protoPath: Options.text("proto-path").pipe(
+      Options.withAlias("I"),
+      Options.repeated,
+      Options.withDescription("import root"),
     ),
-    clean: Flag.boolean("clean").pipe(
-      Flag.withDefault(false),
-      Flag.withDescription("delete output directory before writing"),
+    clean: Options.boolean("clean").pipe(
+      Options.withDescription("delete output directory before writing"),
     ),
-    importExtension: Flag.choice("import-extension", ["js", "ts"]).pipe(
-      Flag.withDefault("js"),
-      Flag.withDescription("generated import extension"),
+    importExtension: Options.choice("import-extension", ["js", "ts"]).pipe(
+      Options.withDefault("js" as const),
+      Options.withDescription("generated import extension"),
     ),
-    errors: Flag.choice("errors", ["grpc-status"]).pipe(
-      Flag.withDefault("grpc-status"),
-      Flag.withDescription("error model"),
+    errors: Options.choice("errors", ["grpc-status"]).pipe(
+      Options.withDefault("grpc-status" as const),
+      Options.withDescription("error model"),
     ),
-    methods: Flag.string("methods").pipe(
-      Flag.withDefault(methodKinds.join(",")),
-      Flag.withDescription(`comma list of ${methodKinds.join(",")}`),
+    methods: Options.text("methods").pipe(
+      Options.withDefault(methodKinds.join(",")),
+      Options.withDescription(`comma list of ${methodKinds.join(",")}`),
     ),
-    int64: Flag.choice("int64", ["bigint"]).pipe(
-      Flag.withDefault("bigint"),
-      Flag.withDescription("64-bit integer representation"),
+    int64: Options.choice("int64", ["bigint"]).pipe(
+      Options.withDefault("bigint" as const),
+      Options.withDescription("64-bit integer representation"),
     ),
   },
   (config) =>

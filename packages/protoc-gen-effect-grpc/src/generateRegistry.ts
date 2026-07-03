@@ -249,17 +249,18 @@ const oneofConverters = (
 ) => [
   `const from${field.converterName}Oneof = (value: unknown): unknown => {`,
   `  const oneof = (value ?? { case: undefined }) as { readonly case?: string; readonly value?: unknown };`,
-  // The unset case arrives as `undefined` from protobuf-es but as `null` from
-  // the JSON codec; coalesce so both select the `undefined` branch.
+  // The unset case arrives as `undefined` from protobuf-es but may come back
+  // as `null` after decoding round-trips; coalesce so both select the
+  // `undefined` branch.
   "  switch (oneof.case ?? undefined) {",
   ...field.cases.flatMap((oneofCase) => [
     `    case "${oneofCase.name}":`,
     `      return { case: "${oneofCase.name}", value: ${fromValue("oneof.value", oneofCase.value)} };`,
   ]),
   "    case undefined:",
-  // The JSON codec represents the unset `Schema.Undefined` case as `null`, so
-  // emit `null` here for the value to decode (protobuf-es uses `undefined`).
-  "      return { case: null };",
+  // The unset case decodes against `Schema.Undefined`, so keep the key
+  // present with an `undefined` value (protobuf-es also uses `undefined`).
+  "      return { case: undefined };",
   "    default:",
   `      throw new Error(\`Unknown oneof case ${field.name}: \${oneof.case}\`);`,
   "  }",
@@ -268,7 +269,7 @@ const oneofConverters = (
   `const to${field.converterName}Oneof = (value: unknown): unknown => {`,
   `  const oneof = value ?? { case: undefined };`,
   `  const message = oneof as { readonly case?: string; readonly value?: unknown };`,
-  // See `from*Oneof`: the JSON codec encodes the unset case as `null`.
+  // See `from*Oneof`: coalesce `null` and `undefined` for the unset case.
   "  switch (message.case ?? undefined) {",
   ...field.cases.flatMap((oneofCase) => [
     `    case "${oneofCase.name}":`,
@@ -334,15 +335,15 @@ const wellKnownConverters = (file: GeneratorFile) => {
           `${wellKnownConverterDecl(file, "duration")} from${wellKnownConverterName("duration")} = (value: unknown) => {`,
           "  const message = value as { readonly seconds?: bigint | number; readonly nanos?: number };",
           "  const nanos = BigInt(message.seconds ?? 0) * 1_000_000_000n + BigInt(message.nanos ?? 0);",
-          `  return nanos % 1_000_000n === 0n ? { _tag: "Millis", value: Number(nanos / 1_000_000n) } : { _tag: "Nanos", value: String(nanos) };`,
+          `  return nanos % 1_000_000n === 0n ? { _tag: "Millis", millis: Number(nanos / 1_000_000n) } : { _tag: "Nanos", nanos: String(nanos) };`,
           "};",
           "",
           `${wellKnownConverterDecl(file, "duration")} to${wellKnownConverterName("duration")} = (value: unknown) => {`,
-          "  const duration = value as { readonly _tag?: string; readonly value?: unknown };",
+          "  const duration = value as { readonly _tag?: string; readonly millis?: number; readonly nanos?: string };",
           '  const nanos = duration._tag === "Millis"',
-          "    ? BigInt(duration.value as number) * 1_000_000n",
+          "    ? BigInt(duration.millis as number) * 1_000_000n",
           '    : duration._tag === "Nanos"',
-          "      ? BigInt(duration.value as string)",
+          "      ? BigInt(duration.nanos as string)",
           `      : (() => { throw new Error(\`Unsupported Duration encoding: \${duration._tag}\`); })();`,
           "  return {",
           "    seconds: nanos / 1_000_000_000n,",

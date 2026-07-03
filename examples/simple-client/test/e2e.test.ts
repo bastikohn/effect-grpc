@@ -7,7 +7,16 @@ import {
   SimpleSpanProcessor,
   type ReadableSpan,
 } from "@opentelemetry/sdk-trace-base";
-import { Deferred, Effect, Exit, Fiber, Layer, Scope, Stream } from "effect";
+import {
+  Chunk,
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Scope,
+  Stream,
+} from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -90,7 +99,7 @@ describe("simple demo e2e", () => {
           const client = yield* UserServiceClient;
           return yield* client
             .watchUsers({ tenantId: "demo", count: 3 })
-            .pipe(Stream.runCollect);
+            .pipe(Stream.runCollect, Effect.map(Chunk.toReadonlyArray));
         }).pipe(Effect.provide(clientLayer(baseUrl))),
       ),
     );
@@ -401,7 +410,7 @@ describe("simple demo e2e", () => {
               const client = yield* UserServiceClient;
               const fiber = yield* client
                 .getUser({ id: "hang" })
-                .pipe(Effect.forkChild);
+                .pipe(Effect.fork);
               yield* Deferred.await(started).pipe(Effect.timeout("1 second"));
               yield* Effect.sleep("20 millis");
               yield* Fiber.interrupt(fiber);
@@ -468,7 +477,7 @@ describe("simple demo e2e", () => {
               const client = yield* UserServiceClient;
               const fiber = yield* client
                 .watchUsers({ tenantId: "demo", count: 1 })
-                .pipe(Stream.runDrain, Effect.forkChild);
+                .pipe(Stream.runDrain, Effect.fork);
               yield* Deferred.await(started).pipe(Effect.timeout("1 second"));
               yield* Effect.sleep("20 millis");
               yield* Fiber.interrupt(fiber);
@@ -596,7 +605,7 @@ describe("simple demo e2e", () => {
 
               const cancelFiber = yield* client
                 .watchUsers({ tenantId: "cancel", count: 1 }, { timeoutMs: 20 })
-                .pipe(Stream.runDrain, Effect.exit, Effect.forkDetach);
+                .pipe(Stream.runDrain, Effect.exit, Effect.forkDaemon);
               yield* Deferred.await(cancelStarted).pipe(
                 Effect.timeout("1 second"),
               );
@@ -666,7 +675,7 @@ describe("simple demo e2e", () => {
                 handlers: UserServiceHandlersLayer(implementation),
               },
             ],
-          }).pipe(Effect.forkScoped, Scope.provide(serverScope));
+          }).pipe(Effect.forkScoped, Scope.extend(serverScope));
           yield* Effect.sleep("50 millis");
 
           yield* Effect.gen(function* () {

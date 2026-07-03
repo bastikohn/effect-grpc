@@ -1,9 +1,9 @@
-import { Cause, Deferred, Effect, Queue } from "effect";
 import type {
   FromServerEncoded,
   ResponseDefectEncoded,
   ResponseExitEncoded,
-} from "effect/unstable/rpc/RpcMessage";
+} from "@effect/rpc/RpcMessage";
+import { Deferred, Effect, Mailbox } from "effect";
 
 const serverStreamBufferSize = 16;
 
@@ -61,18 +61,20 @@ export const makeUnary = Effect.gen(function* () {
 });
 
 export const makeServerStreaming = Effect.gen(function* () {
-  const queue = yield* Queue.bounded<FromServerEncoded, Cause.Done>(
+  const mailbox = yield* Mailbox.make<FromServerEncoded>(
     serverStreamBufferSize,
   );
 
   return {
     kind: "server-streaming" as const,
     offer(response) {
-      return Queue.offer(queue, response).pipe(Effect.asVoid);
+      return mailbox.offer(response).pipe(Effect.asVoid);
     },
-    take: Queue.take(queue).pipe(
-      Effect.catchIf(Cause.isDone, () => Effect.succeed(undefined)),
+    take: mailbox.take.pipe(
+      Effect.catchTag("NoSuchElementException", () =>
+        Effect.succeed(undefined),
+      ),
     ),
-    end: Queue.end(queue).pipe(Effect.asVoid),
+    end: mailbox.end.pipe(Effect.asVoid),
   } satisfies ServerStreamingCallState;
 });

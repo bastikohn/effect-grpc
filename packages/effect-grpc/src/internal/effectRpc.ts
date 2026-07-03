@@ -1,4 +1,4 @@
-import type { FromClientEncoded } from "effect/unstable/rpc/RpcMessage";
+import type { FromClientEncoded } from "@effect/rpc/RpcMessage";
 
 export const requestId = "0";
 

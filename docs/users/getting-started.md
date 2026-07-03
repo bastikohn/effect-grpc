@@ -1,7 +1,7 @@
 # Getting Started
 
 `effect-grpc` is a build-time codegen plus runtime bridge for native gRPC
-calls. Unary and server-streaming methods are backed by `effect/unstable/rpc`;
+calls. Unary and server-streaming methods are backed by `@effect/rpc`;
 client-streaming and bidi-streaming methods bridge `Stream` and connect
 iterables directly over the same transport.
 

@@ -5,7 +5,7 @@ import * as GrpcMetadata from "./GrpcMetadata.js";
 import * as GrpcStatusCode from "./GrpcStatusCode.js";
 import type { GrpcStatusCode as GrpcStatusCodeType } from "./GrpcStatusCode.js";
 
-export class GrpcStatusError extends Schema.TaggedErrorClass<GrpcStatusError>()(
+export class GrpcStatusError extends Schema.TaggedError<GrpcStatusError>()(
   "GrpcStatusError",
   {
     code: GrpcStatusCode.schema,
@@ -13,7 +13,7 @@ export class GrpcStatusError extends Schema.TaggedErrorClass<GrpcStatusError>()(
     metadata: GrpcMetadata.schema,
     trailers: GrpcMetadata.schema,
     details: Schema.Array(Schema.Unknown),
-    cause: Schema.optional(Schema.Defect()),
+    cause: Schema.optional(Schema.Defect),
   },
 ) {}
 

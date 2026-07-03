@@ -26,8 +26,8 @@ export interface GrpcMethodEntryBase<
   readonly tag: string;
   readonly service: DescService;
   readonly localName: string;
-  readonly payloadSchema: Schema.Codec<unknown>;
-  readonly successSchema: Schema.Codec<unknown>;
+  readonly payloadSchema: Schema.Schema.AnyNoContext;
+  readonly successSchema: Schema.Schema.AnyNoContext;
   readonly toGrpcRequest: (
     encodedPayload: unknown,
   ) => MessageInitShape<Request>;

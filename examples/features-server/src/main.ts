@@ -1,5 +1,5 @@
 import { NodeRuntime } from "@effect/platform-node";
-import { Effect, Stream } from "effect";
+import { Chunk, Effect, Stream } from "effect";
 
 import { GrpcNodeServer } from "@effect-grpc/effect-grpc";
 import {
@@ -35,6 +35,7 @@ const implementation: FeatureShowcaseServiceImplementation = {
     }),
   uploadNotes: (requests) =>
     Stream.runCollect(requests).pipe(
+      Effect.map(Chunk.toReadonlyArray),
       Effect.map((notes) => ({
         count: notes.length,
         joined: notes.map((note) => note.text).join(","),

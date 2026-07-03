@@ -20,7 +20,7 @@ export type GrpcStatusCode =
   | "data_loss"
   | "unauthenticated";
 
-export const schema = Schema.Literals([
+export const schema = Schema.Literal(
   "ok",
   "cancelled",
   "unknown",
@@ -38,7 +38,7 @@ export const schema = Schema.Literals([
   "unavailable",
   "data_loss",
   "unauthenticated",
-]);
+);
 
 export const fromConnectCode = (code: Code): GrpcStatusCode => {
   switch (code) {

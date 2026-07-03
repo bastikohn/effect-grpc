@@ -27,11 +27,12 @@
     "@connectrpc/connect": "^2.0.0",
     "@effect-grpc/effect-grpc": "workspace:*",
     "@effect-grpc/simple-proto": "workspace:*",
+    "@effect/cli": "catalog:",
     "@effect/platform-node": "catalog:",
     "effect": "catalog:"
   },
   "devDependencies": {
-    "@effect/opentelemetry": "4.0.0-beta.92",
+    "@effect/opentelemetry": "^0.63.0",
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/sdk-trace-base": "^2.0.0"
   }

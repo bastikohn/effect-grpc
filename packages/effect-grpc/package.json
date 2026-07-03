@@ -47,13 +47,18 @@
   "peerDependencies": {
     "@bufbuild/protobuf": "^2.0.0",
     "@connectrpc/connect": "^2.0.0",
-    "effect": "4.0.0-beta.92"
+    "@effect/platform": "^0.96.0",
+    "@effect/rpc": "^0.75.0",
+    "effect": "^3.21.0"
   },
   "dependencies": {
     "@connectrpc/connect-node": "^2.0.0"
   },
   "devDependencies": {
     "@bufbuild/protobuf": "^2.0.0",
-    "@connectrpc/connect": "^2.0.0"
+    "@connectrpc/connect": "^2.0.0",
+    "@effect/platform": "catalog:",
+    "@effect/rpc": "catalog:",
+    "effect": "catalog:"
   }
 }

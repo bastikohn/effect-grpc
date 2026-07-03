@@ -35,6 +35,7 @@
     "@bufbuild/protobuf": "^2.0.0",
     "@connectrpc/connect": "^2.0.0",
     "@effect-grpc/effect-grpc": "workspace:*",
+    "@effect/rpc": "catalog:",
     "effect": "catalog:"
   },
   "devDependencies": {

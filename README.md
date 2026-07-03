@@ -25,12 +25,21 @@ same transport, since the Effect RPC protocol has no client-to-server stream.
 - Client-streaming and bidi-streaming gRPC methods.
 - Generic `GrpcStatusError` failures for generated RPCs.
 - Build-time `.proto` code generation with Buf/protoc.
+- TLS and mTLS on server (`tls` on `serve`/`serveAll`) and client (`tls` on
+  `GrpcClientProtocol.layer`/`makeTransport`). See
+  [getting started](docs/users/getting-started.md#tls-and-mtls).
+- Bearer authentication via `GrpcAuth`: a per-request `authorization` header
+  interceptor plus static and auto-refreshing token layers. See
+  [getting started](docs/users/getting-started.md#bearer-authentication).
+- Custom client interceptors: pass connect `Interceptor`s via `interceptors`
+  on `GrpcClientProtocol.layer`/`makeTransport`, or build metadata-resolving
+  ones with `GrpcClientProtocol.metadataInterceptor`.
 
 ## Not Supported Yet
 
 - Runtime `.proto` loading or reflection.
 - Typed protobuf error options.
-- TLS/mTLS, gRPC-Web, health checks, retries, and custom interceptors.
+- gRPC-Web, health checks, retries, and custom server-side interceptors.
 
 ## Development
 

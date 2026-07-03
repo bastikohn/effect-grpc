@@ -11,11 +11,31 @@ import type {
 } from "./GrpcMethodRegistry.js";
 import * as GrpcServerProtocol from "./GrpcServerProtocol.js";
 
+/**
+ * First-class TLS configuration for {@link serve} / {@link serveAll}. All
+ * material is PEM-encoded. When present, the server terminates TLS itself via
+ * `http2.createSecureServer`; when absent, it speaks plaintext h2c.
+ */
+export interface GrpcServerTlsOptions {
+  /** PEM private key for the server certificate. */
+  readonly key: string | Buffer;
+  /** PEM server certificate (chain). */
+  readonly cert: string | Buffer;
+  /**
+   * PEM CA bundle used to verify client certificates. Setting it enables
+   * mTLS: the handshake requires a client certificate signed by this CA and
+   * rejects connections without one.
+   */
+  readonly clientCa?: string | Buffer;
+}
+
 export interface ServeOptions {
   readonly host: string;
   readonly port: number;
   readonly routes: (router: ConnectRouter) => ConnectRouter | void;
   readonly shutdownTimeoutMs?: number;
+  /** Terminate TLS (and optionally require client certificates, i.e. mTLS). */
+  readonly tls?: GrpcServerTlsOptions;
 }
 
 export interface ServeAllService<R = never> {
@@ -69,6 +89,7 @@ export const serveAll = <
       host: options.host,
       port: options.port,
       shutdownTimeoutMs: options.shutdownTimeoutMs,
+      tls: options.tls,
       routes,
     });
   });
@@ -85,9 +106,15 @@ export const serve = (
     const server = yield* Effect.acquireRelease(
       Effect.promise(
         () =>
-          new Promise<http2.Http2Server>((resolve, reject) => {
+          new Promise<NodeHttp2Server>((resolve, reject) => {
             const sessions = new Set<http2.ServerHttp2Session>();
-            const server = http2.createServer(handler);
+            const server =
+              options.tls === undefined
+                ? http2.createServer(handler)
+                : http2.createSecureServer(
+                    secureServerOptions(options.tls),
+                    handler,
+                  );
             (
               server as unknown as {
                 [kSessions]: Set<http2.ServerHttp2Session>;
@@ -116,7 +143,13 @@ export const serve = (
     );
 
     yield* Effect.logInfo(
-      `gRPC server listening on ${options.host}:${options.port}`,
+      `gRPC server listening on ${options.host}:${options.port}${
+        options.tls === undefined
+          ? ""
+          : options.tls.clientCa === undefined
+            ? " (TLS)"
+            : " (mTLS)"
+      }`,
     );
     yield* Effect.never.pipe(
       Effect.ensuring(
@@ -161,16 +194,33 @@ const mergeRegistries = (
   return merged;
 };
 
+type NodeHttp2Server = http2.Http2Server | http2.Http2SecureServer;
+
+/**
+ * Maps the first-class TLS options onto Node's secure-server options.
+ * `clientCa` switches on mutual TLS: request a client certificate and reject
+ * handshakes whose certificate does not chain to the given CA.
+ */
+const secureServerOptions = (
+  tls: GrpcServerTlsOptions,
+): http2.SecureServerOptions => ({
+  key: tls.key,
+  cert: tls.cert,
+  ...(tls.clientCa !== undefined
+    ? { ca: tls.clientCa, requestCert: true, rejectUnauthorized: true }
+    : {}),
+});
+
 const kSessions = Symbol("effectGrpcHttp2Sessions");
 
-const serverSessions = (server: http2.Http2Server) =>
+const serverSessions = (server: NodeHttp2Server) =>
   (
     server as unknown as {
       readonly [kSessions]?: Set<http2.ServerHttp2Session>;
     }
   )[kSessions] ?? new Set<http2.ServerHttp2Session>();
 
-const closeServer = (server: http2.Http2Server, options: ServeOptions) =>
+const closeServer = (server: NodeHttp2Server, options: ServeOptions) =>
   new Promise<void>((resolve) => {
     let resolved = false;
     const sessions = serverSessions(server);

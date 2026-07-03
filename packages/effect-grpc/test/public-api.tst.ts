@@ -4,6 +4,7 @@ import { describe, expect, it } from "tstyche";
 
 import {
   CodegenSupport,
+  GrpcAuth,
   GrpcClientProtocol,
   GrpcMetadata,
   GrpcMethodRegistry,
@@ -62,14 +63,43 @@ describe("public API", () => {
       Effect.Effect<Interceptor, never, AuthToken>
     >();
     expect(GrpcServerProtocol.make).type.toBeCallableWith({ registry });
+    expect(GrpcAuth.bearerMetadata).type.toBeCallableWith("token");
+    expect(GrpcAuth.bearerInterceptor).type.toBe<
+      Effect.Effect<Interceptor, never, GrpcAuth.BearerToken>
+    >();
+    expect(GrpcAuth.staticTokenLayer("token")).type.toBe<
+      Layer.Layer<GrpcAuth.BearerToken>
+    >();
+    expect(GrpcAuth.refreshingTokenLayer).type.toBeCallableWith({
+      acquire: Effect.succeed("token"),
+      refresh: (current: string) => Effect.succeed(current),
+      interval: "1 hour",
+    });
+    expect(GrpcClientProtocol.layer).type.toBeCallableWith({
+      baseUrl: "https://127.0.0.1:50051",
+      registry,
+      tls: {
+        ca: "PEM",
+        cert: "PEM",
+        key: "PEM",
+        rejectUnauthorized: false,
+      },
+    });
     expect(GrpcNodeServer.serve).type.toBeCallableWith({
       host: "127.0.0.1",
       port: 50051,
       routes: (router: ConnectRouter) => router,
     });
+    expect(GrpcNodeServer.serve).type.toBeCallableWith({
+      host: "127.0.0.1",
+      port: 50051,
+      routes: (router: ConnectRouter) => router,
+      tls: { key: "PEM", cert: "PEM", clientCa: "PEM" },
+    });
     expect(GrpcNodeServer.serveAll).type.toBeCallableWith({
       host: "127.0.0.1",
       port: 50051,
+      tls: { key: "PEM", cert: "PEM" },
       services: [
         {
           group: UserServiceRpcGroup,

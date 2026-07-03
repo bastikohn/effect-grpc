@@ -62,14 +62,31 @@ describe("public API", () => {
       Effect.Effect<Interceptor, never, AuthToken>
     >();
     expect(GrpcServerProtocol.make).type.toBeCallableWith({ registry });
+    expect(GrpcClientProtocol.layer).type.toBeCallableWith({
+      baseUrl: "https://127.0.0.1:50051",
+      registry,
+      tls: {
+        ca: "PEM",
+        cert: "PEM",
+        key: "PEM",
+        rejectUnauthorized: false,
+      },
+    });
     expect(GrpcNodeServer.serve).type.toBeCallableWith({
       host: "127.0.0.1",
       port: 50051,
       routes: (router: ConnectRouter) => router,
     });
+    expect(GrpcNodeServer.serve).type.toBeCallableWith({
+      host: "127.0.0.1",
+      port: 50051,
+      routes: (router: ConnectRouter) => router,
+      tls: { key: "PEM", cert: "PEM", clientCa: "PEM" },
+    });
     expect(GrpcNodeServer.serveAll).type.toBeCallableWith({
       host: "127.0.0.1",
       port: 50051,
+      tls: { key: "PEM", cert: "PEM" },
       services: [
         {
           group: UserServiceRpcGroup,

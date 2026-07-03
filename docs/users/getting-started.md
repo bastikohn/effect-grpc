@@ -22,3 +22,42 @@ pnpm demo:client -- watch-users --tenant-id demo --count 3
 Generated client methods accept `CodegenSupport.GrpcCallOptions`. User metadata
 keys beginning with `x-effect-grpc-` are reserved for local runtime control and
 are rejected before the native gRPC request is sent.
+
+## TLS and mTLS
+
+Both sides take first-class, PEM-encoded TLS options. The server terminates
+TLS when `tls` is set on `serve`/`serveAll`; adding `clientCa` enables mTLS
+(client certificates are required and verified against that CA):
+
+```ts
+GrpcNodeServer.serveAll({
+  host: "0.0.0.0",
+  port: 50051,
+  tls: {
+    key: fs.readFileSync("server.key"),
+    cert: fs.readFileSync("server.crt"),
+    clientCa: fs.readFileSync("client-ca.crt"), // omit for plain TLS
+  },
+  services: [...],
+})
+```
+
+The client enables TLS through an `https://` base URL. `tls` refines the
+handshake: `ca` sets the trust anchor for private CAs, `cert`/`key` present a
+client certificate for mTLS:
+
+```ts
+GrpcClientProtocol.layer({
+  baseUrl: "https://api.example.com:50051",
+  registry: UserServiceGrpcRegistry,
+  tls: {
+    ca: fs.readFileSync("ca.crt"), // omit to use Node's trust store
+    cert: fs.readFileSync("client.crt"), // mTLS only
+    key: fs.readFileSync("client.key"),
+  },
+});
+```
+
+TLS handshake failures surface to callers as `GrpcStatusError` with code
+`internal` (connect-node's mapping). `rejectUnauthorized: false` disables
+server certificate verification for development against self-signed servers.

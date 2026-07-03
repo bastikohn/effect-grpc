@@ -26,7 +26,37 @@ import * as GrpcTracing from "./internal/tracing.js";
 
 export type { GrpcTransportOptions } from "@connectrpc/connect-node";
 
-export interface GrpcClientProtocolOptions extends GrpcTransportOptions {
+/**
+ * First-class TLS configuration for {@link makeTransport} / {@link layer}.
+ * All material is PEM-encoded. Requires an `https://` base URL; the options
+ * are merged into connect-node's `nodeOptions` (and win over any TLS keys set
+ * there directly).
+ */
+export interface GrpcClientTlsOptions {
+  /**
+   * PEM CA bundle used to verify the server certificate. Defaults to Node's
+   * trust store — needed whenever the server certificate is not publicly
+   * trusted (self-signed, private CA).
+   */
+  readonly ca?: string | Buffer;
+  /** PEM client certificate (chain) presented to the server for mTLS. Requires `key`. */
+  readonly cert?: string | Buffer;
+  /** PEM private key for `cert`. Requires `cert`. */
+  readonly key?: string | Buffer;
+  /**
+   * Set to `false` to skip server certificate verification. Development
+   * only — this disables the authentication half of TLS.
+   */
+  readonly rejectUnauthorized?: boolean;
+}
+
+/** {@link GrpcTransportOptions} plus first-class TLS/mTLS configuration. */
+export interface GrpcClientTransportOptions extends GrpcTransportOptions {
+  /** TLS/mTLS configuration. Requires an `https://` `baseUrl`. */
+  readonly tls?: GrpcClientTlsOptions;
+}
+
+export interface GrpcClientProtocolOptions extends GrpcClientTransportOptions {
   readonly registry: GrpcMethodRegistry;
   /**
    * Overrides the address reported in client span attributes
@@ -45,11 +75,43 @@ export interface GrpcClientProtocolTransportOptions {
 
 /**
  * Builds the gRPC transport used by the client protocol. Wraps connect-node's
- * `createGrpcTransport` so callers configure TLS (`nodeOptions`), interceptors,
- * compression, and timeouts without depending on `@connectrpc/connect-node`.
+ * `createGrpcTransport` so callers configure TLS (`tls` or raw `nodeOptions`),
+ * interceptors, compression, and timeouts without depending on
+ * `@connectrpc/connect-node`.
+ *
+ * Whether the connection uses TLS is decided by the `baseUrl` scheme
+ * (`https://` vs `http://`); `tls` refines the handshake — trust anchor,
+ * client certificate for mTLS — and therefore requires `https://`.
  */
-export const makeTransport = (options: GrpcTransportOptions): Transport =>
-  createGrpcTransport(options);
+export const makeTransport = (
+  options: GrpcClientTransportOptions,
+): Transport => {
+  const { tls, ...transportOptions } = options;
+  if (tls === undefined) {
+    return createGrpcTransport(transportOptions);
+  }
+  if (new URL(options.baseUrl).protocol !== "https:") {
+    throw new Error(
+      `GrpcClientProtocol: 'tls' requires an https:// baseUrl, got '${options.baseUrl}'`,
+    );
+  }
+  if ((tls.cert === undefined) !== (tls.key === undefined)) {
+    throw new Error(
+      "GrpcClientProtocol: mTLS requires both 'cert' and 'key' (got only one)",
+    );
+  }
+  return createGrpcTransport({
+    ...transportOptions,
+    nodeOptions: {
+      ...transportOptions.nodeOptions,
+      ...(tls.ca !== undefined ? { ca: tls.ca } : {}),
+      ...(tls.cert !== undefined ? { cert: tls.cert, key: tls.key } : {}),
+      ...(tls.rejectUnauthorized !== undefined
+        ? { rejectUnauthorized: tls.rejectUnauthorized }
+        : {}),
+    },
+  });
+};
 
 /**
  * Adapts an Effect that resolves gRPC metadata into a connect `Interceptor`,

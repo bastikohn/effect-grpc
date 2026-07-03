@@ -35,6 +35,10 @@ const packages = [
     name: "@effect-grpc/protoc-gen-effect-grpc",
     dir: "packages/protoc-gen-effect-grpc",
   },
+  {
+    name: "@effect-grpc/codegen",
+    dir: "packages/codegen",
+  },
 ];
 
 for (const packageInfo of packages) {

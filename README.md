@@ -28,6 +28,9 @@ same transport, since the Effect RPC protocol has no client-to-server stream.
 - TLS and mTLS on server (`tls` on `serve`/`serveAll`) and client (`tls` on
   `GrpcClientProtocol.layer`/`makeTransport`). See
   [getting started](docs/users/getting-started.md#tls-and-mtls).
+- Bearer authentication via `GrpcAuth`: a per-request `authorization` header
+  interceptor plus static and auto-refreshing token layers. See
+  [getting started](docs/users/getting-started.md#bearer-authentication).
 
 ## Not Supported Yet
 

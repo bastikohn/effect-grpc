@@ -1,5 +1,15 @@
 # @effect-grpc/protoc-gen-effect-grpc
 
+## 0.1.1
+
+### Patch Changes
+
+- 0480fb7: Fix generated converters for messages with no fields. Empty messages now emit
+  `_message`/`_value` parameters and omit the dead `const message = value as …`
+  local, matching the well-known `Empty` handling. Previously the non-underscore
+  forms were always emitted, tripping `noUnusedParameters`/`noUnusedLocals` in
+  consumers with stricter tsconfigs.
+
 ## 0.1.0
 
 ### Minor Changes

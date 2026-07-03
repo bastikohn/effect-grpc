@@ -1,6 +1,6 @@
 {
   "name": "@effect-grpc/codegen",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Self-contained CLI that compiles .proto files and runs the effect-grpc generator",
   "license": "Apache-2.0",
   "sideEffects": false,

@@ -16,6 +16,7 @@
     "client-and-bidi-streaming",
     "client-transport-options-and-metadata-interceptor",
     "effect-v4-one-oh",
+    "empty-message-unused-params",
     "grpc-status-error-schema-class",
     "proto-matrix-expansion"
   ]

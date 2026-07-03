@@ -67,6 +67,9 @@ jobs:
     if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/v3') && needs.changesets.outputs.has-changesets == 'false'
     needs: [verify, changesets]
     runs-on: ubuntu-latest
+    # NPM_TOKEN lives on this protected environment, not as a repo secret, so
+    # only this job (restricted to the main/v3 branches) can read it.
+    environment: npm-publish
     permissions:
       # contents: write lets the job push version tags and create GitHub
       # releases; id-token: write lets npm mint provenance attestations.

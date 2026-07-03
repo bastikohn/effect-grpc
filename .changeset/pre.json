@@ -12,5 +12,11 @@
     "@effect-grpc/effect-grpc": "0.1.0",
     "@effect-grpc/protoc-gen-effect-grpc": "0.1.0"
   },
-  "changesets": []
+  "changesets": [
+    "client-and-bidi-streaming",
+    "client-transport-options-and-metadata-interceptor",
+    "effect-v4-one-oh",
+    "grpc-status-error-schema-class",
+    "proto-matrix-expansion"
+  ]
 }

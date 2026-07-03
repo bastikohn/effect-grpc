@@ -1,5 +1,12 @@
 # @effect-grpc/codegen
 
+## 0.1.1
+
+### Patch Changes
+
+- Updated dependencies [0480fb7]
+  - @effect-grpc/protoc-gen-effect-grpc@0.1.1
+
 ## 0.1.0
 
 ### Minor Changes

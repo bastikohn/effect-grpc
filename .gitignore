@@ -9,3 +9,8 @@ packages/protoc-gen-effect-grpc/test/.generated
 *.log
 .nvimlog
 *.tsbuildinfo
+
+# Secrets — never commit local credentials
+.env
+.env.*
+.npmrc

@@ -54,6 +54,7 @@ describe("proto feature fixtures", () => {
       protoFiles: ["cross_package_common.proto", "cross_package.proto"],
     });
     expectSnapshot("optional_scalars");
+    expectSnapshot("empty_messages");
   }, 120_000);
 
   it("typechecks generated output", () => {

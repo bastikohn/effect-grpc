@@ -2,7 +2,7 @@ name: Release
 
 on:
   push:
-    branches: [main]
+    branches: [main, v3]
   workflow_dispatch:
 
 permissions: {}
@@ -17,7 +17,7 @@ env:
 jobs:
   verify:
     name: Verify release
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/v3'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -35,7 +35,7 @@ jobs:
 
   changesets:
     name: Version packages
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/v3'
     needs: verify
     runs-on: ubuntu-latest
     permissions:
@@ -64,7 +64,7 @@ jobs:
 
   publish:
     name: Publish packages
-    if: github.ref == 'refs/heads/main' && needs.changesets.outputs.has-changesets == 'false'
+    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/v3') && needs.changesets.outputs.has-changesets == 'false'
     needs: [verify, changesets]
     runs-on: ubuntu-latest
     permissions:

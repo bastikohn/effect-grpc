@@ -1,5 +1,41 @@
 # @effect-grpc/effect-grpc
 
+## 1.0.0-beta.1
+
+### Minor Changes
+
+- c41387f: Add first-class TLS/mTLS support to the server and client.
+
+  `GrpcNodeServer.serve`/`serveAll` accept a `tls` option (`key`, `cert`, both
+  PEM) and terminate TLS via `http2.createSecureServer`. Setting `clientCa`
+  enables mutual TLS: the handshake requires a client certificate signed by that
+  CA and rejects connections without one.
+
+  `GrpcClientProtocol.layer`/`makeTransport` accept a `tls` option that merges
+  into connect-node's `nodeOptions`: `ca` sets the trust anchor for private CAs,
+  `cert`/`key` present a client certificate for mTLS, and
+  `rejectUnauthorized: false` disables server verification for development.
+  `tls` requires an `https://` `baseUrl` and `cert`/`key` must be passed
+  together — violations fail fast with a clear error. The raw `nodeOptions`
+  escape hatch keeps working; `tls` wins for the keys it sets.
+
+  TLS handshake failures surface to callers as `GrpcStatusError` with code
+  `internal`, following connect-node's error mapping.
+
+- 9768a86: Add `GrpcAuth`: first-class bearer-token authentication for clients.
+
+  - `BearerToken` service tag decouples token producers from consumers: any
+    layer that provides `{ read: Effect<string> }` can back the interceptor.
+  - `bearerInterceptor` (and `bearerInterceptorFrom` for arbitrary token
+    sources) attaches `authorization: Bearer <token>` to every outgoing call,
+    re-reading the token per request so rotations apply immediately. Built on
+    `metadataInterceptor`, so a per-call `authorization` header wins.
+  - `staticTokenLayer` provides a fixed token.
+  - `refreshingTokenLayer` acquires a token once, holds it in a `Ref`, and forks
+    a scoped daemon that re-mints it on an interval. Refresh failures are logged
+    and skipped (the previous token stays until the next tick); bake retries for
+    transient failures into the `refresh` effect.
+
 ## 1.0.0-beta.0
 
 ### Major Changes

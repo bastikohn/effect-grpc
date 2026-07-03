@@ -18,7 +18,12 @@ const publishArgs = [
   ...(args.some((arg) => arg === "--tag" || arg.startsWith("--tag="))
     ? []
     : ["--tag", readDistTag()]),
-  ...(dryRun && !args.includes("--no-git-checks") ? ["--no-git-checks"] : []),
+  // pnpm's default `publish-branch` is main/master, so publishing the v3 line
+  // from the `v3` branch triggers an interactive confirmation that CI answers
+  // "no" — silently skipping the npm upload while the job still goes green.
+  // CI already gates the branch via the workflow `if:`, so disable pnpm's git
+  // checks (branch, clean tree, up-to-date) for every publish, not just dry runs.
+  ...(!args.includes("--no-git-checks") ? ["--no-git-checks"] : []),
   ...args,
 ];
 const packages = [

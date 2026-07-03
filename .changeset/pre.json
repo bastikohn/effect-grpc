@@ -17,6 +17,8 @@
     "client-transport-options-and-metadata-interceptor",
     "effect-v4-one-oh",
     "empty-message-unused-params",
+    "first-class-tls-mtls",
+    "grpc-auth-bearer-tokens",
     "grpc-status-error-schema-class",
     "proto-matrix-expansion"
   ]

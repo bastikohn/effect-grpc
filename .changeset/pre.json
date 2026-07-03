@@ -9,7 +9,13 @@
     "@effect-grpc/simple-proto": "0.0.0",
     "@effect-grpc/simple-server": "0.0.0",
     "@effect-grpc/effect-grpc": "0.1.0-alpha.0",
-    "@effect-grpc/protoc-gen-effect-grpc": "0.1.0-alpha.0"
+    "@effect-grpc/protoc-gen-effect-grpc": "0.1.0-alpha.0",
+    "@effect-grpc/codegen": "0.1.0-alpha.0"
   },
-  "changesets": []
+  "changesets": [
+    "client-and-bidi-streaming",
+    "client-transport-options-and-metadata-interceptor",
+    "grpc-status-error-schema-class",
+    "proto-matrix-expansion"
+  ]
 }

@@ -1,5 +1,10 @@
 # effect-grpc
 
+[![CI](https://github.com/bastikohn/effect-grpc/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/bastikohn/effect-grpc/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/@effect-grpc/effect-grpc.svg)](https://www.npmjs.com/package/@effect-grpc/effect-grpc)
+[![npm next](https://img.shields.io/npm/v/@effect-grpc/effect-grpc/next.svg?label=npm%40next)](https://www.npmjs.com/package/@effect-grpc/effect-grpc?activeTab=versions)
+[![license](https://img.shields.io/npm/l/@effect-grpc/effect-grpc.svg)](LICENSE)
+
 Effect RPC-backed native gRPC prototypes for unary, server-streaming,
 client-streaming, and bidi-streaming methods.
 

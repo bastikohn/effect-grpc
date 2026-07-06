@@ -20,6 +20,7 @@
     "first-class-tls-mtls",
     "grpc-auth-bearer-tokens",
     "grpc-status-error-schema-class",
-    "proto-matrix-expansion"
+    "proto-matrix-expansion",
+    "tidy-moons-wonder"
   ]
 }

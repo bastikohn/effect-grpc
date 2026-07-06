@@ -1,6 +1,6 @@
 {
   "name": "@effect-grpc/protoc-gen-effect-grpc",
-  "version": "1.0.0-beta.1",
+  "version": "1.0.0-beta.2",
   "description": "Build-time protobuf generator for effect-grpc",
   "keywords": [
     "effect",

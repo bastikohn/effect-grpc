@@ -2,7 +2,13 @@
   "$schema": "https://unpkg.com/@changesets/config@3.0.0/schema.json",
   "changelog": "@changesets/cli/changelog",
   "commit": false,
-  "fixed": [],
+  "fixed": [
+    [
+      "@effect-grpc/effect-grpc",
+      "@effect-grpc/codegen",
+      "@effect-grpc/protoc-gen-effect-grpc"
+    ]
+  ],
   "linked": [],
   "access": "public",
   "baseBranch": "main",

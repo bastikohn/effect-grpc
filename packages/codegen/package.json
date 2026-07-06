@@ -2,6 +2,18 @@
   "name": "@effect-grpc/codegen",
   "version": "1.0.0-beta.1",
   "description": "Self-contained CLI that compiles .proto files and runs the effect-grpc generator",
+  "keywords": [
+    "effect",
+    "grpc",
+    "protobuf",
+    "codegen",
+    "cli",
+    "buf",
+    "protoc",
+    "typescript"
+  ],
+  "homepage": "https://github.com/bastikohn/effect-grpc#readme",
+  "author": "Sebastian Kohn <mail@sebastian-kohn.com>",
   "license": "Apache-2.0",
   "sideEffects": false,
   "type": "module",

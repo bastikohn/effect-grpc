@@ -19,9 +19,18 @@ same transport, since the Effect RPC protocol has no client-to-server stream.
 - `@effect-grpc/effect-grpc`: runtime transport, status, metadata, and codegen
   support.
 - `@effect-grpc/protoc-gen-effect-grpc`: build-time protobuf plugin.
-- `@effect-grpc/simple-proto`: demo proto and generated TypeScript.
-- `@effect-grpc/simple-server`: demo native gRPC server.
-- `@effect-grpc/simple-client`: demo native gRPC client.
+- `@effect-grpc/codegen`: self-contained CLI that compiles `.proto` files and
+  runs the effect-grpc generator.
+
+## Examples
+
+Private workspace packages under `examples/`:
+
+- `simple-proto`, `simple-server`, `simple-client`: the demo proto with a
+  native gRPC server and client.
+- `features-proto`, `features-server`, `features-client`: showcase a wider
+  feature surface (client- and bidi-streaming methods, richer field shapes,
+  well-known types).
 
 ## Supported
 
@@ -40,11 +49,39 @@ same transport, since the Effect RPC protocol has no client-to-server stream.
   on `GrpcClientProtocol.layer`/`makeTransport`, or build metadata-resolving
   ones with `GrpcClientProtocol.metadataInterceptor`.
 
-## Not Supported Yet
+## Roadmap
 
-- Runtime `.proto` loading or reflection.
-- Typed protobuf error options.
-- gRPC-Web, health checks, retries, and custom server-side interceptors.
+Shipped:
+
+- [x] All four gRPC method kinds: unary, server-streaming, client-streaming,
+      and bidi-streaming.
+- [x] Build-time `.proto` code generation with Buf/protoc
+      (`protoc-gen-effect-grpc`).
+- [x] TLS and mTLS on server and client.
+- [x] Bearer authentication via `GrpcAuth` with static and auto-refreshing
+      token layers.
+- [x] Custom client interceptors and per-call/default timeouts.
+- [x] Published beta releases: `0.1.x` (Effect v3, npm `latest`) and
+      `1.0.0-beta.x` (Effect v4, npm `next`).
+
+Planned:
+
+- [ ] Typed protobuf error options: schema-derived, per-RPC error types
+      instead of the single generic `GrpcStatusError`.
+- [ ] Custom server-side interceptors.
+- [ ] Effect RPC middleware coverage for client-streaming and bidi-streaming
+      methods (today middleware only applies to unary and server-streaming;
+      see [limitations](docs/users/limitations.md#streaming-semantics)).
+- [ ] gRPC health checking protocol (`grpc.health.v1`).
+- [ ] Client retry policies.
+- [ ] Server reflection.
+- [ ] gRPC-Web support.
+- [ ] OpenTelemetry tracing and metrics for clients and servers.
+- [ ] Track Effect v4 to a stable release and drop the beta pin.
+- [ ] Stable `1.0.0` release from the main (v4) line.
+
+Runtime `.proto` loading stays out of scope: code generation is build-time by
+design.
 
 ## Development
 

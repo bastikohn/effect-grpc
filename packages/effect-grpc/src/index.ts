@@ -7,3 +7,4 @@ export * as GrpcNodeServer from "./GrpcNodeServer.js";
 export * as GrpcServerProtocol from "./GrpcServerProtocol.js";
 export * as GrpcStatusCode from "./GrpcStatusCode.js";
 export * as GrpcStatusError from "./GrpcStatusError.js";
+export * as GrpcTracing from "./GrpcTracing.js";

@@ -12,8 +12,6 @@ import {
   Stream,
 } from "effect";
 import * as Tracer from "effect/Tracer";
-import * as Headers from "effect/unstable/http/Headers";
-import * as HttpTraceContext from "effect/unstable/http/HttpTraceContext";
 import { ServerClient } from "effect/unstable/rpc/Rpc";
 import * as RpcServer from "effect/unstable/rpc/RpcServer";
 import type { FromClientEncoded } from "effect/unstable/rpc/RpcMessage";
@@ -25,7 +23,6 @@ import type {
   GrpcMethodEntry,
   GrpcMethodRegistry,
 } from "./GrpcMethodRegistry.js";
-import type { GrpcStatusCode } from "./GrpcStatusCode.js";
 import * as GrpcStatusError from "./GrpcStatusError.js";
 import * as CallState from "./internal/callState.js";
 import { entryCodecs } from "./internal/codec.js";
@@ -129,6 +126,8 @@ export const make = (
   Effect.gen(function* () {
     const context = yield* Effect.context<never>();
     const run = Effect.runPromiseWith(context);
+    const serverRecorder = (entry: GrpcMethodEntry, span: Tracer.Span) =>
+      GrpcTracing.serverCallRecorder({ entry, span, context });
     const calls = new Map<number, CallState.CallState>();
     const clientIds = new Set<number>();
     const disconnects = yield* Queue.unbounded<number>();
@@ -243,7 +242,10 @@ export const make = (
         }).pipe(
           Effect.withSpan(
             GrpcTracing.spanName(entry),
-            GrpcTracing.serverSpanOptions(entry, traceParent(headers)),
+            GrpcTracing.serverSpanOptions(
+              entry,
+              GrpcTracing.externalSpanFromHeaders(headers),
+            ),
           ),
         ),
       );
@@ -260,7 +262,7 @@ export const make = (
       const clientId = allocate(state);
       let completed = false;
       let signalDisconnect = () => Promise.resolve();
-      const recordStatus = statusRecorder(span);
+      const recordStatus = serverRecorder(entry, span);
       const onAbort = () => {
         void interrupt(clientId, signalDisconnect);
       };
@@ -309,7 +311,10 @@ export const make = (
       const span = await run(
         Effect.makeSpanScoped(
           GrpcTracing.spanName(entry),
-          GrpcTracing.serverSpanOptions(entry, traceParent(headers)),
+          GrpcTracing.serverSpanOptions(
+            entry,
+            GrpcTracing.externalSpanFromHeaders(headers),
+          ),
         ).pipe(Scope.provide(spanScope)),
       );
       const state = await run(CallState.makeServerStreaming);
@@ -318,7 +323,7 @@ export const make = (
       let signalDisconnect = () => Promise.resolve();
       let spanExit: Exit.Exit<void, GrpcStatusError.GrpcStatusError> =
         Exit.void;
-      const recordStatus = statusRecorder(span);
+      const recordStatus = serverRecorder(entry, span);
       const recordFailure = (error: GrpcStatusError.GrpcStatusError) => {
         recordStatus(error.code);
         spanExit = Exit.fail(error);
@@ -398,11 +403,13 @@ export const make = (
       handlerContext: HandlerContext,
     ): Promise<unknown> => {
       const headers = Array.from(handlerContext.requestHeader.entries());
+      let record: GrpcTracing.StatusRecorder | undefined;
       try {
         return await run(
           Effect.gen(function* () {
             const span = yield* Effect.currentSpan.pipe(Effect.orDie);
-            const recordStatus = GrpcTracing.statusRecorder(span);
+            const recordStatus = serverRecorder(entry, span);
+            record = recordStatus;
             const result = yield* streaming
               .handler(
                 streamingRequests(entry, requests, handlerContext.signal),
@@ -424,15 +431,18 @@ export const make = (
           }).pipe(
             Effect.withSpan(
               GrpcTracing.spanName(entry),
-              GrpcTracing.serverSpanOptions(entry, traceParent(headers)),
+              GrpcTracing.serverSpanOptions(
+                entry,
+                GrpcTracing.externalSpanFromHeaders(headers),
+              ),
             ),
           ),
           { signal: handlerContext.signal },
         );
       } catch (cause) {
-        throw GrpcStatusError.toConnectError(
-          streamingRejectionError(cause, handlerContext.signal),
-        );
+        const error = streamingRejectionError(cause, handlerContext.signal);
+        record?.(error.code);
+        throw GrpcStatusError.toConnectError(error);
       }
     };
 
@@ -447,10 +457,13 @@ export const make = (
       const span = await run(
         Effect.makeSpanScoped(
           GrpcTracing.spanName(entry),
-          GrpcTracing.serverSpanOptions(entry, traceParent(headers)),
+          GrpcTracing.serverSpanOptions(
+            entry,
+            GrpcTracing.externalSpanFromHeaders(headers),
+          ),
         ).pipe(Scope.provide(spanScope)),
       );
-      const recordStatus = GrpcTracing.statusRecorder(span);
+      const recordStatus = serverRecorder(entry, span);
       let spanExit: Exit.Exit<void, GrpcStatusError.GrpcStatusError> =
         Exit.void;
       let completed = false;
@@ -677,21 +690,4 @@ const toGrpcResponse = (entry: GrpcMethodEntry, value: unknown) => {
       GrpcStatusError.internal("Invalid gRPC response payload", cause),
     );
   }
-};
-
-const traceParent = (headers: ReadonlyArray<readonly [string, string]>) =>
-  HttpTraceContext.fromHeaders(Headers.fromInput(headers)).pipe(
-    Option.match({
-      onNone: () => undefined,
-      onSome: (span) => span,
-    }),
-  );
-
-const statusRecorder = (span: Tracer.Span) => {
-  let recorded = false;
-  return (code: GrpcStatusCode) => {
-    if (recorded) return;
-    recorded = true;
-    GrpcTracing.annotateSpanStatus(span, code);
-  };
 };

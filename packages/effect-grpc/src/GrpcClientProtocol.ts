@@ -262,8 +262,15 @@ const make = (
         const key = callKey(clientId, request.id);
         activeCalls.set(key, controller);
 
+        let record: GrpcTracing.StatusRecorder | undefined;
         return Effect.gen(function* () {
           const span = yield* Effect.currentSpan.pipe(Effect.orDie);
+          record = GrpcTracing.clientCallRecorder({
+            entry,
+            span,
+            context,
+            serverAddress: options.serverAddress,
+          });
           const status = yield* Effect.promise(async (signal) => {
             const abort = () => controller.abort();
             signal.addEventListener("abort", abort, { once: true });
@@ -280,11 +287,12 @@ const make = (
               activeCalls.delete(key);
             }
           });
-          GrpcTracing.annotateSpanStatus(span, status);
+          record(status);
           if (status !== "ok") {
             yield* Effect.fail(status);
           }
         }).pipe(
+          Effect.onInterrupt(() => Effect.sync(() => record?.("cancelled"))),
           Effect.withSpan(
             GrpcTracing.spanName(entry),
             GrpcTracing.clientSpanOptions(entry, options.serverAddress),
@@ -482,9 +490,16 @@ const makeStreaming = (
           GrpcStatusError.unimplemented(`Unknown gRPC RPC tag: ${tag}`),
         );
       }
+      let recorder: GrpcTracing.StatusRecorder | undefined;
       return Effect.gen(function* () {
         const span = yield* Effect.currentSpan.pipe(Effect.orDie);
-        const record = GrpcTracing.statusRecorder(span);
+        const record = GrpcTracing.clientCallRecorder({
+          entry,
+          span,
+          context,
+          serverAddress: options.serverAddress,
+        });
+        recorder = record;
         const method = resolveMethod(entry);
         if (!method) {
           const error = GrpcStatusError.unimplemented(
@@ -537,6 +552,7 @@ const makeStreaming = (
         record("ok");
         return response;
       }).pipe(
+        Effect.onInterrupt(() => Effect.sync(() => recorder?.("cancelled"))),
         Effect.withSpan(
           GrpcTracing.spanName(entry),
           GrpcTracing.clientSpanOptions(entry, options.serverAddress),
@@ -561,7 +577,12 @@ const makeStreaming = (
             GrpcTracing.spanName(entry),
             GrpcTracing.clientSpanOptions(entry, options.serverAddress),
           );
-          const record = GrpcTracing.statusRecorder(span);
+          const record = GrpcTracing.clientCallRecorder({
+            entry,
+            span,
+            context,
+            serverAddress: options.serverAddress,
+          });
           const method = resolveMethod(entry);
           if (!method) {
             const error = GrpcStatusError.unimplemented(
@@ -628,6 +649,10 @@ const streamingCallOptions = (
     span.spanId !== "noop"
   ) {
     headers.set("traceparent", GrpcTracing.traceparent(span));
+    const traceState = GrpcTracing.findTraceState(span);
+    if (traceState !== undefined && !headers.has("tracestate")) {
+      headers.set("tracestate", traceState);
+    }
   }
   return {
     headers,
@@ -647,7 +672,17 @@ const headersWithTrace = (
     return headers;
   }
   if (span.traceId !== "noop" && span.spanId !== "noop") {
-    return [...headers, ["traceparent", GrpcTracing.traceparent(span)]];
+    const injected: Array<readonly [string, string]> = [
+      ["traceparent", GrpcTracing.traceparent(span)],
+    ];
+    const traceState = GrpcTracing.findTraceState(span);
+    if (
+      traceState !== undefined &&
+      !headers.some(([key]) => key.toLowerCase() === "tracestate")
+    ) {
+      injected.push(["tracestate", traceState]);
+    }
+    return [...headers, ...injected];
   }
   if (request.traceId === undefined || request.spanId === undefined) {
     return headers;

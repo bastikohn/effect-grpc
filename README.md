@@ -52,6 +52,9 @@ Private workspace packages under `examples/`:
   ready-made `Health` service for `serveAll`, a per-service status map, and a
   health client. See
   [getting started](docs/users/getting-started.md#health-checking).
+- gRPC server reflection (`grpc.reflection.v1` plus the `v1alpha` alias) via
+  `GrpcReflection`: `grpcurl` and friends work without local `.proto` files.
+  See [getting started](docs/users/getting-started.md#server-reflection).
 
 ## Roadmap
 
@@ -66,6 +69,8 @@ Shipped:
       token layers.
 - [x] Custom client interceptors and per-call/default timeouts.
 - [x] gRPC health checking protocol (`grpc.health.v1`) via `GrpcHealth`.
+- [x] gRPC server reflection (`grpc.reflection.v1` and `v1alpha`) via
+      `GrpcReflection`.
 - [x] Published beta releases: `0.1.x` (Effect v3, npm `latest`) and
       `1.0.0-beta.x` (Effect v4, npm `next`).
 
@@ -78,7 +83,6 @@ Planned:
       methods (today middleware only applies to unary and server-streaming;
       see [limitations](docs/users/limitations.md#streaming-semantics)).
 - [ ] Client retry policies.
-- [ ] Server reflection.
 - [ ] gRPC-Web support.
 - [ ] OpenTelemetry tracing and metrics for clients and servers.
 - [ ] Track Effect v4 to a stable release and drop the beta pin.

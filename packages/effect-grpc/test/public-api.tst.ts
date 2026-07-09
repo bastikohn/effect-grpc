@@ -10,6 +10,7 @@ import {
   GrpcMetadata,
   GrpcMethodRegistry,
   GrpcNodeServer,
+  GrpcReflection,
   GrpcServerProtocol,
   GrpcStatusError,
 } from "@effect-grpc/effect-grpc";
@@ -146,6 +147,43 @@ describe("public API", () => {
 
       expect(response).type.toHaveProperty("status");
       expect(watched).type.toBeAssignableTo<Stream.Stream<unknown, unknown>>();
+    });
+  });
+
+  it("types the reflection service and client", () => {
+    const services = [
+      {
+        group: UserServiceRpcGroup,
+        registry: UserServiceGrpcRegistry,
+        handlers: UserServiceHandlersLayer(implementation),
+      },
+      GrpcHealth.service,
+    ] as const;
+    expect(GrpcNodeServer.serveAll).type.toBeCallableWith({
+      host: "127.0.0.1",
+      port: 50051,
+      services: [...services, GrpcReflection.service(services)],
+    });
+
+    const index = GrpcReflection.makeIndex([UserServiceGrpcRegistry]);
+    const response = GrpcReflection.respond(index, {
+      host: "localhost",
+      listServices: "*",
+    });
+    expect(response).type.toBe<GrpcReflection.ServerReflectionResponse>();
+
+    Effect.gen(function* () {
+      const client = yield* GrpcReflection.ReflectionClient;
+      const responses = client.serverReflectionInfo(
+        Stream.make({ host: "", fileContainingSymbol: "demo.v1.UserService" }),
+      );
+
+      expect(responses).type.toBe<
+        Stream.Stream<
+          GrpcReflection.ServerReflectionResponse,
+          GrpcReflection.ReflectionClientError
+        >
+      >();
     });
   });
 

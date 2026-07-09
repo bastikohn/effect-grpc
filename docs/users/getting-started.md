@@ -146,3 +146,51 @@ Effect.gen(function* () {
   const { status } = yield* health.check({ service: "demo.v1.UserService" });
 });
 ```
+
+## Server Reflection
+
+`GrpcReflection` implements the standard
+[gRPC Server Reflection Protocol](https://github.com/grpc/grpc/blob/master/doc/server-reflection.md)
+(`grpc.reflection.v1.ServerReflection`, plus the legacy `v1alpha` alias for
+older tooling), so `grpcurl`, `grpcui`, Postman, and similar tools work
+against the server without local `.proto` files. The generated registries
+already carry the full descriptors, so no extra codegen is needed — pass
+`GrpcReflection.service` the same services you pass to `serveAll`:
+
+```ts
+const services = [userService, GrpcHealth.service] as const;
+
+GrpcNodeServer.serveAll({
+  host: "0.0.0.0",
+  port: 50051,
+  services: [...services, GrpcReflection.service(services)],
+}).pipe(Effect.provide(GrpcHealth.layer()));
+```
+
+The reflection service describes itself (and everything else in `services`),
+so listing and describing work immediately:
+
+```sh
+grpcurl -plaintext localhost:50051 list
+grpcurl -plaintext localhost:50051 describe demo.v1.UserService
+grpcurl -plaintext localhost:50051 grpc.health.v1.Health/Check
+```
+
+Semantics follow the spec: file queries answer with the requested descriptor
+followed by its transitive imports, and unknown names produce an in-band
+`NOT_FOUND` error response that echoes the original request instead of
+failing the stream.
+
+To query another server's reflection service,
+`GrpcReflection.ReflectionClientLayer` provides a ready-made client; include
+`GrpcReflection.ReflectionGrpcRegistry` in the registry passed to
+`GrpcClientProtocol.layer`:
+
+```ts
+Effect.gen(function* () {
+  const reflection = yield* GrpcReflection.ReflectionClient;
+  const responses = reflection.serverReflectionInfo(
+    Stream.make({ host: "", listServices: "*" }),
+  );
+});
+```

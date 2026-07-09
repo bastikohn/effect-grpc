@@ -66,8 +66,6 @@ Shipped:
 
 Planned:
 
-- [ ] Typed protobuf error options: schema-derived, per-RPC error types
-      instead of the single generic `GrpcStatusError`.
 - [ ] Custom server-side interceptors.
 - [ ] Effect RPC middleware coverage for client-streaming and bidi-streaming
       methods (today middleware only applies to unary and server-streaming;

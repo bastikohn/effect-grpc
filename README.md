@@ -48,6 +48,10 @@ Private workspace packages under `examples/`:
 - Custom client interceptors: pass connect `Interceptor`s via `interceptors`
   on `GrpcClientProtocol.layer`/`makeTransport`, or build metadata-resolving
   ones with `GrpcClientProtocol.metadataInterceptor`.
+- gRPC health checking protocol (`grpc.health.v1`) via `GrpcHealth`: a
+  ready-made `Health` service for `serveAll`, a per-service status map, and a
+  health client. See
+  [getting started](docs/users/getting-started.md#health-checking).
 
 ## Roadmap
 
@@ -61,6 +65,7 @@ Shipped:
 - [x] Bearer authentication via `GrpcAuth` with static and auto-refreshing
       token layers.
 - [x] Custom client interceptors and per-call/default timeouts.
+- [x] gRPC health checking protocol (`grpc.health.v1`) via `GrpcHealth`.
 - [x] Published beta releases: `0.1.x` (Effect v3, npm `latest`) and
       `1.0.0-beta.x` (Effect v4, npm `next`).
 
@@ -72,7 +77,6 @@ Planned:
 - [ ] Effect RPC middleware coverage for client-streaming and bidi-streaming
       methods (today middleware only applies to unary and server-streaming;
       see [limitations](docs/users/limitations.md#streaming-semantics)).
-- [ ] gRPC health checking protocol (`grpc.health.v1`).
 - [ ] Client retry policies.
 - [ ] Server reflection.
 - [ ] gRPC-Web support.

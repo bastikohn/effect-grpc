@@ -58,12 +58,13 @@ describe("client telemetry", () => {
     expect(result.response).toMatchObject({ _tag: "Exit" });
     const span = telemetry.expectSpan(unaryEntry.tag);
     expect(span.kind).toBe("client");
-    expect(span.attributes.get("rpc.system")).toBe("grpc");
-    expect(span.attributes.get("rpc.service")).toBe("demo.v1.TelemetryService");
-    expect(span.attributes.get("rpc.method")).toBe("Get");
+    expect(span.attributes.get("rpc.system.name")).toBe("grpc");
+    expect(span.attributes.get("rpc.method")).toBe(
+      "demo.v1.TelemetryService/Get",
+    );
     expect(span.attributes.get("server.address")).toBe("api.example.com");
     expect(span.attributes.get("server.port")).toBe(8443);
-    expect(span.attributes.get("rpc.grpc.status_code")).toBe(0);
+    expect(span.attributes.get("rpc.response.status_code")).toBe("OK");
     expect(span.attributes.get("error.type")).toBeUndefined();
 
     const traceparent = headers[0]?.get("traceparent");
@@ -72,15 +73,18 @@ describe("client telemetry", () => {
     expect(span.traceId).toBe(parent.traceId);
     expect(headers[0]?.get("tracestate")).toBe("vendor=abc");
 
-    const durations = durationMetrics(result.metrics, "rpc.client.duration");
+    const durations = durationMetrics(
+      result.metrics,
+      "rpc.client.call.duration",
+    );
     expect(durations).toHaveLength(1);
     expect(durations[0]?.attributes).toEqual({
-      "rpc.system": "grpc",
-      "rpc.service": "demo.v1.TelemetryService",
-      "rpc.method": "Get",
+      unit: "s",
+      "rpc.system.name": "grpc",
+      "rpc.method": "demo.v1.TelemetryService/Get",
       "server.address": "api.example.com",
       "server.port": "8443",
-      "rpc.grpc.status_code": "0",
+      "rpc.response.status_code": "OK",
     });
     expect(durations[0]?.count).toBe(1);
   });
@@ -123,7 +127,7 @@ describe("client telemetry", () => {
     expect(headers[0]?.get("tracestate")).toBeNull();
   });
 
-  it("records the numeric status code and error.type on unary failure", async () => {
+  it("records the status code and error.type on unary failure", async () => {
     const telemetry = makeTestTelemetry();
     const { transport } = fakeTransport({
       unary: () => {
@@ -149,14 +153,18 @@ describe("client telemetry", () => {
       throw new Error("Expected failure exit");
     }
     const span = telemetry.expectSpan(unaryEntry.tag);
-    expect(span.attributes.get("rpc.grpc.status_code")).toBe(5);
+    expect(span.attributes.get("rpc.response.status_code")).toBe("NOT_FOUND");
     expect(span.attributes.get("error.type")).toBe("NOT_FOUND");
 
-    const durations = durationMetrics(result.metrics, "rpc.client.duration");
+    const durations = durationMetrics(
+      result.metrics,
+      "rpc.client.call.duration",
+    );
     expect(durations).toHaveLength(1);
     expect(durations[0]?.attributes).toMatchObject({
-      "rpc.method": "Get",
-      "rpc.grpc.status_code": "5",
+      "rpc.method": "demo.v1.TelemetryService/Get",
+      "rpc.response.status_code": "NOT_FOUND",
+      "error.type": "NOT_FOUND",
     });
     expect(durations[0]?.count).toBe(1);
   });
@@ -202,15 +210,17 @@ describe("client telemetry", () => {
 
     const span = telemetry.expectSpan(clientStreamingEntry.tag);
     expect(span.kind).toBe("client");
-    expect(span.attributes.get("rpc.grpc.status_code")).toBe(0);
+    expect(span.attributes.get("rpc.response.status_code")).toBe("OK");
 
-    const durations = durationMetrics(result.metrics, "rpc.client.duration");
+    const durations = durationMetrics(
+      result.metrics,
+      "rpc.client.call.duration",
+    );
     expect(durations).toHaveLength(1);
     expect(durations[0]?.attributes).toMatchObject({
-      "rpc.system": "grpc",
-      "rpc.service": "demo.v1.TelemetryService",
-      "rpc.method": "Upload",
-      "rpc.grpc.status_code": "0",
+      "rpc.system.name": "grpc",
+      "rpc.method": "demo.v1.TelemetryService/Upload",
+      "rpc.response.status_code": "OK",
     });
     expect(durations[0]?.count).toBe(1);
   });
@@ -238,15 +248,106 @@ describe("client telemetry", () => {
 
     expect(result.error).toMatchObject({ code: "permission_denied" });
     const span = telemetry.expectSpan(clientStreamingEntry.tag);
-    expect(span.attributes.get("rpc.grpc.status_code")).toBe(7);
+    expect(span.attributes.get("rpc.response.status_code")).toBe(
+      "PERMISSION_DENIED",
+    );
     expect(span.attributes.get("error.type")).toBe("PERMISSION_DENIED");
 
-    const durations = durationMetrics(result.metrics, "rpc.client.duration");
+    const durations = durationMetrics(
+      result.metrics,
+      "rpc.client.call.duration",
+    );
     expect(durations).toHaveLength(1);
     expect(durations[0]?.attributes).toMatchObject({
-      "rpc.method": "Upload",
-      "rpc.grpc.status_code": "7",
+      "rpc.method": "demo.v1.TelemetryService/Upload",
+      "rpc.response.status_code": "PERMISSION_DENIED",
+      "error.type": "PERMISSION_DENIED",
     });
+  });
+
+  it("records OK when a bidi response stream completes naturally", async () => {
+    const telemetry = makeTestTelemetry();
+    const { transport } = fakeTransport({
+      stream: async function* (input) {
+        for await (const request of input) {
+          yield request;
+        }
+      },
+    });
+
+    const result = await Effect.runPromise(
+      telemetry.provide(
+        Effect.gen(function* () {
+          const client = yield* GrpcClientProtocol.GrpcStreamingClient;
+          const responses = yield* client
+            .bidiStreaming(
+              bidiStreamingEntry.tag,
+              Stream.make({ id: "1" }, { id: "2" }),
+            )
+            .pipe(Stream.runCollect);
+          const metrics = yield* Metric.snapshot;
+          return { responses, metrics };
+        }).pipe(Effect.provide(clientLayer(transport))),
+      ),
+    );
+
+    expect(result.responses).toHaveLength(2);
+    const span = telemetry.expectSpan(bidiStreamingEntry.tag);
+    expect(span.attributes.get("rpc.response.status_code")).toBe("OK");
+
+    const durations = durationMetrics(
+      result.metrics,
+      "rpc.client.call.duration",
+    );
+    expect(durations).toHaveLength(1);
+    expect(durations[0]?.attributes).toMatchObject({
+      "rpc.method": "demo.v1.TelemetryService/Chat",
+      "rpc.response.status_code": "OK",
+    });
+    expect(durations[0]?.count).toBe(1);
+  });
+
+  it("records CANCELLED when the consumer stops a bidi stream early", async () => {
+    const telemetry = makeTestTelemetry();
+    const { transport } = fakeTransport({
+      stream: async function* (input) {
+        for await (const request of input) {
+          yield request;
+        }
+      },
+    });
+
+    const result = await Effect.runPromise(
+      telemetry.provide(
+        Effect.gen(function* () {
+          const client = yield* GrpcClientProtocol.GrpcStreamingClient;
+          const responses = yield* client
+            .bidiStreaming(
+              bidiStreamingEntry.tag,
+              Stream.make({ id: "1" }, { id: "2" }, { id: "3" }),
+            )
+            .pipe(Stream.take(1), Stream.runCollect);
+          const metrics = yield* Metric.snapshot;
+          return { responses, metrics };
+        }).pipe(Effect.provide(clientLayer(transport))),
+      ),
+    );
+
+    expect(result.responses).toHaveLength(1);
+    const span = telemetry.expectSpan(bidiStreamingEntry.tag);
+    expect(span.attributes.get("rpc.response.status_code")).toBe("CANCELLED");
+
+    const durations = durationMetrics(
+      result.metrics,
+      "rpc.client.call.duration",
+    );
+    expect(durations).toHaveLength(1);
+    expect(durations[0]?.attributes).toMatchObject({
+      "rpc.method": "demo.v1.TelemetryService/Chat",
+      "rpc.response.status_code": "CANCELLED",
+      "error.type": "CANCELLED",
+    });
+    expect(durations[0]?.count).toBe(1);
   });
 });
 
@@ -296,10 +397,11 @@ describe("server telemetry", () => {
     expect(result.response).toEqual({ ok: true });
     const span = telemetry.expectSpan(unaryEntry.tag);
     expect(span.kind).toBe("server");
-    expect(span.attributes.get("rpc.system")).toBe("grpc");
-    expect(span.attributes.get("rpc.service")).toBe("demo.v1.TelemetryService");
-    expect(span.attributes.get("rpc.method")).toBe("Get");
-    expect(span.attributes.get("rpc.grpc.status_code")).toBe(0);
+    expect(span.attributes.get("rpc.system.name")).toBe("grpc");
+    expect(span.attributes.get("rpc.method")).toBe(
+      "demo.v1.TelemetryService/Get",
+    );
+    expect(span.attributes.get("rpc.response.status_code")).toBe("OK");
     expect(span.traceId).toBe(traceId);
 
     const parent = Option.getOrThrow(span.parent);
@@ -308,18 +410,21 @@ describe("server telemetry", () => {
     expect(parent.spanId).toBe(parentSpanId);
     expect(Context.get(parent.annotations, TraceState)).toBe("vendor=abc");
 
-    const durations = durationMetrics(result.metrics, "rpc.server.duration");
+    const durations = durationMetrics(
+      result.metrics,
+      "rpc.server.call.duration",
+    );
     expect(durations).toHaveLength(1);
     expect(durations[0]?.attributes).toEqual({
-      "rpc.system": "grpc",
-      "rpc.service": "demo.v1.TelemetryService",
-      "rpc.method": "Get",
-      "rpc.grpc.status_code": "0",
+      unit: "s",
+      "rpc.system.name": "grpc",
+      "rpc.method": "demo.v1.TelemetryService/Get",
+      "rpc.response.status_code": "OK",
     });
     expect(durations[0]?.count).toBe(1);
   });
 
-  it("records the numeric status code and error.type on unary handler failure", async () => {
+  it("records the status code and error.type on unary handler failure", async () => {
     const telemetry = makeTestTelemetry();
 
     const result = await Effect.runPromise(
@@ -364,14 +469,18 @@ describe("server telemetry", () => {
 
     expect(result.error).toMatchObject({ rawMessage: "missing" });
     const span = telemetry.expectSpan(unaryEntry.tag);
-    expect(span.attributes.get("rpc.grpc.status_code")).toBe(5);
+    expect(span.attributes.get("rpc.response.status_code")).toBe("NOT_FOUND");
     expect(span.attributes.get("error.type")).toBe("NOT_FOUND");
 
-    const durations = durationMetrics(result.metrics, "rpc.server.duration");
+    const durations = durationMetrics(
+      result.metrics,
+      "rpc.server.call.duration",
+    );
     expect(durations).toHaveLength(1);
     expect(durations[0]?.attributes).toMatchObject({
-      "rpc.method": "Get",
-      "rpc.grpc.status_code": "5",
+      "rpc.method": "demo.v1.TelemetryService/Get",
+      "rpc.response.status_code": "NOT_FOUND",
+      "error.type": "NOT_FOUND",
     });
     expect(durations[0]?.count).toBe(1);
   });
@@ -436,16 +545,20 @@ describe("server telemetry", () => {
     expect(result.error).toMatchObject({ code: "not_found" });
     const span = telemetry.expectSpan(bidiStreamingEntry.tag);
     expect(span.kind).toBe("server");
-    expect(span.attributes.get("rpc.grpc.status_code")).toBe(5);
+    expect(span.attributes.get("rpc.response.status_code")).toBe("NOT_FOUND");
     expect(span.attributes.get("error.type")).toBe("NOT_FOUND");
     const parent = Option.getOrThrow(span.parent);
     expect(parent.traceId).toBe(traceId);
 
-    const durations = durationMetrics(result.metrics, "rpc.server.duration");
+    const durations = durationMetrics(
+      result.metrics,
+      "rpc.server.call.duration",
+    );
     expect(durations).toHaveLength(1);
     expect(durations[0]?.attributes).toMatchObject({
-      "rpc.method": "Chat",
-      "rpc.grpc.status_code": "5",
+      "rpc.method": "demo.v1.TelemetryService/Chat",
+      "rpc.response.status_code": "NOT_FOUND",
+      "error.type": "NOT_FOUND",
     });
     expect(durations[0]?.count).toBe(1);
   });
@@ -553,6 +666,7 @@ const clientLayer = (transport: Transport) =>
     registry: new Map([
       [unaryEntry.tag, unaryEntry],
       [clientStreamingEntry.tag, clientStreamingEntry],
+      [bidiStreamingEntry.tag, bidiStreamingEntry],
     ]),
     transport,
     serverAddress: new URL("http://api.example.com:8443"),

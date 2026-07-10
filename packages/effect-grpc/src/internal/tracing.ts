@@ -137,7 +137,7 @@ const callRecorder = (
     annotateSpanStatus(span, code);
     Metric.withAttributes(duration, {
       ...attributes,
-      "rpc.grpc.status_code": String(statusCodeNumber(code)),
+      ...statusAttributes(code),
     }).updateUnsafe((performance.now() - start) / 1000, context);
   };
 };
@@ -153,55 +153,23 @@ export const annotateSpanStatus = (
 
 export const statusAttributes = (
   code: GrpcStatusCode,
-): Record<string, string | number> =>
+): Record<string, string> =>
   code === "ok"
-    ? { "rpc.grpc.status_code": statusCodeNumber(code) }
+    ? { "rpc.response.status_code": statusCodeString(code) }
     : {
-        "rpc.grpc.status_code": statusCodeNumber(code),
-        "error.type": code.toUpperCase(),
+        "rpc.response.status_code": statusCodeString(code),
+        "error.type": statusCodeString(code),
       };
 
-/** Numeric gRPC status code per the gRPC wire protocol (0-16). */
-export const statusCodeNumber = (code: GrpcStatusCode): number =>
-  grpcStatusNumbers[code];
+/** gRPC status code name per OTel semconv, e.g. `"OK"`, `"NOT_FOUND"`. */
+export const statusCodeString = (code: GrpcStatusCode): string =>
+  code.toUpperCase();
 
-const grpcStatusNumbers: Record<GrpcStatusCode, number> = {
-  ok: 0,
-  cancelled: 1,
-  unknown: 2,
-  invalid_argument: 3,
-  deadline_exceeded: 4,
-  not_found: 5,
-  already_exists: 6,
-  permission_denied: 7,
-  resource_exhausted: 8,
-  failed_precondition: 9,
-  aborted: 10,
-  out_of_range: 11,
-  unimplemented: 12,
-  internal: 13,
-  unavailable: 14,
-  data_loss: 15,
-  unauthenticated: 16,
-};
-
-const rpcAttributes = (entry: GrpcMethodEntry): Record<string, string> => {
-  const [service, method] = serviceAndMethod(entry);
-  return {
-    "rpc.system": "grpc",
-    "rpc.service": service,
-    "rpc.method": method,
-  };
-};
-
-const serviceAndMethod = (
-  entry: GrpcMethodEntry,
-): readonly [service: string, method: string] => {
-  const index = entry.tag.lastIndexOf("/");
-  return index > 0
-    ? [entry.tag.slice(0, index), entry.tag.slice(index + 1)]
-    : [entry.tag, entry.tag];
-};
+const rpcAttributes = (entry: GrpcMethodEntry): Record<string, string> => ({
+  "rpc.system.name": "grpc",
+  // Fully qualified logical method name, e.g. `demo.v1.UserService/GetUser`.
+  "rpc.method": entry.tag,
+});
 
 const serverSpanAttributes = (
   baseUrl: URL,

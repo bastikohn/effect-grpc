@@ -195,48 +195,46 @@ describe("simple demo e2e", () => {
         spans,
         "demo.v1.UserService/GetUser",
         SpanKind.CLIENT,
-        0,
+        "OK",
       );
       const successServer = protocolSpan(
         spans,
         "demo.v1.UserService/GetUser",
         SpanKind.SERVER,
-        0,
+        "OK",
       );
       const failedClient = protocolSpan(
         spans,
         "demo.v1.UserService/GetUser",
         SpanKind.CLIENT,
-        5,
+        "NOT_FOUND",
       );
       const failedServer = protocolSpan(
         spans,
         "demo.v1.UserService/GetUser",
         SpanKind.SERVER,
-        5,
+        "NOT_FOUND",
       );
       const failedStreamServer = protocolSpan(
         spans,
         "demo.v1.UserService/WatchUsers",
         SpanKind.SERVER,
-        14,
+        "UNAVAILABLE",
       );
 
       expect(successClient.attributes).toMatchObject({
-        "rpc.system": "grpc",
-        "rpc.service": "demo.v1.UserService",
-        "rpc.method": "GetUser",
-        "rpc.grpc.status_code": 0,
+        "rpc.system.name": "grpc",
+        "rpc.method": "demo.v1.UserService/GetUser",
+        "rpc.response.status_code": "OK",
         "server.address": "127.0.0.1",
       });
       expect(successClient.attributes["server.port"]).toEqual(
         expect.any(Number),
       );
       expect(successServer.attributes).toMatchObject({
-        "rpc.system": "grpc",
-        "rpc.service": "demo.v1.UserService",
-        "rpc.method": "GetUser",
-        "rpc.grpc.status_code": 0,
+        "rpc.system.name": "grpc",
+        "rpc.method": "demo.v1.UserService/GetUser",
+        "rpc.response.status_code": "OK",
       });
       expect(successServer.parentSpanContext?.spanId).toBe(
         successClient.spanContext().spanId,
@@ -246,15 +244,15 @@ describe("simple demo e2e", () => {
       );
 
       expect(failedClient.attributes).toMatchObject({
-        "rpc.grpc.status_code": 5,
+        "rpc.response.status_code": "NOT_FOUND",
         "error.type": "NOT_FOUND",
       });
       expect(failedServer.attributes).toMatchObject({
-        "rpc.grpc.status_code": 5,
+        "rpc.response.status_code": "NOT_FOUND",
         "error.type": "NOT_FOUND",
       });
       expect(failedStreamServer.attributes).toMatchObject({
-        "rpc.grpc.status_code": 14,
+        "rpc.response.status_code": "UNAVAILABLE",
         "error.type": "UNAVAILABLE",
       });
       expect(failedClient.status.code).toBe(SpanStatusCode.ERROR);
@@ -742,13 +740,13 @@ const protocolSpan = (
   spans: ReadonlyArray<ReadableSpan>,
   name: string,
   kind: SpanKind,
-  statusCode: number,
+  statusCode: string,
 ): ReadableSpan => {
   const span = spans.find(
     (span) =>
       span.name === name &&
       span.kind === kind &&
-      span.attributes["rpc.grpc.status_code"] === statusCode,
+      span.attributes["rpc.response.status_code"] === statusCode,
   );
   expect(span).toBeDefined();
   return span!;

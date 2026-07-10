@@ -23,13 +23,12 @@ Span names follow the semconv `$service/$method` form, e.g.
 
 Attributes on both client and server spans:
 
-| Attribute              | Type   | Example                                    |
-| ---------------------- | ------ | ------------------------------------------ |
-| `rpc.system`           | string | `grpc`                                     |
-| `rpc.service`          | string | `demo.v1.UserService`                      |
-| `rpc.method`           | string | `GetUser`                                  |
-| `rpc.grpc.status_code` | number | `0` (OK), `5` (NOT_FOUND), ...             |
-| `error.type`           | string | `NOT_FOUND` — only set when the call fails |
+| Attribute                  | Type   | Example                                    |
+| -------------------------- | ------ | ------------------------------------------ |
+| `rpc.system.name`          | string | `grpc`                                     |
+| `rpc.method`               | string | `demo.v1.UserService/GetUser`              |
+| `rpc.response.status_code` | string | `OK`, `NOT_FOUND`, ...                     |
+| `error.type`               | string | `NOT_FOUND` — only set when the call fails |
 
 Client spans additionally carry `server.address` (string) and `server.port`
 (number), derived from the client's `baseUrl` (override with `serverAddress`
@@ -37,8 +36,8 @@ on `GrpcClientProtocol.layer`).
 
 For streaming methods the span covers the whole call: it opens when the call
 starts and records the status when the stream reaches its final state —
-including failures mid-stream and client cancellation (`rpc.grpc.status_code`
-= 1, `error.type` = `CANCELLED`).
+including failures mid-stream and client cancellation
+(`rpc.response.status_code` = `CANCELLED`, `error.type` = `CANCELLED`).
 
 ## Metrics
 
@@ -47,21 +46,25 @@ the OTel-recommended boundaries
 (`0.005 … 10`). One observation per call, from call start to final status —
 error and cancellation paths included.
 
-| Metric                | Instrument          | Recorded by         |
-| --------------------- | ------------------- | ------------------- |
-| `rpc.client.duration` | histogram (seconds) | every outgoing call |
-| `rpc.server.duration` | histogram (seconds) | every incoming call |
+| Metric                     | Instrument          | Recorded by         |
+| -------------------------- | ------------------- | ------------------- |
+| `rpc.client.call.duration` | histogram (seconds) | every outgoing call |
+| `rpc.server.call.duration` | histogram (seconds) | every incoming call |
+
+Both instruments carry a constant `unit` attribute of `"s"`; Effect's OTLP
+exporter reads it to set the metric unit, and the Prometheus exporter skips
+it as a label.
 
 Tags (metric attributes):
 
-| Attribute              | On     | Example                                |
-| ---------------------- | ------ | -------------------------------------- |
-| `rpc.system`           | both   | `grpc`                                 |
-| `rpc.service`          | both   | `demo.v1.UserService`                  |
-| `rpc.method`           | both   | `GetUser`                              |
-| `rpc.grpc.status_code` | both   | `"0"`, `"5"`, ... (stringified number) |
-| `server.address`       | client | `api.example.com`                      |
-| `server.port`          | client | `"8443"` (stringified number)          |
+| Attribute                  | On     | Example                                    |
+| -------------------------- | ------ | ------------------------------------------ |
+| `rpc.system.name`          | both   | `grpc`                                     |
+| `rpc.method`               | both   | `demo.v1.UserService/GetUser`              |
+| `rpc.response.status_code` | both   | `OK`, `NOT_FOUND`, ...                     |
+| `error.type`               | both   | `NOT_FOUND` — only set when the call fails |
+| `server.address`           | client | `api.example.com`                          |
+| `server.port`              | client | `"8443"` (stringified number)              |
 
 The per-RPC message counters and payload-size histograms from the semconv are
 not emitted yet.

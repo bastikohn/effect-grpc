@@ -9,22 +9,30 @@ const durationBoundaries: ReadonlyArray<number> = [
 ];
 
 /**
- * `rpc.client.duration`: duration of outbound gRPC calls in seconds, from
- * call start to final status. Tagged with `rpc.system`, `rpc.service`,
- * `rpc.method`, `rpc.grpc.status_code`, and `server.address`/`server.port`
- * where available.
+ * The `unit` attribute is read by Effect's OTLP exporter to set the metric
+ * unit (and skipped as a label by the Prometheus exporter).
  */
-export const clientDuration = Metric.histogram("rpc.client.duration", {
+const durationAttributes = { unit: "s" };
+
+/**
+ * `rpc.client.call.duration`: duration of outbound gRPC calls in seconds,
+ * from call start to final status. Tagged with `rpc.system.name`,
+ * `rpc.method`, `rpc.response.status_code`, `error.type` on failure, and
+ * `server.address`/`server.port` where available.
+ */
+export const clientDuration = Metric.histogram("rpc.client.call.duration", {
   description: "Duration of outbound gRPC calls, in seconds.",
   boundaries: durationBoundaries,
+  attributes: durationAttributes,
 });
 
 /**
- * `rpc.server.duration`: duration of inbound gRPC calls in seconds, from
- * call start to final status. Tagged with `rpc.system`, `rpc.service`,
- * `rpc.method`, and `rpc.grpc.status_code`.
+ * `rpc.server.call.duration`: duration of inbound gRPC calls in seconds,
+ * from call start to final status. Tagged with `rpc.system.name`,
+ * `rpc.method`, `rpc.response.status_code`, and `error.type` on failure.
  */
-export const serverDuration = Metric.histogram("rpc.server.duration", {
+export const serverDuration = Metric.histogram("rpc.server.call.duration", {
   description: "Duration of inbound gRPC calls, in seconds.",
   boundaries: durationBoundaries,
+  attributes: durationAttributes,
 });

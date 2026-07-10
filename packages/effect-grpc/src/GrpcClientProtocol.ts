@@ -1,7 +1,7 @@
 import type { CallOptions, Interceptor, Transport } from "@connectrpc/connect";
 import { createGrpcTransport } from "@connectrpc/connect-node";
 import type { GrpcTransportOptions } from "@connectrpc/connect-node";
-import { Context, Effect, Exit, Layer, Scope, Stream } from "effect";
+import { Context, Effect, Layer, Scope, Stream } from "effect";
 import type * as Tracer from "effect/Tracer";
 import * as RpcClient from "effect/unstable/rpc/RpcClient";
 import type { FromClientEncoded } from "effect/unstable/rpc/RpcMessage";
@@ -599,11 +599,15 @@ const makeStreaming = (
             state,
             controller,
           );
-          yield* Effect.addFinalizer((exit) =>
+          // `record` keeps only the first status. Natural completion and
+          // failures record below; any earlier scope close (consumer
+          // short-circuiting via `Stream.take`, interruption) aborts a live
+          // call, so the finalizer's `cancelled` is correct for what remains.
+          yield* Effect.addFinalizer(() =>
             Effect.promise(async () => {
               controller.abort();
               await pump.close();
-              record(Exit.hasInterrupts(exit) ? "cancelled" : "ok");
+              record("cancelled");
             }),
           );
           const responses = method(
@@ -622,6 +626,7 @@ const makeStreaming = (
               record(streamingFailureCode(error));
               return error;
             }),
+            Stream.onEnd(Effect.sync(() => record("ok"))),
           );
         }),
       );

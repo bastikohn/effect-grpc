@@ -247,16 +247,21 @@ describe("simple demo e2e", () => {
         "rpc.response.status_code": "NOT_FOUND",
         "error.type": "NOT_FOUND",
       });
+      // NOT_FOUND is not a server fault: the server span records the status
+      // but is not marked as an error (per semconv, servers only flag
+      // UNKNOWN, DEADLINE_EXCEEDED, UNIMPLEMENTED, INTERNAL, UNAVAILABLE,
+      // and DATA_LOSS).
       expect(failedServer.attributes).toMatchObject({
         "rpc.response.status_code": "NOT_FOUND",
-        "error.type": "NOT_FOUND",
       });
+      expect(failedServer.attributes["error.type"]).toBeUndefined();
+      // UNAVAILABLE is a server fault and stays an error on the server span.
       expect(failedStreamServer.attributes).toMatchObject({
         "rpc.response.status_code": "UNAVAILABLE",
         "error.type": "UNAVAILABLE",
       });
       expect(failedClient.status.code).toBe(SpanStatusCode.ERROR);
-      expect(failedServer.status.code).toBe(SpanStatusCode.ERROR);
+      expect(failedServer.status.code).not.toBe(SpanStatusCode.ERROR);
       expect(failedStreamServer.status.code).toBe(SpanStatusCode.ERROR);
     } finally {
       await provider.shutdown();

@@ -71,6 +71,9 @@ Shipped:
 - [x] gRPC health checking protocol (`grpc.health.v1`) via `GrpcHealth`.
 - [x] gRPC server reflection (`grpc.reflection.v1` and `v1alpha`) via
       `GrpcReflection`.
+- [x] OpenTelemetry tracing and metrics for clients and servers
+      (semconv spans and duration histograms, exporter-agnostic; see
+      [observability](docs/users/observability.md)).
 - [x] Published beta releases: `0.1.x` (Effect v3, npm `latest`) and
       `1.0.0-beta.x` (Effect v4, npm `next`).
 
@@ -82,7 +85,6 @@ Planned:
       see [limitations](docs/users/limitations.md#streaming-semantics)).
 - [ ] Client retry policies.
 - [ ] gRPC-Web support.
-- [ ] OpenTelemetry tracing and metrics for clients and servers.
 - [ ] Track Effect v4 to a stable release and drop the beta pin.
 - [ ] Stable `1.0.0` release from the main (v4) line.
 
@@ -217,6 +219,7 @@ or a `_tag === "GrpcStatusError"` check — rather than relying on `instanceof`.
 ## Docs
 
 - [Getting started](docs/users/getting-started.md)
+- [Observability](docs/users/observability.md)
 - [Current limitations](docs/users/limitations.md)
 - [Architecture](docs/contributors/architecture.md)
 - [Protocol bridge](docs/contributors/protocol-bridge.md)

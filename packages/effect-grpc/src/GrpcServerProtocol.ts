@@ -12,8 +12,6 @@ import {
   Stream,
 } from "effect";
 import * as Tracer from "effect/Tracer";
-import * as Headers from "effect/unstable/http/Headers";
-import * as HttpTraceContext from "effect/unstable/http/HttpTraceContext";
 import { ServerClient } from "effect/unstable/rpc/Rpc";
 import * as RpcServer from "effect/unstable/rpc/RpcServer";
 import type { FromClientEncoded } from "effect/unstable/rpc/RpcMessage";
@@ -21,11 +19,11 @@ import { RequestId } from "effect/unstable/rpc/RpcMessage";
 
 import type { GrpcServerContext } from "./CodegenSupport.js";
 import * as GrpcMetadata from "./GrpcMetadata.js";
+import { TraceState } from "./GrpcTracing.js";
 import type {
   GrpcMethodEntry,
   GrpcMethodRegistry,
 } from "./GrpcMethodRegistry.js";
-import type { GrpcStatusCode } from "./GrpcStatusCode.js";
 import * as GrpcStatusError from "./GrpcStatusError.js";
 import * as CallState from "./internal/callState.js";
 import { entryCodecs } from "./internal/codec.js";
@@ -129,6 +127,8 @@ export const make = (
   Effect.gen(function* () {
     const context = yield* Effect.context<never>();
     const run = Effect.runPromiseWith(context);
+    const serverRecorder = (entry: GrpcMethodEntry, span: Tracer.Span) =>
+      GrpcTracing.serverCallRecorder({ entry, span, context });
     const calls = new Map<number, CallState.CallState>();
     const clientIds = new Set<number>();
     const disconnects = yield* Queue.unbounded<number>();
@@ -213,15 +213,23 @@ export const make = (
     ) => {
       const payload = fromGrpcRequest(entry, request);
       validatePayload(entry, payload);
+      // `RpcServer` spawns the handler fiber with this request fiber's
+      // context, so providing the reference here rehydrates the incoming
+      // `tracestate` into the handler's context, where downstream client
+      // calls pick it up for header injection.
+      const traceState = GrpcTracing.traceStateFromHeaders(headers);
+      const message = writeRequest(clientId, {
+        _tag: "Request",
+        id: requestId,
+        tag: entry.tag,
+        payload,
+        headers,
+        ...GrpcTracing.traceFields(span),
+      }).pipe(Effect.withParentSpan(span));
       return run(
-        writeRequest(clientId, {
-          _tag: "Request",
-          id: requestId,
-          tag: entry.tag,
-          payload,
-          headers,
-          ...GrpcTracing.traceFields(span),
-        }).pipe(Effect.withParentSpan(span)),
+        traceState === undefined
+          ? message
+          : Effect.provideService(message, TraceState, traceState),
       );
     };
 
@@ -234,19 +242,36 @@ export const make = (
       context: HandlerContext,
     ): Promise<unknown> => {
       const headers = Array.from(context.requestHeader.entries());
-      return run(
+      const outcome = await run(
         Effect.gen(function* () {
           const span = yield* Effect.currentSpan.pipe(Effect.orDie);
-          return yield* Effect.promise(() =>
+          const result = yield* Effect.promise(() =>
             handleUnaryNative(entry, request, context, headers, span),
           );
+          // Per semconv, a server span ends in an error state only for
+          // server-fault codes; other failures still record their status
+          // attributes but close the span cleanly.
+          if (!result.ok && GrpcTracing.isServerError(result.error.code)) {
+            return yield* Effect.fail(result.error);
+          }
+          return result;
         }).pipe(
           Effect.withSpan(
             GrpcTracing.spanName(entry),
-            GrpcTracing.serverSpanOptions(entry, traceParent(headers)),
+            GrpcTracing.serverSpanOptions(
+              entry,
+              GrpcTracing.externalSpanFromHeaders(headers),
+            ),
+          ),
+          Effect.catch((error) =>
+            Effect.succeed<ServerCallOutcome>({ ok: false, error }),
           ),
         ),
       );
+      if (!outcome.ok) {
+        throw GrpcStatusError.toConnectError(outcome.error);
+      }
+      return outcome.value;
     };
 
     const handleUnaryNative = async (
@@ -255,12 +280,12 @@ export const make = (
       context: HandlerContext,
       headers: ReadonlyArray<[string, string]>,
       span: Tracer.Span,
-    ): Promise<unknown> => {
+    ): Promise<ServerCallOutcome> => {
       const state = await run(CallState.makeUnary);
       const clientId = allocate(state);
       let completed = false;
       let signalDisconnect = () => Promise.resolve();
-      const recordStatus = statusRecorder(span);
+      const recordStatus = serverRecorder(entry, span);
       const onAbort = () => {
         void interrupt(clientId, signalDisconnect);
       };
@@ -282,11 +307,11 @@ export const make = (
         }
         const grpcResponse = toGrpcResponse(entry, response.exit.value);
         recordStatus("ok");
-        return grpcResponse;
+        return { ok: true, value: grpcResponse };
       } catch (cause) {
         const error = GrpcStatusError.fromConnectError(cause);
         recordStatus(error.code);
-        throw GrpcStatusError.toConnectError(error);
+        return { ok: false, error };
       } finally {
         try {
           if (!completed) {
@@ -309,7 +334,10 @@ export const make = (
       const span = await run(
         Effect.makeSpanScoped(
           GrpcTracing.spanName(entry),
-          GrpcTracing.serverSpanOptions(entry, traceParent(headers)),
+          GrpcTracing.serverSpanOptions(
+            entry,
+            GrpcTracing.externalSpanFromHeaders(headers),
+          ),
         ).pipe(Scope.provide(spanScope)),
       );
       const state = await run(CallState.makeServerStreaming);
@@ -318,10 +346,16 @@ export const make = (
       let signalDisconnect = () => Promise.resolve();
       let spanExit: Exit.Exit<void, GrpcStatusError.GrpcStatusError> =
         Exit.void;
-      const recordStatus = statusRecorder(span);
+      let failed = false;
+      const recordStatus = serverRecorder(entry, span);
       const recordFailure = (error: GrpcStatusError.GrpcStatusError) => {
+        failed = true;
         recordStatus(error.code);
-        spanExit = Exit.fail(error);
+        // Per semconv, only server-fault codes end the server span in an
+        // error state; other failures record attributes but close cleanly.
+        if (GrpcTracing.isServerError(error.code)) {
+          spanExit = Exit.fail(error);
+        }
       };
       const onAbort = () => {
         void interrupt(clientId, signalDisconnect);
@@ -375,7 +409,7 @@ export const make = (
       } finally {
         try {
           if (!completed) {
-            if (spanExit._tag === "Success") {
+            if (!failed) {
               recordFailure(GrpcStatusError.cancelled("RPC cancelled"));
             }
             await interrupt(clientId, call.signalDisconnect);
@@ -398,11 +432,15 @@ export const make = (
       handlerContext: HandlerContext,
     ): Promise<unknown> => {
       const headers = Array.from(handlerContext.requestHeader.entries());
+      const traceState = GrpcTracing.traceStateFromHeaders(headers);
+      let record: GrpcTracing.StatusRecorder | undefined;
+      let outcome: ServerCallOutcome;
       try {
-        return await run(
+        outcome = await run(
           Effect.gen(function* () {
             const span = yield* Effect.currentSpan.pipe(Effect.orDie);
-            const recordStatus = GrpcTracing.statusRecorder(span);
+            const recordStatus = serverRecorder(entry, span);
+            record = recordStatus;
             const result = yield* streaming
               .handler(
                 streamingRequests(entry, requests, handlerContext.signal),
@@ -417,23 +455,45 @@ export const make = (
             if (result._tag === "Failure") {
               const error = streamingCauseError(result.cause);
               recordStatus(error.code);
-              return yield* Effect.fail(error);
+              // Per semconv, only server-fault codes end the server span in
+              // an error state.
+              if (GrpcTracing.isServerError(error.code)) {
+                return yield* Effect.fail(error);
+              }
+              return { ok: false, error } satisfies ServerCallOutcome;
             }
             recordStatus("ok");
-            return result.value;
+            return {
+              ok: true,
+              value: result.value,
+            } satisfies ServerCallOutcome;
           }).pipe(
             Effect.withSpan(
               GrpcTracing.spanName(entry),
-              GrpcTracing.serverSpanOptions(entry, traceParent(headers)),
+              GrpcTracing.serverSpanOptions(
+                entry,
+                GrpcTracing.externalSpanFromHeaders(headers),
+              ),
+            ),
+            (effect) =>
+              traceState === undefined
+                ? effect
+                : Effect.provideService(effect, TraceState, traceState),
+            Effect.catch((error) =>
+              Effect.succeed<ServerCallOutcome>({ ok: false, error }),
             ),
           ),
           { signal: handlerContext.signal },
         );
       } catch (cause) {
-        throw GrpcStatusError.toConnectError(
-          streamingRejectionError(cause, handlerContext.signal),
-        );
+        const error = streamingRejectionError(cause, handlerContext.signal);
+        record?.(error.code);
+        throw GrpcStatusError.toConnectError(error);
       }
+      if (!outcome.ok) {
+        throw GrpcStatusError.toConnectError(outcome.error);
+      }
+      return outcome.value;
     };
 
     const handleBidiStreaming = async function* (
@@ -443,14 +503,18 @@ export const make = (
       handlerContext: HandlerContext,
     ): AsyncIterable<unknown> {
       const headers = Array.from(handlerContext.requestHeader.entries());
+      const traceState = GrpcTracing.traceStateFromHeaders(headers);
       const spanScope = await run(Scope.make());
       const span = await run(
         Effect.makeSpanScoped(
           GrpcTracing.spanName(entry),
-          GrpcTracing.serverSpanOptions(entry, traceParent(headers)),
+          GrpcTracing.serverSpanOptions(
+            entry,
+            GrpcTracing.externalSpanFromHeaders(headers),
+          ),
         ).pipe(Scope.provide(spanScope)),
       );
-      const recordStatus = GrpcTracing.statusRecorder(span);
+      const recordStatus = serverRecorder(entry, span);
       let spanExit: Exit.Exit<void, GrpcStatusError.GrpcStatusError> =
         Exit.void;
       let completed = false;
@@ -462,9 +526,16 @@ export const make = (
         .pipe(
           Stream.mapEffect((value) => encodeStreamingResponse(entry, value)),
         );
+      const handlerFiberContext = Context.add(
+        traceState === undefined
+          ? context
+          : Context.add(context, TraceState, traceState),
+        Tracer.ParentSpan,
+        span,
+      );
       const iterator = Stream.toAsyncIterableWith(
         responses,
-        Context.add(context, Tracer.ParentSpan, span),
+        handlerFiberContext,
       )[Symbol.asyncIterator]();
       // Closing the iterator interrupts the handler fiber, so a pending pull
       // settles when the client goes away mid-stream.
@@ -487,14 +558,17 @@ export const make = (
         completed = true;
         const error = streamingRejectionError(cause, handlerContext.signal);
         recordStatus(error.code);
-        spanExit = Exit.fail(error);
+        // Per semconv, only server-fault codes end the server span in an
+        // error state; a cancelled or otherwise client-caused end closes
+        // the span cleanly with the status attributes recorded.
+        if (GrpcTracing.isServerError(error.code)) {
+          spanExit = Exit.fail(error);
+        }
         throw GrpcStatusError.toConnectError(error);
       } finally {
         handlerContext.signal.removeEventListener("abort", onAbort);
         if (!completed) {
-          const error = GrpcStatusError.cancelled("RPC cancelled");
-          recordStatus(error.code);
-          spanExit = Exit.fail(error);
+          recordStatus("cancelled");
         }
         try {
           await Promise.resolve(iterator.return?.(undefined as never)).catch(
@@ -552,6 +626,15 @@ export const make = (
   });
 
 const emptyStreamingHandlers: GrpcStreamingHandlers = new Map();
+
+/**
+ * Result of a spanned server call. Failures are carried as values so the
+ * span can close cleanly for non-server-fault codes while the error is still
+ * thrown to connect after the span has ended.
+ */
+type ServerCallOutcome =
+  | { readonly ok: true; readonly value: unknown }
+  | { readonly ok: false; readonly error: GrpcStatusError.GrpcStatusError };
 
 const streamingServerContext = (
   headers: ReadonlyArray<readonly [string, string]>,
@@ -677,21 +760,4 @@ const toGrpcResponse = (entry: GrpcMethodEntry, value: unknown) => {
       GrpcStatusError.internal("Invalid gRPC response payload", cause),
     );
   }
-};
-
-const traceParent = (headers: ReadonlyArray<readonly [string, string]>) =>
-  HttpTraceContext.fromHeaders(Headers.fromInput(headers)).pipe(
-    Option.match({
-      onNone: () => undefined,
-      onSome: (span) => span,
-    }),
-  );
-
-const statusRecorder = (span: Tracer.Span) => {
-  let recorded = false;
-  return (code: GrpcStatusCode) => {
-    if (recorded) return;
-    recorded = true;
-    GrpcTracing.annotateSpanStatus(span, code);
-  };
 };

@@ -6,9 +6,11 @@ import {
   CodegenSupport,
   GrpcAuth,
   GrpcClientProtocol,
+  GrpcHealth,
   GrpcMetadata,
   GrpcMethodRegistry,
   GrpcNodeServer,
+  GrpcReflection,
   GrpcServerProtocol,
   GrpcStatusError,
 } from "@effect-grpc/effect-grpc";
@@ -107,6 +109,81 @@ describe("public API", () => {
           handlers: UserServiceHandlersLayer(implementation),
         },
       ],
+    });
+    expect(GrpcNodeServer.serveAll).type.toBeCallableWith({
+      host: "127.0.0.1",
+      port: 50051,
+      services: [
+        {
+          group: UserServiceRpcGroup,
+          registry: UserServiceGrpcRegistry,
+          handlers: UserServiceHandlersLayer(implementation),
+        },
+        GrpcHealth.service,
+      ],
+    });
+    expect(GrpcHealth.layer()).type.toBe<Layer.Layer<GrpcHealth.GrpcHealth>>();
+    expect(GrpcHealth.make).type.toBeCallableWith({
+      initialStatuses: [["", "SERVING"]],
+    });
+  });
+
+  it("types the health service and client", () => {
+    Effect.gen(function* () {
+      const health = yield* GrpcHealth.GrpcHealth;
+      yield* health.set("demo.v1.UserService", "SERVING");
+      const status = yield* health.check("demo.v1.UserService");
+
+      expect(status).type.toBe<GrpcHealth.ServingStatus>();
+      expect(health.watch("demo.v1.UserService")).type.toBe<
+        Stream.Stream<GrpcHealth.ServingStatus>
+      >();
+    }).pipe(Effect.provide(GrpcHealth.layer()));
+
+    Effect.gen(function* () {
+      const client = yield* GrpcHealth.HealthClient;
+      const response = yield* client.check({ service: "" });
+      const watched = client.watch({ service: "" });
+
+      expect(response).type.toHaveProperty("status");
+      expect(watched).type.toBeAssignableTo<Stream.Stream<unknown, unknown>>();
+    });
+  });
+
+  it("types the reflection service and client", () => {
+    const services = [
+      {
+        group: UserServiceRpcGroup,
+        registry: UserServiceGrpcRegistry,
+        handlers: UserServiceHandlersLayer(implementation),
+      },
+      GrpcHealth.service,
+    ] as const;
+    expect(GrpcNodeServer.serveAll).type.toBeCallableWith({
+      host: "127.0.0.1",
+      port: 50051,
+      services: [...services, GrpcReflection.service(services)],
+    });
+
+    const index = GrpcReflection.makeIndex([UserServiceGrpcRegistry]);
+    const response = GrpcReflection.respond(index, {
+      host: "localhost",
+      listServices: "*",
+    });
+    expect(response).type.toBe<GrpcReflection.ServerReflectionResponse>();
+
+    Effect.gen(function* () {
+      const client = yield* GrpcReflection.ReflectionClient;
+      const responses = client.serverReflectionInfo(
+        Stream.make({ host: "", fileContainingSymbol: "demo.v1.UserService" }),
+      );
+
+      expect(responses).type.toBe<
+        Stream.Stream<
+          GrpcReflection.ServerReflectionResponse,
+          GrpcReflection.ReflectionClientError
+        >
+      >();
     });
   });
 

@@ -1,7 +1,11 @@
 import { NodeRuntime } from "@effect/platform-node";
 import { Effect, Stream } from "effect";
 
-import { GrpcNodeServer, GrpcStatusError } from "@effect-grpc/effect-grpc";
+import {
+  GrpcNodeServer,
+  GrpcReflection,
+  GrpcStatusError,
+} from "@effect-grpc/effect-grpc";
 import {
   UserServiceGrpcRegistry,
   UserServiceHandlersLayer,
@@ -50,17 +54,21 @@ const implementation: UserServiceImplementation = {
   },
 };
 
+const services = [
+  {
+    group: UserServiceRpcGroup,
+    registry: UserServiceGrpcRegistry,
+    handlers: UserServiceHandlersLayer(implementation),
+  },
+] as const;
+
 const program = Effect.scoped(
   GrpcNodeServer.serveAll({
     host,
     port,
-    services: [
-      {
-        group: UserServiceRpcGroup,
-        registry: UserServiceGrpcRegistry,
-        handlers: UserServiceHandlersLayer(implementation),
-      },
-    ],
+    // Reflection lets `grpcurl -plaintext 127.0.0.1:50051 list` and
+    // `describe` work without local .proto files.
+    services: [...services, GrpcReflection.service(services)],
   }),
 );
 

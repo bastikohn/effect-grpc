@@ -48,6 +48,13 @@ Private workspace packages under `examples/`:
 - Custom client interceptors: pass connect `Interceptor`s via `interceptors`
   on `GrpcClientProtocol.layer`/`makeTransport`, or build metadata-resolving
   ones with `GrpcClientProtocol.metadataInterceptor`.
+- gRPC health checking protocol (`grpc.health.v1`) via `GrpcHealth`: a
+  ready-made `Health` service for `serveAll`, a per-service status map, and a
+  health client. See
+  [getting started](docs/users/getting-started.md#health-checking).
+- gRPC server reflection (`grpc.reflection.v1` plus the `v1alpha` alias) via
+  `GrpcReflection`: `grpcurl` and friends work without local `.proto` files.
+  See [getting started](docs/users/getting-started.md#server-reflection).
 
 ## Roadmap
 
@@ -61,6 +68,9 @@ Shipped:
 - [x] Bearer authentication via `GrpcAuth` with static and auto-refreshing
       token layers.
 - [x] Custom client interceptors and per-call/default timeouts.
+- [x] gRPC health checking protocol (`grpc.health.v1`) via `GrpcHealth`.
+- [x] gRPC server reflection (`grpc.reflection.v1` and `v1alpha`) via
+      `GrpcReflection`.
 - [x] OpenTelemetry tracing and metrics for clients and servers
       (semconv spans and duration histograms, exporter-agnostic; see
       [observability](docs/users/observability.md)).
@@ -73,9 +83,7 @@ Planned:
 - [ ] Effect RPC middleware coverage for client-streaming and bidi-streaming
       methods (today middleware only applies to unary and server-streaming;
       see [limitations](docs/users/limitations.md#streaming-semantics)).
-- [ ] gRPC health checking protocol (`grpc.health.v1`).
 - [ ] Client retry policies.
-- [ ] Server reflection.
 - [ ] gRPC-Web support.
 - [ ] Track Effect v4 to a stable release and drop the beta pin.
 - [ ] Stable `1.0.0` release from the main (v4) line.

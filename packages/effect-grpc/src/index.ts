@@ -1,9 +1,11 @@
 export * as CodegenSupport from "./CodegenSupport.js";
 export * as GrpcAuth from "./GrpcAuth.js";
 export * as GrpcClientProtocol from "./GrpcClientProtocol.js";
+export * as GrpcHealth from "./GrpcHealth.js";
 export * as GrpcMetadata from "./GrpcMetadata.js";
 export * as GrpcMethodRegistry from "./GrpcMethodRegistry.js";
 export * as GrpcNodeServer from "./GrpcNodeServer.js";
+export * as GrpcReflection from "./GrpcReflection.js";
 export * as GrpcServerProtocol from "./GrpcServerProtocol.js";
 export * as GrpcStatusCode from "./GrpcStatusCode.js";
 export * as GrpcStatusError from "./GrpcStatusError.js";

@@ -100,3 +100,97 @@ GrpcClientProtocol.layer({
 TLS handshake failures surface to callers as `GrpcStatusError` with code
 `internal` (connect-node's mapping). `rejectUnauthorized: false` disables
 server certificate verification for development against self-signed servers.
+
+## Health Checking
+
+`GrpcHealth` implements the standard
+[gRPC Health Checking Protocol](https://github.com/grpc/grpc/blob/master/doc/health-checking.md)
+(`grpc.health.v1.Health`), so load balancers, Kubernetes probes, and
+`grpc_health_probe` work out of the box. `GrpcHealth.service` plugs the
+`Check` and `Watch` RPCs into `serveAll`; `GrpcHealth.layer()` provides the
+status map that backs them and marks the overall server — the empty-string
+service name — as `SERVING`:
+
+```ts
+GrpcNodeServer.serveAll({
+  host: "0.0.0.0",
+  port: 50051,
+  services: [userService, GrpcHealth.service],
+}).pipe(Effect.provide(GrpcHealth.layer()));
+```
+
+Applications register and flip per-service statuses through the
+`GrpcHealth.GrpcHealth` service:
+
+```ts
+Effect.gen(function* () {
+  const health = yield* GrpcHealth.GrpcHealth;
+  yield* health.set("demo.v1.UserService", "SERVING");
+  yield* health.set("", "NOT_SERVING"); // e.g. while draining on shutdown
+  yield* health.clear("demo.v1.UserService"); // unregister
+});
+```
+
+Semantics follow the spec: `Check` answers with the current status and fails
+with `not_found` for unknown services; `Watch` immediately streams the current
+status — `SERVICE_UNKNOWN` for unknown services — followed by one element per
+status change (consecutive duplicates are suppressed).
+
+To probe another server, `GrpcHealth.HealthClientLayer` provides a ready-made
+client; include `GrpcHealth.HealthGrpcRegistry` in the registry passed to
+`GrpcClientProtocol.layer`:
+
+```ts
+Effect.gen(function* () {
+  const health = yield* GrpcHealth.HealthClient;
+  const { status } = yield* health.check({ service: "demo.v1.UserService" });
+});
+```
+
+## Server Reflection
+
+`GrpcReflection` implements the standard
+[gRPC Server Reflection Protocol](https://github.com/grpc/grpc/blob/master/doc/server-reflection.md)
+(`grpc.reflection.v1.ServerReflection`, plus the legacy `v1alpha` alias for
+older tooling), so `grpcurl`, `grpcui`, Postman, and similar tools work
+against the server without local `.proto` files. The generated registries
+already carry the full descriptors, so no extra codegen is needed — pass
+`GrpcReflection.service` the same services you pass to `serveAll`:
+
+```ts
+const services = [userService, GrpcHealth.service] as const;
+
+GrpcNodeServer.serveAll({
+  host: "0.0.0.0",
+  port: 50051,
+  services: [...services, GrpcReflection.service(services)],
+}).pipe(Effect.provide(GrpcHealth.layer()));
+```
+
+The reflection service describes itself (and everything else in `services`),
+so listing and describing work immediately:
+
+```sh
+grpcurl -plaintext localhost:50051 list
+grpcurl -plaintext localhost:50051 describe demo.v1.UserService
+grpcurl -plaintext localhost:50051 grpc.health.v1.Health/Check
+```
+
+Semantics follow the spec: file queries answer with the requested descriptor
+followed by its transitive imports, and unknown names produce an in-band
+`NOT_FOUND` error response that echoes the original request instead of
+failing the stream.
+
+To query another server's reflection service,
+`GrpcReflection.ReflectionClientLayer` provides a ready-made client; include
+`GrpcReflection.ReflectionGrpcRegistry` in the registry passed to
+`GrpcClientProtocol.layer`:
+
+```ts
+Effect.gen(function* () {
+  const reflection = yield* GrpcReflection.ReflectionClient;
+  const responses = reflection.serverReflectionInfo(
+    Stream.make({ host: "", listServices: "*" }),
+  );
+});
+```

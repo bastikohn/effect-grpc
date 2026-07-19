@@ -1,5 +1,15 @@
 # @effect-grpc/features-client
 
+## 0.0.1-beta.3
+
+### Patch Changes
+
+- Updated dependencies [713c9b6]
+- Updated dependencies [976a7fa]
+- Updated dependencies [904056d]
+  - @effect-grpc/effect-grpc@1.0.0-beta.3
+  - @effect-grpc/features-proto@0.0.1-beta.3
+
 ## 0.0.1-beta.2
 
 ### Patch Changes

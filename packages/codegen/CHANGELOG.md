@@ -1,5 +1,11 @@
 # @effect-grpc/codegen
 
+## 1.0.0-beta.3
+
+### Patch Changes
+
+- @effect-grpc/protoc-gen-effect-grpc@1.0.0-beta.3
+
 ## 1.0.0-beta.2
 
 ### Patch Changes

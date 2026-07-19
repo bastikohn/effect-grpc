@@ -19,7 +19,10 @@
     "empty-message-unused-params",
     "first-class-tls-mtls",
     "grpc-auth-bearer-tokens",
+    "grpc-health-checking",
+    "grpc-server-reflection",
     "grpc-status-error-schema-class",
+    "otel-semconv-metrics-tracestate",
     "proto-matrix-expansion",
     "tidy-moons-wonder"
   ]

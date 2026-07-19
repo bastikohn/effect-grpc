@@ -1,5 +1,94 @@
 # @effect-grpc/effect-grpc
 
+## 1.0.0-beta.3
+
+### Minor Changes
+
+- 713c9b6: Add `GrpcHealth`: the standard gRPC Health Checking Protocol
+  (`grpc.health.v1.Health`), so load balancers, Kubernetes probes, and
+  `grpc_health_probe` work out of the box.
+
+  - `GrpcHealth.service` is a ready-made entry for `GrpcNodeServer.serveAll`
+    that registers the `Health` service (`Check` unary, `Watch`
+    server-streaming) next to the application services.
+  - `GrpcHealth.layer()` provides the backing per-service status map. It marks
+    the overall server (the empty-string service name) as `SERVING` by default;
+    `initialStatuses` overrides that. Applications flip statuses through the
+    `GrpcHealth.GrpcHealth` service: `set`, `clear`, `check`, `watch`, and a
+    `statuses` snapshot.
+  - Semantics follow the spec: `Check` returns the current status and fails
+    with `not_found` for unknown services; `Watch` immediately streams the
+    current status — `SERVICE_UNKNOWN` for unknown services — followed by one
+    element per status change (consecutive duplicates are suppressed).
+  - `GrpcHealth.HealthClient`/`HealthClientLayer` provide a client for probing
+    remote servers, shaped like generated clients; `HealthGrpcRegistry` plugs
+    into `GrpcClientProtocol.layer`.
+
+- 976a7fa: Add `GrpcReflection`: the standard gRPC Server Reflection Protocol
+  (`grpc.reflection.v1.ServerReflection`, plus the legacy `v1alpha` alias), so
+  `grpcurl`, `grpcui`, Postman, and similar tools work against the server
+  without local `.proto` files.
+
+  - `GrpcReflection.service(services)` is a ready-made entry for
+    `GrpcNodeServer.serveAll`; pass it the same services array you pass to
+    `serveAll`. It answers reflection queries from the descriptors the
+    generated registries already carry, so no extra codegen or runtime `.proto`
+    loading is involved, and it describes itself and the health service too.
+  - Semantics follow the spec: `list_services`, `file_by_filename`,
+    `file_containing_symbol`, `file_containing_extension`, and
+    `all_extension_numbers_of_type` are all implemented; file answers include
+    the requested descriptor followed by its transitive imports; unknown names
+    produce an in-band `NOT_FOUND` error response that echoes the original
+    request instead of failing the stream.
+  - The same handler serves both the `v1` and `v1alpha` service names — older
+    tools that only probe `v1alpha` work unchanged.
+  - `GrpcReflection.ReflectionClient`/`ReflectionClientLayer` provide a client
+    for querying remote reflection services, shaped like generated clients;
+    `ReflectionGrpcRegistry` plugs into `GrpcClientProtocol.layer`.
+  - `GrpcReflection.makeIndex`/`respond` expose the pure lookup layer for
+    advanced composition and testing.
+
+- 904056d: OpenTelemetry-aligned tracing and metrics for clients and servers.
+
+  - Span attributes keep following the current OTel RPC semantic conventions:
+    `rpc.system.name` (`"grpc"`), the fully qualified `rpc.method`
+    (`demo.v1.UserService/GetUser`), and the string `rpc.response.status_code`
+    (`"OK"`, `"NOT_FOUND"`, ...), with `error.type` (same status name) when
+    the call is an error.
+  - Error classification is asymmetric per semconv: client spans/metrics treat
+    every non-`OK` status as an error; server spans/metrics only the
+    server-fault codes (`UNKNOWN`, `DEADLINE_EXCEEDED`, `UNIMPLEMENTED`,
+    `INTERNAL`, `UNAVAILABLE`, `DATA_LOSS`). Other server outcomes record
+    their status but close the span cleanly, so client-caused conditions
+    (`NOT_FOUND`, `CANCELLED`, ...) do not pollute server error rates.
+  - New zero-config RPC metrics via Effect `Metric`:
+    `rpc.client.call.duration` and `rpc.server.call.duration` histograms
+    (unit `s`, OTel-recommended boundaries), recorded for all four method
+    kinds — including failure and cancellation paths — and tagged with
+    `rpc.system.name`, `rpc.method`, `rpc.response.status_code`, `error.type`
+    per the classification above, plus `server.address`/`server.port` on the
+    client (`server.port` is a string on metrics — Effect metric attributes
+    are string-only — deviating from the semconv's integer type). Exporting
+    stays the app's concern (any Effect Tracer/Metric exporter works).
+  - Client bidi streams that the consumer closes early (e.g. `Stream.take`)
+    now record `CANCELLED` instead of `OK`.
+  - Client spans end in an error state for every non-`OK` outcome, including
+    cancellation via fiber interruption or an early stream close — previously
+    those closed with interrupt/success exits that exporters map to OTel `OK`,
+    contradicting the recorded `CANCELLED` attributes.
+  - `tracestate` pass-through for all four method kinds: servers rehydrate an
+    incoming `tracestate` header into the handler's context under the new
+    exported `GrpcTracing.TraceState` reference (and attach it to the
+    `ExternalSpan` parent's annotations); clients resolve the outgoing header
+    from caller metadata first, then span-ancestry annotations, then the
+    ambient reference, alongside the injected `traceparent`. Per W3C trace
+    context, a `tracestate` arriving without a valid W3C `traceparent` (e.g.
+    on a B3-only request) is discarded.
+
+  See the new [observability guide](https://github.com/bastikohn/effect-grpc/blob/main/docs/users/observability.md)
+  for the full list of span/metric names and attributes and how to hook up an
+  OTLP exporter.
+
 ## 1.0.0-beta.2
 
 ### Patch Changes

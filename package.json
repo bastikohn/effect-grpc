@@ -3,10 +3,10 @@
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
-  "packageManager": "pnpm@11.1.1",
+  "packageManager": "pnpm@11.15.0",
   "engines": {
     "node": ">=22",
-    "pnpm": ">=11"
+    "pnpm": ">=11.5"
   },
   "scripts": {
     "build": "vp run --filter='@effect-grpc/*' build",

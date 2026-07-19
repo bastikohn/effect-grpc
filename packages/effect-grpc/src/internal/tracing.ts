@@ -69,6 +69,20 @@ export const externalSpanFromHeaders = (
 };
 
 /**
+ * Extracts the W3C `tracestate` value from incoming propagation headers.
+ * Per W3C trace context, `tracestate` is only meaningful alongside a valid
+ * `traceparent`, so it is ignored when the parent fails to decode.
+ */
+export const traceStateFromHeaders = (
+  headers: ReadonlyArray<readonly [string, string]>,
+): string | undefined => {
+  const decoded = Headers.fromInput(headers);
+  if (Option.isNone(HttpTraceContext.fromHeaders(decoded))) return undefined;
+  const state = decoded["tracestate"];
+  return state === undefined || state === "" ? undefined : state;
+};
+
+/**
  * Finds the nearest `tracestate` value carried in the span ancestry (see
  * {@link TraceState}). Effect spans do not model `tracestate` natively, so
  * only values attached by {@link externalSpanFromHeaders} (or by the app via
@@ -109,6 +123,7 @@ export const clientCallRecorder = (options: {
         : {}),
     },
     options.context,
+    clientStatusAttributes,
   );
 
 export const serverCallRecorder = (options: {
@@ -121,6 +136,7 @@ export const serverCallRecorder = (options: {
     GrpcMetrics.serverDuration,
     rpcAttributes(options.entry),
     options.context,
+    serverStatusAttributes,
   );
 
 const callRecorder = (
@@ -128,13 +144,16 @@ const callRecorder = (
   duration: Metric.Histogram<number>,
   attributes: Record<string, string>,
   context: Context.Context<never>,
+  statusAttributes: (code: GrpcStatusCode) => Record<string, string>,
 ): StatusRecorder => {
   const start = performance.now();
   let recorded = false;
   return (code) => {
     if (recorded) return;
     recorded = true;
-    annotateSpanStatus(span, code);
+    for (const [key, value] of Object.entries(statusAttributes(code))) {
+      span.attribute(key, value);
+    }
     Metric.withAttributes(duration, {
       ...attributes,
       ...statusAttributes(code),
@@ -142,16 +161,27 @@ const callRecorder = (
   };
 };
 
-export const annotateSpanStatus = (
-  span: Tracer.Span,
-  code: GrpcStatusCode,
-): void => {
-  for (const [key, value] of Object.entries(statusAttributes(code))) {
-    span.attribute(key, value);
-  }
-};
+/**
+ * Per OTel gRPC semconv, only this subset of status codes marks a SERVER span
+ * (or metric) as an error — conditions the server itself is responsible for.
+ * Client-caused or routine outcomes (`cancelled`, `not_found`, ...) keep the
+ * status attribute but are not errors from the server's point of view.
+ * Clients treat every non-`ok` code as an error.
+ */
+const serverErrorCodes: ReadonlySet<GrpcStatusCode> = new Set([
+  "unknown",
+  "deadline_exceeded",
+  "unimplemented",
+  "internal",
+  "unavailable",
+  "data_loss",
+]);
 
-export const statusAttributes = (
+/** Whether a server span should end in an error state for this status code. */
+export const isServerError = (code: GrpcStatusCode): boolean =>
+  serverErrorCodes.has(code);
+
+export const clientStatusAttributes = (
   code: GrpcStatusCode,
 ): Record<string, string> =>
   code === "ok"
@@ -160,6 +190,16 @@ export const statusAttributes = (
         "rpc.response.status_code": statusCodeString(code),
         "error.type": statusCodeString(code),
       };
+
+export const serverStatusAttributes = (
+  code: GrpcStatusCode,
+): Record<string, string> =>
+  isServerError(code)
+    ? {
+        "rpc.response.status_code": statusCodeString(code),
+        "error.type": statusCodeString(code),
+      }
+    : { "rpc.response.status_code": statusCodeString(code) };
 
 /** gRPC status code name per OTel semconv, e.g. `"OK"`, `"NOT_FOUND"`. */
 export const statusCodeString = (code: GrpcStatusCode): string =>

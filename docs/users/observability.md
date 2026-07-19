@@ -23,21 +23,30 @@ Span names follow the semconv `$service/$method` form, e.g.
 
 Attributes on both client and server spans:
 
-| Attribute                  | Type   | Example                                    |
-| -------------------------- | ------ | ------------------------------------------ |
-| `rpc.system.name`          | string | `grpc`                                     |
-| `rpc.method`               | string | `demo.v1.UserService/GetUser`              |
-| `rpc.response.status_code` | string | `OK`, `NOT_FOUND`, ...                     |
-| `error.type`               | string | `NOT_FOUND` — only set when the call fails |
+| Attribute                  | Type   | Example                                          |
+| -------------------------- | ------ | ------------------------------------------------ |
+| `rpc.system.name`          | string | `grpc`                                           |
+| `rpc.method`               | string | `demo.v1.UserService/GetUser`                    |
+| `rpc.response.status_code` | string | `OK`, `NOT_FOUND`, ...                           |
+| `error.type`               | string | `NOT_FOUND` — only set when the call is an error |
 
 Client spans additionally carry `server.address` (string) and `server.port`
 (number), derived from the client's `baseUrl` (override with `serverAddress`
 on `GrpcClientProtocol.layer`).
 
+Error classification follows the semconv's asymmetric rule: **client** spans
+treat every non-`OK` status as an error, while **server** spans treat only
+the server-fault codes `UNKNOWN`, `DEADLINE_EXCEEDED`, `UNIMPLEMENTED`,
+`INTERNAL`, `UNAVAILABLE`, and `DATA_LOSS` as errors. Other server outcomes
+(`NOT_FOUND`, `CANCELLED`, validation failures, ...) record their
+`rpc.response.status_code` but set no `error.type` and end the span cleanly,
+so client-caused conditions do not pollute server error rates.
+
 For streaming methods the span covers the whole call: it opens when the call
 starts and records the status when the stream reaches its final state —
 including failures mid-stream and client cancellation
-(`rpc.response.status_code` = `CANCELLED`, `error.type` = `CANCELLED`).
+(`rpc.response.status_code` = `CANCELLED`; `error.type` = `CANCELLED` on the
+client span only, since cancellation is not a server fault).
 
 ## Metrics
 
@@ -57,17 +66,26 @@ it as a label.
 
 Tags (metric attributes):
 
-| Attribute                  | On     | Example                                    |
-| -------------------------- | ------ | ------------------------------------------ |
-| `rpc.system.name`          | both   | `grpc`                                     |
-| `rpc.method`               | both   | `demo.v1.UserService/GetUser`              |
-| `rpc.response.status_code` | both   | `OK`, `NOT_FOUND`, ...                     |
-| `error.type`               | both   | `NOT_FOUND` — only set when the call fails |
-| `server.address`           | client | `api.example.com`                          |
-| `server.port`              | client | `"8443"` (stringified number)              |
+| Attribute                  | On     | Example                                          |
+| -------------------------- | ------ | ------------------------------------------------ |
+| `rpc.system.name`          | both   | `grpc`                                           |
+| `rpc.method`               | both   | `demo.v1.UserService/GetUser`                    |
+| `rpc.response.status_code` | both   | `OK`, `NOT_FOUND`, ...                           |
+| `error.type`               | both   | `NOT_FOUND` — only set when the call is an error |
+| `server.address`           | client | `api.example.com`                                |
+| `server.port`              | client | `"8443"` (stringified number)                    |
 
-The per-RPC message counters and payload-size histograms from the semconv are
-not emitted yet.
+`error.type` follows the same asymmetric classification as spans: clients tag
+every non-`OK` call, servers only the server-fault subset.
+
+Known deviation: the semconv types `server.port` as an **integer**, but
+Effect's metric attributes are string-only, so it is exported as a string.
+Span attributes are unaffected (`server.port` is a number there). If your
+backend enforces attribute types, drop or cast the label in your collector.
+
+The two `*.call.duration` histograms are the complete set of current semconv
+RPC metrics; the per-message counters and payload-size histograms defined by
+earlier semconv versions are deprecated and deliberately not emitted.
 
 ## Context propagation
 
@@ -77,32 +95,30 @@ not emitted yet.
   inject nothing. The server parses incoming `traceparent` (W3C first, then
   B3) and parents its span to the resulting `ExternalSpan`.
 - **`tracestate`** — Effect's tracer model has no native `tracestate` field,
-  so the library threads it through span annotations under the exported
-  `GrpcTracing.TraceState` context key: the server attaches an incoming
-  `tracestate` header to the `ExternalSpan`'s annotations, and the client
-  forwards the nearest `tracestate` found in the span ancestry alongside the
-  `traceparent` it injects. Net effect: `tracestate` passes through services
-  built with this library. Note that exporters (e.g. `@effect/opentelemetry`)
-  do not read this annotation, so the value is propagated but not attached to
-  exported span data.
+  so the library threads it through the request context under the exported
+  `GrpcTracing.TraceState` reference: the server rehydrates an incoming
+  `tracestate` header (accompanied by a valid `traceparent`) into the
+  handler's context, and the client resolves the outgoing header in order —
+  caller-provided `tracestate` metadata first, then a `TraceState` span
+  annotation found in the span ancestry, then the ambient reference from the
+  calling fiber's context. Net effect: `tracestate` passes through services
+  built with this library (server in, client out) for all four method kinds.
+  Note that exporters (e.g. `@effect/opentelemetry`) do not read this value,
+  so it is propagated but not attached to exported span data.
 - **W3C baggage** is not propagated: Effect's tracer model has no baggage
   concept to source it from or deliver it into. Forward baggage explicitly as
   metadata if you need it.
 
-To read the raw `tracestate` in server code, get it from the parent span's
-annotations:
+To read the raw `tracestate` in a handler, read the reference from the
+context:
 
 ```ts
-import { Context, Effect, Option } from "effect";
+import { Effect } from "effect";
 import { GrpcTracing } from "@effect-grpc/effect-grpc";
 
 Effect.gen(function* () {
-  const span = yield* Effect.currentSpan;
-  const parent = Option.getOrUndefined(span.parent);
-  const state =
-    parent === undefined
-      ? undefined
-      : Context.get(parent.annotations, GrpcTracing.TraceState);
+  // `string | undefined` — undefined when the caller sent no tracestate.
+  const state = yield* Effect.service(GrpcTracing.TraceState);
 });
 ```
 

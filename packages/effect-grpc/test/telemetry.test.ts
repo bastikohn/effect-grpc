@@ -8,14 +8,18 @@ import {
   Context,
   Deferred,
   Effect,
+  Layer,
   Metric,
   Option,
   Schema,
   Stream,
 } from "effect";
 import * as Tracer from "effect/Tracer";
+import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcClient from "effect/unstable/rpc/RpcClient";
+import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 import type { FromServerEncoded } from "effect/unstable/rpc/RpcMessage";
+import * as RpcServer from "effect/unstable/rpc/RpcServer";
 import { describe, expect, it } from "vitest";
 
 import * as GrpcClientProtocol from "../src/GrpcClientProtocol.js";
@@ -225,6 +229,55 @@ describe("client telemetry", () => {
     expect(durations[0]?.count).toBe(1);
   });
 
+  it("falls back to the ambient TraceState reference when the span ancestry has none", async () => {
+    const telemetry = makeTestTelemetry();
+    const { transport, headers } = fakeTransport({
+      unary: () => ({ ok: true }),
+    });
+
+    await Effect.runPromise(
+      telemetry.provide(
+        callUnary(unaryEntry.tag).pipe(
+          Effect.provide(clientLayer(transport)),
+          Effect.provideService(TraceState, "vendor=ambient"),
+        ),
+      ),
+    );
+
+    expect(headers[0]?.get("traceparent")).toMatch(TRACEPARENT_PATTERN);
+    expect(headers[0]?.get("tracestate")).toBe("vendor=ambient");
+  });
+
+  it("falls back to the ambient TraceState reference on streaming calls", async () => {
+    const telemetry = makeTestTelemetry();
+    const { transport, headers } = fakeTransport({
+      stream: async function* (input) {
+        for await (const _ of input) {
+          // drain
+        }
+        yield { received: true };
+      },
+    });
+
+    await Effect.runPromise(
+      telemetry.provide(
+        Effect.gen(function* () {
+          const client = yield* GrpcClientProtocol.GrpcStreamingClient;
+          return yield* client.clientStreaming(
+            clientStreamingEntry.tag,
+            Stream.make({ id: "1" }),
+          );
+        }).pipe(
+          Effect.provide(clientLayer(transport)),
+          Effect.provideService(TraceState, "vendor=ambient"),
+        ),
+      ),
+    );
+
+    expect(headers[0]?.get("traceparent")).toMatch(TRACEPARENT_PATTERN);
+    expect(headers[0]?.get("tracestate")).toBe("vendor=ambient");
+  });
+
   it("records failed client-streaming calls with the failure status", async () => {
     const telemetry = makeTestTelemetry();
     const { transport } = fakeTransport({
@@ -424,7 +477,66 @@ describe("server telemetry", () => {
     expect(durations[0]?.count).toBe(1);
   });
 
-  it("records the status code and error.type on unary handler failure", async () => {
+  it("forwards incoming tracestate to downstream client calls made from a unary handler", async () => {
+    const telemetry = makeTestTelemetry();
+    const { transport, headers } = fakeTransport({
+      unary: () => ({ ok: true }),
+    });
+    // Real `RpcServer` in the middle, mirroring `serveAll` wiring: the
+    // handler fiber is spawned by `RpcServer` (which drops span-parent
+    // annotations for unary methods), so this exercises the rehydration of
+    // `tracestate` through the request context into downstream injection.
+    const rpc = Rpc.make("demo.v1.TelemetryService/Get", {
+      payload: Schema.Unknown,
+      success: Schema.Unknown,
+      error: GrpcStatusError.GrpcStatusError,
+    });
+    const group = RpcGroup.make(rpc);
+
+    const result = await Effect.runPromise(
+      telemetry.provide(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const downstream = yield* RpcClient.make(group).pipe(
+              Effect.provide(clientLayer(transport)),
+            );
+            const { protocol, routes } = yield* GrpcServerProtocol.make({
+              registry: new Map([[unaryEntry.tag, unaryEntry]]),
+            });
+            const handlers = yield* Layer.build(
+              group.toLayer({
+                "demo.v1.TelemetryService/Get": () =>
+                  downstream["demo.v1.TelemetryService/Get"]({}).pipe(
+                    Effect.orDie,
+                  ),
+              }),
+            );
+            yield* RpcServer.make(group).pipe(
+              Effect.provideService(RpcServer.Protocol, protocol),
+              Effect.provideContext(handlers),
+              Effect.forkScoped,
+            );
+            yield* Effect.yieldNow;
+            const implementation = captureImplementation(routes);
+            return yield* Effect.promise(() =>
+              (
+                implementation.get as (
+                  request: unknown,
+                  context: HandlerContext,
+                ) => Promise<unknown>
+              )({}, handlerContext(incomingHeaders)),
+            );
+          }),
+        ),
+      ),
+    );
+
+    expect(result).toEqual({ ok: true });
+    expect(headers[0]?.get("traceparent")).toMatch(TRACEPARENT_PATTERN);
+    expect(headers[0]?.get("tracestate")).toBe("vendor=abc");
+  });
+
+  it("records NOT_FOUND without error.type on unary failure (not a server fault)", async () => {
     const telemetry = makeTestTelemetry();
 
     const result = await Effect.runPromise(
@@ -470,7 +582,8 @@ describe("server telemetry", () => {
     expect(result.error).toMatchObject({ rawMessage: "missing" });
     const span = telemetry.expectSpan(unaryEntry.tag);
     expect(span.attributes.get("rpc.response.status_code")).toBe("NOT_FOUND");
-    expect(span.attributes.get("error.type")).toBe("NOT_FOUND");
+    // Per semconv, server spans mark only server-fault codes as errors.
+    expect(span.attributes.get("error.type")).toBeUndefined();
 
     const durations = durationMetrics(
       result.metrics,
@@ -480,7 +593,68 @@ describe("server telemetry", () => {
     expect(durations[0]?.attributes).toMatchObject({
       "rpc.method": "demo.v1.TelemetryService/Get",
       "rpc.response.status_code": "NOT_FOUND",
-      "error.type": "NOT_FOUND",
+    });
+    expect(durations[0]?.attributes?.["error.type"]).toBeUndefined();
+    expect(durations[0]?.count).toBe(1);
+  });
+
+  it("records error.type on unary failure with a server-fault code", async () => {
+    const telemetry = makeTestTelemetry();
+
+    const result = await Effect.runPromise(
+      telemetry.provide(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const { protocol, routes } = yield* GrpcServerProtocol.make({
+              registry: new Map([[unaryEntry.tag, unaryEntry]]),
+            });
+            const implementation = captureImplementation(routes);
+
+            yield* protocol
+              .run((clientId, data) =>
+                data._tag === "Request"
+                  ? protocol.send(
+                      clientId,
+                      failureExit(data.id, GrpcStatusError.internal("boom")),
+                    )
+                  : Effect.void,
+              )
+              .pipe(Effect.forkScoped);
+
+            const error = yield* Effect.promise(async () => {
+              try {
+                await (
+                  implementation.get as (
+                    request: unknown,
+                    context: HandlerContext,
+                  ) => Promise<unknown>
+                )({}, handlerContext());
+              } catch (cause) {
+                return cause;
+              }
+              throw new Error("Expected unary handler to fail");
+            });
+            const metrics = yield* Metric.snapshot;
+            return { error, metrics };
+          }),
+        ),
+      ),
+    );
+
+    expect(result.error).toMatchObject({ rawMessage: "boom" });
+    const span = telemetry.expectSpan(unaryEntry.tag);
+    expect(span.attributes.get("rpc.response.status_code")).toBe("INTERNAL");
+    expect(span.attributes.get("error.type")).toBe("INTERNAL");
+
+    const durations = durationMetrics(
+      result.metrics,
+      "rpc.server.call.duration",
+    );
+    expect(durations).toHaveLength(1);
+    expect(durations[0]?.attributes).toMatchObject({
+      "rpc.method": "demo.v1.TelemetryService/Get",
+      "rpc.response.status_code": "INTERNAL",
+      "error.type": "INTERNAL",
     });
     expect(durations[0]?.count).toBe(1);
   });
@@ -546,7 +720,8 @@ describe("server telemetry", () => {
     const span = telemetry.expectSpan(bidiStreamingEntry.tag);
     expect(span.kind).toBe("server");
     expect(span.attributes.get("rpc.response.status_code")).toBe("NOT_FOUND");
-    expect(span.attributes.get("error.type")).toBe("NOT_FOUND");
+    // Per semconv, server spans mark only server-fault codes as errors.
+    expect(span.attributes.get("error.type")).toBeUndefined();
     const parent = Option.getOrThrow(span.parent);
     expect(parent.traceId).toBe(traceId);
 
@@ -558,8 +733,8 @@ describe("server telemetry", () => {
     expect(durations[0]?.attributes).toMatchObject({
       "rpc.method": "demo.v1.TelemetryService/Chat",
       "rpc.response.status_code": "NOT_FOUND",
-      "error.type": "NOT_FOUND",
     });
+    expect(durations[0]?.attributes?.["error.type"]).toBeUndefined();
     expect(durations[0]?.count).toBe(1);
   });
 });

@@ -1,25 +1,26 @@
 import { Context } from "effect";
 
 /**
- * Context key carrying a W3C `tracestate` header value through Effect's
- * tracer model.
+ * Context reference carrying a W3C `tracestate` header value.
  *
  * Effect spans have no dedicated `tracestate` field, so this library threads
- * the value through span annotations instead:
+ * the value through the request context (and, additionally, through span
+ * annotations):
  *
- * - On the server, an incoming `tracestate` header is attached to the
- *   `Tracer.ExternalSpan` parent's `annotations` context under this key.
- * - On the client, the span ancestry is searched for this annotation and the
- *   first value found is forwarded as the outgoing `tracestate` header
- *   (alongside the injected `traceparent`). A caller-provided `tracestate`
- *   metadata entry always wins.
+ * - On the server, an incoming `tracestate` header is provided under this
+ *   reference into the handler's context, and also attached to the
+ *   `Tracer.ExternalSpan` parent's `annotations`.
+ * - On the client, the outgoing `tracestate` header is resolved in order:
+ *   a caller-provided `tracestate` metadata entry always wins, then the
+ *   span ancestry is searched for an annotation under this key, then the
+ *   ambient reference from the calling fiber's context is used.
  *
  * Together this makes `tracestate` pass through services built with this
- * library (server in, client out). Read it from a handler's parent span when
- * you need the raw value:
+ * library (server in, client out) for every method kind. Read the ambient
+ * value from a handler when you need the raw header:
  *
  * ```ts
- * const state = Context.get(externalSpan.annotations, GrpcTracing.TraceState);
+ * const state = yield* Effect.service(GrpcTracing.TraceState);
  * ```
  */
 export const TraceState = Context.Reference<string | undefined>(

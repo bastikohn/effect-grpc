@@ -18,7 +18,9 @@ const durationAttributes = { unit: "s" };
  * `rpc.client.call.duration`: duration of outbound gRPC calls in seconds,
  * from call start to final status. Tagged with `rpc.system.name`,
  * `rpc.method`, `rpc.response.status_code`, `error.type` on failure, and
- * `server.address`/`server.port` where available.
+ * `server.address`/`server.port` where available. Deviation: semconv types
+ * `server.port` as an integer, but Effect's metric attributes are
+ * string-only, so it is exported as a string here.
  */
 export const clientDuration = Metric.histogram("rpc.client.call.duration", {
   description: "Duration of outbound gRPC calls, in seconds.",
@@ -29,7 +31,8 @@ export const clientDuration = Metric.histogram("rpc.client.call.duration", {
 /**
  * `rpc.server.call.duration`: duration of inbound gRPC calls in seconds,
  * from call start to final status. Tagged with `rpc.system.name`,
- * `rpc.method`, `rpc.response.status_code`, and `error.type` on failure.
+ * `rpc.method`, `rpc.response.status_code`, and `error.type` for
+ * server-fault codes only (see `isServerError` in `tracing.ts`).
  */
 export const serverDuration = Metric.histogram("rpc.server.call.duration", {
   description: "Duration of inbound gRPC calls, in seconds.",

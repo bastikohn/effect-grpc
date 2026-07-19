@@ -100,3 +100,49 @@ GrpcClientProtocol.layer({
 TLS handshake failures surface to callers as `GrpcStatusError` with code
 `internal` (connect-node's mapping). `rejectUnauthorized: false` disables
 server certificate verification for development against self-signed servers.
+
+## Health Checking
+
+`GrpcHealth` implements the standard
+[gRPC Health Checking Protocol](https://github.com/grpc/grpc/blob/master/doc/health-checking.md)
+(`grpc.health.v1.Health`), so load balancers, Kubernetes probes, and
+`grpc_health_probe` work out of the box. `GrpcHealth.service` plugs the
+`Check` and `Watch` RPCs into `serveAll`; `GrpcHealth.layer()` provides the
+status map that backs them and marks the overall server — the empty-string
+service name — as `SERVING`:
+
+```ts
+GrpcNodeServer.serveAll({
+  host: "0.0.0.0",
+  port: 50051,
+  services: [userService, GrpcHealth.service],
+}).pipe(Effect.provide(GrpcHealth.layer()));
+```
+
+Applications register and flip per-service statuses through the
+`GrpcHealth.GrpcHealth` service:
+
+```ts
+Effect.gen(function* () {
+  const health = yield* GrpcHealth.GrpcHealth;
+  yield* health.set("demo.v1.UserService", "SERVING");
+  yield* health.set("", "NOT_SERVING"); // e.g. while draining on shutdown
+  yield* health.clear("demo.v1.UserService"); // unregister
+});
+```
+
+Semantics follow the spec: `Check` answers with the current status and fails
+with `not_found` for unknown services; `Watch` immediately streams the current
+status — `SERVICE_UNKNOWN` for unknown services — followed by one element per
+status change (consecutive duplicates are suppressed).
+
+To probe another server, `GrpcHealth.HealthClientLayer` provides a ready-made
+client; include `GrpcHealth.HealthGrpcRegistry` in the registry passed to
+`GrpcClientProtocol.layer`:
+
+```ts
+Effect.gen(function* () {
+  const health = yield* GrpcHealth.HealthClient;
+  const { status } = yield* health.check({ service: "demo.v1.UserService" });
+});
+```

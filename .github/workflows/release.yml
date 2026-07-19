@@ -67,12 +67,15 @@ jobs:
     if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/v3') && needs.changesets.outputs.has-changesets == 'false'
     needs: [verify, changesets]
     runs-on: ubuntu-latest
-    # NPM_TOKEN lives on this protected environment, not as a repo secret, so
-    # only this job (restricted to the main/v3 branches) can read it.
+    # The npm-publish environment still gates this job (branch restriction plus
+    # any required reviewers); it no longer holds an NPM_TOKEN. Auth is via npm
+    # trusted publishing (OIDC), so a matching trusted publisher must be
+    # configured for each package on npmjs.com (workflow: release.yml).
     environment: npm-publish
     permissions:
       # contents: write lets the job push version tags and create GitHub
-      # releases; id-token: write lets npm mint provenance attestations.
+      # releases; id-token: write mints the OIDC token npm exchanges for a
+      # short-lived publish credential (trusted publishing) and provenance.
       contents: write
       id-token: write
     steps:
@@ -91,7 +94,9 @@ jobs:
         run: pnpm build
 
       - name: Publish changed public packages
+        # No NODE_AUTH_TOKEN: pnpm (>= 11.5) obtains a short-lived credential via
+        # OIDC trusted publishing. GITHUB_TOKEN is only for pushing tags and
+        # creating GitHub releases in the publish script.
         run: pnpm changeset:publish --provenance
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

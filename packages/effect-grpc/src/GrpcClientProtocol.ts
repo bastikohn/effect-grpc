@@ -1,7 +1,7 @@
 import type { CallOptions, Interceptor, Transport } from "@connectrpc/connect";
 import { createGrpcTransport } from "@connectrpc/connect-node";
 import type { GrpcTransportOptions } from "@connectrpc/connect-node";
-import { Context, Effect, Layer, Scope, Stream } from "effect";
+import { Context, Effect, Exit, Layer, Scope, Stream } from "effect";
 import type * as Tracer from "effect/Tracer";
 import * as RpcClient from "effect/unstable/rpc/RpcClient";
 import type { FromClientEncoded } from "effect/unstable/rpc/RpcMessage";
@@ -261,53 +261,73 @@ const make = (
 
         // `Effect.suspend` keeps the abort controller and status recorder
         // execution-local, so re-running the returned effect cannot share
-        // mutable call state across executions.
+        // mutable call state across executions. The span is scope-managed
+        // (not `Effect.withSpan`) so it can close with an exit computed from
+        // the recorded status: per semconv every non-OK client status is an
+        // error — including cancellation, which surfaces as interruption and
+        // would otherwise end the span with an interrupt-only exit that
+        // exporters map to OK.
         return Effect.suspend(() => {
           const controller = new AbortController();
           const key = callKey(clientId, request.id);
           activeCalls.set(key, controller);
 
-          let record: GrpcTracing.StatusRecorder | undefined;
-          return Effect.gen(function* () {
-            const span = yield* Effect.currentSpan.pipe(Effect.orDie);
-            const ambientTraceState = yield* Effect.service(TraceState);
-            record = GrpcTracing.clientCallRecorder({
-              entry,
-              span,
-              context,
-              serverAddress: options.serverAddress,
-            });
-            const status = yield* Effect.promise(async (signal) => {
-              const abort = () => controller.abort();
-              signal.addEventListener("abort", abort, { once: true });
-              try {
-                return await invoke(
-                  entry,
-                  request,
-                  clientId,
-                  controller.signal,
-                  span,
-                  ambientTraceState,
-                );
-              } finally {
-                signal.removeEventListener("abort", abort);
-                activeCalls.delete(key);
-              }
-            });
-            record(status);
-            if (status !== "ok") {
-              yield* Effect.fail(status);
-            }
-          }).pipe(
-            Effect.onInterrupt(() => Effect.sync(() => record?.("cancelled"))),
-          );
-        }).pipe(
-          Effect.withSpan(
-            GrpcTracing.spanName(entry),
-            GrpcTracing.clientSpanOptions(entry, options.serverAddress),
-          ),
-          Effect.catch(() => Effect.void),
-        );
+          let finalCode: GrpcStatusCode | undefined;
+          return Effect.uninterruptibleMask((restore) =>
+            Effect.gen(function* () {
+              const spanScope = yield* Scope.make();
+              const span = yield* Effect.makeSpanScoped(
+                GrpcTracing.spanName(entry),
+                GrpcTracing.clientSpanOptions(entry, options.serverAddress),
+              ).pipe(Scope.provide(spanScope));
+              const baseRecord = GrpcTracing.clientCallRecorder({
+                entry,
+                span,
+                context,
+                serverAddress: options.serverAddress,
+              });
+              const record: GrpcTracing.StatusRecorder = (code) => {
+                finalCode ??= code;
+                baseRecord(code);
+              };
+              return yield* restore(
+                Effect.gen(function* () {
+                  const ambientTraceState = yield* Effect.service(TraceState);
+                  const status = yield* Effect.promise(async (signal) => {
+                    const abort = () => controller.abort();
+                    signal.addEventListener("abort", abort, { once: true });
+                    try {
+                      return await invoke(
+                        entry,
+                        request,
+                        clientId,
+                        controller.signal,
+                        span,
+                        ambientTraceState,
+                      );
+                    } finally {
+                      signal.removeEventListener("abort", abort);
+                      activeCalls.delete(key);
+                    }
+                  });
+                  record(status);
+                  if (status !== "ok") {
+                    yield* Effect.fail(status);
+                  }
+                }).pipe(
+                  Effect.onInterrupt(() =>
+                    Effect.sync(() => record("cancelled")),
+                  ),
+                  Effect.withParentSpan(span),
+                ),
+              ).pipe(
+                Effect.onExit(() =>
+                  Scope.close(spanScope, clientSpanExit(finalCode)),
+                ),
+              );
+            }),
+          ).pipe(Effect.catch(() => Effect.void));
+        });
       };
 
       const invoke = async (
@@ -502,84 +522,106 @@ const makeStreaming = (
       }
       // `Effect.suspend` keeps the status recorder execution-local, so
       // re-running the returned effect cannot share mutable call state
-      // across executions.
+      // across executions. The span is scope-managed (not `Effect.withSpan`)
+      // so it can close with an exit computed from the recorded status: per
+      // semconv every non-OK client status is an error — including
+      // cancellation, which surfaces as interruption and would otherwise end
+      // the span with an interrupt-only exit that exporters map to OK.
       return Effect.suspend(() => {
-        let recorder: GrpcTracing.StatusRecorder | undefined;
-        return Effect.gen(function* () {
-          const span = yield* Effect.currentSpan.pipe(Effect.orDie);
-          const ambientTraceState = yield* Effect.service(TraceState);
-          const record = GrpcTracing.clientCallRecorder({
-            entry,
-            span,
-            context,
-            serverAddress: options.serverAddress,
-          });
-          recorder = record;
-          const method = resolveMethod(entry);
-          if (!method) {
-            const error = GrpcStatusError.unimplemented(
-              `gRPC client is missing method ${entry.localName}`,
+        let finalCode: GrpcStatusCode | undefined;
+        return Effect.uninterruptibleMask((restore) =>
+          Effect.gen(function* () {
+            const spanScope = yield* Scope.make();
+            const span = yield* Effect.makeSpanScoped(
+              GrpcTracing.spanName(entry),
+              GrpcTracing.clientSpanOptions(entry, options.serverAddress),
+            ).pipe(Scope.provide(spanScope));
+            const baseRecord = GrpcTracing.clientCallRecorder({
+              entry,
+              span,
+              context,
+              serverAddress: options.serverAddress,
+            });
+            const record: GrpcTracing.StatusRecorder = (code) => {
+              finalCode ??= code;
+              baseRecord(code);
+            };
+            return yield* restore(
+              Effect.gen(function* () {
+                const ambientTraceState = yield* Effect.service(TraceState);
+                const method = resolveMethod(entry);
+                if (!method) {
+                  const error = GrpcStatusError.unimplemented(
+                    `gRPC client is missing method ${entry.localName}`,
+                  );
+                  record(error.code);
+                  return yield* Effect.fail(error);
+                }
+                const state: StreamingCallState = {};
+                const controller = new AbortController();
+                const pump = openRequests(
+                  entry,
+                  requests as Stream.Stream<unknown, unknown>,
+                  state,
+                  controller,
+                );
+                const result = yield* Effect.promise(
+                  async (signal): Promise<StreamingCallResult> => {
+                    const abort = () => controller.abort();
+                    signal.addEventListener("abort", abort, { once: true });
+                    try {
+                      const call = method(
+                        pump.iterable,
+                        streamingCallOptions(
+                          callOptions,
+                          span,
+                          controller.signal,
+                          ambientTraceState,
+                        ),
+                      ) as Promise<unknown>;
+                      return { ok: true, value: await call };
+                    } catch (cause) {
+                      return { ok: false, cause };
+                    } finally {
+                      signal.removeEventListener("abort", abort);
+                      await pump.close();
+                    }
+                  },
+                );
+                if (!result.ok) {
+                  if (state.failure) {
+                    record(streamingFailureCode(state.failure.error));
+                    return yield* Effect.fail(state.failure.error as E);
+                  }
+                  const error = GrpcStatusError.fromConnectError(result.cause);
+                  record(error.code);
+                  return yield* Effect.fail(error);
+                }
+                const response = yield* decodeResponse(
+                  entry,
+                  result.value,
+                ).pipe(
+                  Effect.mapError((error) => {
+                    record(error.code);
+                    return error;
+                  }),
+                );
+                record("ok");
+                return response;
+              }).pipe(
+                Effect.onInterrupt(() =>
+                  Effect.sync(() => record("cancelled")),
+                ),
+                Effect.withParentSpan(span),
+              ),
+            ).pipe(
+              Effect.onExit(() =>
+                Scope.close(spanScope, clientSpanExit(finalCode)),
+              ),
             );
-            record(error.code);
-            return yield* Effect.fail(error);
-          }
-          const state: StreamingCallState = {};
-          const controller = new AbortController();
-          const pump = openRequests(
-            entry,
-            requests as Stream.Stream<unknown, unknown>,
-            state,
-            controller,
-          );
-          const result = yield* Effect.promise(
-            async (signal): Promise<StreamingCallResult> => {
-              const abort = () => controller.abort();
-              signal.addEventListener("abort", abort, { once: true });
-              try {
-                const call = method(
-                  pump.iterable,
-                  streamingCallOptions(
-                    callOptions,
-                    span,
-                    controller.signal,
-                    ambientTraceState,
-                  ),
-                ) as Promise<unknown>;
-                return { ok: true, value: await call };
-              } catch (cause) {
-                return { ok: false, cause };
-              } finally {
-                signal.removeEventListener("abort", abort);
-                await pump.close();
-              }
-            },
-          );
-          if (!result.ok) {
-            if (state.failure) {
-              record(streamingFailureCode(state.failure.error));
-              return yield* Effect.fail(state.failure.error as E);
-            }
-            const error = GrpcStatusError.fromConnectError(result.cause);
-            record(error.code);
-            return yield* Effect.fail(error);
-          }
-          const response = yield* decodeResponse(entry, result.value).pipe(
-            Effect.mapError((error) => {
-              record(error.code);
-              return error;
-            }),
-          );
-          record("ok");
-          return response;
-        }).pipe(
-          Effect.onInterrupt(() => Effect.sync(() => recorder?.("cancelled"))),
+          }),
         );
-      }).pipe(
-        Effect.withSpan(
-          GrpcTracing.spanName(entry),
-          GrpcTracing.clientSpanOptions(entry, options.serverAddress),
-        ),
-      );
+      });
     };
 
     const bidiStreaming = <A, E>(
@@ -593,70 +635,89 @@ const makeStreaming = (
           GrpcStatusError.unimplemented(`Unknown gRPC RPC tag: ${tag}`),
         );
       }
+      // The span is scope-managed with an exit computed from the recorded
+      // status: an early consumer close ends the stream scope with a
+      // successful exit, but per semconv the resulting CANCELLED status is
+      // an error on the client span. The setup effect is uninterruptible so
+      // the span scope cannot leak between creation and finalizer
+      // registration.
       return Stream.unwrap(
-        Effect.gen(function* () {
-          const span = yield* Effect.makeSpanScoped(
-            GrpcTracing.spanName(entry),
-            GrpcTracing.clientSpanOptions(entry, options.serverAddress),
-          );
-          const ambientTraceState = yield* Effect.service(TraceState);
-          const record = GrpcTracing.clientCallRecorder({
-            entry,
-            span,
-            context,
-            serverAddress: options.serverAddress,
-          });
-          const method = resolveMethod(entry);
-          if (!method) {
-            const error = GrpcStatusError.unimplemented(
-              `gRPC client is missing method ${entry.localName}`,
-            );
-            record(error.code);
-            return Stream.fail(error);
-          }
-          const state: StreamingCallState = {};
-          const controller = new AbortController();
-          const pump = openRequests(
-            entry,
-            requests as Stream.Stream<unknown, unknown>,
-            state,
-            controller,
-          );
-          // `record` keeps only the first status. Natural completion and
-          // failures record below; any earlier scope close (consumer
-          // short-circuiting via `Stream.take`, interruption) aborts a live
-          // call, so the finalizer's `cancelled` is correct for what remains.
-          yield* Effect.addFinalizer(() =>
-            Effect.promise(async () => {
-              controller.abort();
-              await pump.close();
-              record("cancelled");
-            }),
-          );
-          const responses = method(
-            pump.iterable,
-            streamingCallOptions(
-              callOptions,
+        Effect.uninterruptible(
+          Effect.gen(function* () {
+            const spanScope = yield* Scope.make();
+            const span = yield* Effect.makeSpanScoped(
+              GrpcTracing.spanName(entry),
+              GrpcTracing.clientSpanOptions(entry, options.serverAddress),
+            ).pipe(Scope.provide(spanScope));
+            let finalCode: GrpcStatusCode | undefined;
+            const baseRecord = GrpcTracing.clientCallRecorder({
+              entry,
               span,
-              controller.signal,
-              ambientTraceState,
-            ),
-          ) as AsyncIterable<unknown>;
-          return Stream.fromAsyncIterable(
-            responses,
-            (cause): GrpcStatusError.GrpcStatusError | E =>
-              state.failure
-                ? (state.failure.error as E)
-                : GrpcStatusError.fromConnectError(cause),
-          ).pipe(
-            Stream.mapEffect((message) => decodeResponse(entry, message)),
-            Stream.mapError((error) => {
-              record(streamingFailureCode(error));
-              return error;
-            }),
-            Stream.onEnd(Effect.sync(() => record("ok"))),
-          );
-        }),
+              context,
+              serverAddress: options.serverAddress,
+            });
+            const record: GrpcTracing.StatusRecorder = (code) => {
+              finalCode ??= code;
+              baseRecord(code);
+            };
+            const closeSpan = Effect.suspend(() =>
+              Scope.close(spanScope, clientSpanExit(finalCode)),
+            );
+            const ambientTraceState = yield* Effect.service(TraceState);
+            const method = resolveMethod(entry);
+            if (!method) {
+              const error = GrpcStatusError.unimplemented(
+                `gRPC client is missing method ${entry.localName}`,
+              );
+              record(error.code);
+              yield* closeSpan;
+              return Stream.fail(error);
+            }
+            const state: StreamingCallState = {};
+            const controller = new AbortController();
+            const pump = openRequests(
+              entry,
+              requests as Stream.Stream<unknown, unknown>,
+              state,
+              controller,
+            );
+            // `record` keeps only the first status. Natural completion and
+            // failures record below; any earlier scope close (consumer
+            // short-circuiting via `Stream.take`, interruption) aborts a live
+            // call, so the finalizer's `cancelled` is correct for what
+            // remains.
+            yield* Effect.addFinalizer(() =>
+              Effect.promise(async () => {
+                controller.abort();
+                await pump.close();
+                record("cancelled");
+              }).pipe(Effect.andThen(closeSpan)),
+            );
+            const responses = method(
+              pump.iterable,
+              streamingCallOptions(
+                callOptions,
+                span,
+                controller.signal,
+                ambientTraceState,
+              ),
+            ) as AsyncIterable<unknown>;
+            return Stream.fromAsyncIterable(
+              responses,
+              (cause): GrpcStatusError.GrpcStatusError | E =>
+                state.failure
+                  ? (state.failure.error as E)
+                  : GrpcStatusError.fromConnectError(cause),
+            ).pipe(
+              Stream.mapEffect((message) => decodeResponse(entry, message)),
+              Stream.mapError((error) => {
+                record(streamingFailureCode(error));
+                return error;
+              }),
+              Stream.onEnd(Effect.sync(() => record("ok"))),
+            );
+          }),
+        ),
       );
     };
 
@@ -665,6 +726,24 @@ const makeStreaming = (
 
 const streamingFailureCode = (error: unknown): GrpcStatusCode =>
   error instanceof GrpcStatusError.GrpcStatusError ? error.code : "cancelled";
+
+/**
+ * Exit used to close a client span scope. Per semconv every non-`ok` client
+ * status is an error, so the span ends in a failed exit whenever a non-`ok`
+ * status was recorded — even when the call surfaced as interruption or an
+ * early stream close, whose natural exits exporters would map to OK.
+ */
+const clientSpanExit = (
+  code: GrpcStatusCode | undefined,
+): Exit.Exit<void, GrpcStatusError.GrpcStatusError> =>
+  code === undefined || code === "ok"
+    ? Exit.void
+    : Exit.fail(
+        GrpcStatusError.make({
+          code,
+          message: `RPC failed with status ${code}`,
+        }),
+      );
 
 const streamingCallOptions = (
   options: GrpcCallOptions | undefined,

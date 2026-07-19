@@ -42,6 +42,11 @@ the server-fault codes `UNKNOWN`, `DEADLINE_EXCEEDED`, `UNIMPLEMENTED`,
 `rpc.response.status_code` but set no `error.type` and end the span cleanly,
 so client-caused conditions do not pollute server error rates.
 
+The classification also drives the exported span status: a client span ends
+in an error state for every non-`OK` outcome — including cancellation via
+fiber interruption or an early stream close, whose natural Effect exits
+(interrupt, success) exporters would otherwise map to OTel `OK`.
+
 For streaming methods the span covers the whole call: it opens when the call
 starts and records the status when the stream reaches its final state —
 including failures mid-stream and client cancellation
@@ -97,8 +102,10 @@ earlier semconv versions are deprecated and deliberately not emitted.
 - **`tracestate`** — Effect's tracer model has no native `tracestate` field,
   so the library threads it through the request context under the exported
   `GrpcTracing.TraceState` reference: the server rehydrates an incoming
-  `tracestate` header (accompanied by a valid `traceparent`) into the
-  handler's context, and the client resolves the outgoing header in order —
+  `tracestate` header into the handler's context — only when a valid **W3C**
+  `traceparent` accompanies it; per W3C trace context, a `tracestate` on a
+  request carrying only B3 headers is discarded (the span is still parented
+  via B3) — and the client resolves the outgoing header in order —
   caller-provided `tracestate` metadata first, then a `TraceState` span
   annotation found in the span ancestry, then the ambient reference from the
   calling fiber's context. Net effect: `tracestate` passes through services

@@ -26,12 +26,18 @@ OpenTelemetry-aligned tracing and metrics for clients and servers.
   stays the app's concern (any Effect Tracer/Metric exporter works).
 - Client bidi streams that the consumer closes early (e.g. `Stream.take`)
   now record `CANCELLED` instead of `OK`.
+- Client spans end in an error state for every non-`OK` outcome, including
+  cancellation via fiber interruption or an early stream close — previously
+  those closed with interrupt/success exits that exporters map to OTel `OK`,
+  contradicting the recorded `CANCELLED` attributes.
 - `tracestate` pass-through for all four method kinds: servers rehydrate an
   incoming `tracestate` header into the handler's context under the new
   exported `GrpcTracing.TraceState` reference (and attach it to the
   `ExternalSpan` parent's annotations); clients resolve the outgoing header
   from caller metadata first, then span-ancestry annotations, then the
-  ambient reference, alongside the injected `traceparent`.
+  ambient reference, alongside the injected `traceparent`. Per W3C trace
+  context, a `tracestate` arriving without a valid W3C `traceparent` (e.g.
+  on a B3-only request) is discarded.
 
 See the new [observability guide](https://github.com/bastikohn/effect-grpc/blob/main/docs/users/observability.md)
 for the full list of span/metric names and attributes and how to hook up an

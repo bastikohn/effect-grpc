@@ -57,8 +57,8 @@ export const externalSpanFromHeaders = (
   const decoded = Headers.fromInput(headers);
   const parent = Option.getOrUndefined(HttpTraceContext.fromHeaders(decoded));
   if (parent === undefined) return undefined;
-  const state = decoded["tracestate"];
-  return state === undefined || state === ""
+  const state = traceStateFromDecoded(decoded);
+  return state === undefined
     ? parent
     : Tracer.externalSpan({
         traceId: parent.traceId,
@@ -71,13 +71,18 @@ export const externalSpanFromHeaders = (
 /**
  * Extracts the W3C `tracestate` value from incoming propagation headers.
  * Per W3C trace context, `tracestate` is only meaningful alongside a valid
- * `traceparent`, so it is ignored when the parent fails to decode.
+ * W3C `traceparent`, so it is discarded when that header fails to decode —
+ * including requests that carry only B3 propagation headers.
  */
 export const traceStateFromHeaders = (
   headers: ReadonlyArray<readonly [string, string]>,
+): string | undefined => traceStateFromDecoded(Headers.fromInput(headers));
+
+const traceStateFromDecoded = (
+  decoded: Headers.Headers,
 ): string | undefined => {
-  const decoded = Headers.fromInput(headers);
-  if (Option.isNone(HttpTraceContext.fromHeaders(decoded))) return undefined;
+  // Deliberately W3C-only (not the W3C -> B3 fallback used for parenting).
+  if (Option.isNone(HttpTraceContext.w3c(decoded))) return undefined;
   const state = decoded["tracestate"];
   return state === undefined || state === "" ? undefined : state;
 };

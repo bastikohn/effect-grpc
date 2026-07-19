@@ -5,9 +5,12 @@ import type {
 } from "@connectrpc/connect";
 import { Code, ConnectError } from "@connectrpc/connect";
 import {
+  Cause,
   Context,
   Deferred,
   Effect,
+  Exit,
+  Fiber,
   Layer,
   Metric,
   Option,
@@ -28,6 +31,10 @@ import * as GrpcServerProtocol from "../src/GrpcServerProtocol.js";
 import * as GrpcStatusError from "../src/GrpcStatusError.js";
 import { TraceState } from "../src/GrpcTracing.js";
 import { failureExit, successExit } from "../src/internal/status.js";
+import {
+  externalSpanFromHeaders,
+  traceStateFromHeaders,
+} from "../src/internal/tracing.js";
 
 const TRACEPARENT_PATTERN = /^00-[0-9a-f]{32}-[0-9a-f]{16}-0[01]$/;
 
@@ -70,6 +77,7 @@ describe("client telemetry", () => {
     expect(span.attributes.get("server.port")).toBe(8443);
     expect(span.attributes.get("rpc.response.status_code")).toBe("OK");
     expect(span.attributes.get("error.type")).toBeUndefined();
+    expect(spanEndExit(span)._tag).toBe("Success");
 
     const traceparent = headers[0]?.get("traceparent");
     expect(traceparent).toMatch(TRACEPARENT_PATTERN);
@@ -159,6 +167,8 @@ describe("client telemetry", () => {
     const span = telemetry.expectSpan(unaryEntry.tag);
     expect(span.attributes.get("rpc.response.status_code")).toBe("NOT_FOUND");
     expect(span.attributes.get("error.type")).toBe("NOT_FOUND");
+    // Client spans end in an error state for every non-OK status.
+    expect(spanEndExit(span)._tag).toBe("Failure");
 
     const durations = durationMetrics(
       result.metrics,
@@ -360,6 +370,61 @@ describe("client telemetry", () => {
     expect(durations[0]?.count).toBe(1);
   });
 
+  it("ends the client span as an error when a unary call is interrupted", async () => {
+    const telemetry = makeTestTelemetry();
+    const { transport } = fakeTransport({
+      unary: (_header, signal) =>
+        new Promise((_resolve, reject) => {
+          signal?.addEventListener(
+            "abort",
+            () => reject(new ConnectError("cancelled", Code.Canceled)),
+            { once: true },
+          );
+        }),
+    });
+
+    await Effect.runPromise(
+      telemetry.provide(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const protocol = yield* RpcClient.Protocol;
+            yield* protocol.run(0, () => Effect.void).pipe(Effect.forkScoped);
+            yield* Effect.yieldNow;
+
+            const fiber = yield* protocol
+              .send(0, {
+                _tag: "Request",
+                id: "1",
+                tag: unaryEntry.tag,
+                payload: {},
+                headers: [],
+              })
+              .pipe(Effect.forkScoped);
+            // Let the call reach the in-flight transport request.
+            yield* Effect.promise<void>(
+              (): Promise<void> =>
+                new Promise((resolve) => setTimeout(resolve, 10)),
+            );
+            yield* Fiber.interrupt(fiber);
+          }).pipe(Effect.provide(clientLayer(transport))),
+        ),
+      ),
+    );
+
+    const span = telemetry.expectSpan(unaryEntry.tag);
+    expect(span.attributes.get("rpc.response.status_code")).toBe("CANCELLED");
+    expect(span.attributes.get("error.type")).toBe("CANCELLED");
+    // Interruption must not end the span with an interrupt-only exit, which
+    // exporters map to OK; per semconv a CANCELLED client span is an error.
+    // An interrupted exit is also `Failure`, so assert the cause carries a
+    // real failure — the distinction the OTLP exporter makes.
+    const exit = spanEndExit(span);
+    expect(exit._tag).toBe("Failure");
+    if (exit._tag === "Failure") {
+      expect(Cause.hasInterruptsOnly(exit.cause)).toBe(false);
+    }
+  });
+
   it("records CANCELLED when the consumer stops a bidi stream early", async () => {
     const telemetry = makeTestTelemetry();
     const { transport } = fakeTransport({
@@ -389,6 +454,9 @@ describe("client telemetry", () => {
     expect(result.responses).toHaveLength(1);
     const span = telemetry.expectSpan(bidiStreamingEntry.tag);
     expect(span.attributes.get("rpc.response.status_code")).toBe("CANCELLED");
+    // The stream scope closes successfully on an early consumer close, but
+    // per semconv the CANCELLED client span must still end as an error.
+    expect(spanEndExit(span)._tag).toBe("Failure");
 
     const durations = durationMetrics(
       result.metrics,
@@ -739,6 +807,39 @@ describe("server telemetry", () => {
   });
 });
 
+describe("tracestate decoding", () => {
+  const w3cHeaders: ReadonlyArray<readonly [string, string]> = [
+    ["traceparent", "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"],
+    ["tracestate", "vendor=abc"],
+  ];
+  const b3Headers: ReadonlyArray<readonly [string, string]> = [
+    ["b3", "0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-1"],
+    ["tracestate", "vendor=abc"],
+  ];
+
+  it("keeps tracestate alongside a valid W3C traceparent", () => {
+    expect(traceStateFromHeaders(w3cHeaders)).toBe("vendor=abc");
+    const parent = externalSpanFromHeaders(w3cHeaders);
+    expect(parent).toBeDefined();
+    expect(Context.get(parent!.annotations, TraceState)).toBe("vendor=abc");
+  });
+
+  it("discards tracestate on B3-only requests per W3C trace context", () => {
+    expect(traceStateFromHeaders(b3Headers)).toBeUndefined();
+    // The span is still parented via B3 — only the tracestate is dropped.
+    const parent = externalSpanFromHeaders(b3Headers);
+    expect(parent).toBeDefined();
+    expect(parent!.traceId).toBe("0af7651916cd43dd8448eb211c80319c");
+    expect(Context.get(parent!.annotations, TraceState)).toBeUndefined();
+  });
+
+  it("discards tracestate without any propagation headers", () => {
+    expect(
+      traceStateFromHeaders([["tracestate", "vendor=abc"]]),
+    ).toBeUndefined();
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Test harness
 // ---------------------------------------------------------------------------
@@ -771,6 +872,24 @@ const makeTestTelemetry = () => {
   return { spans, provide, expectSpan };
 };
 
+/** The exit a span was ended with; throws when the span is still open. */
+const spanEndExit = (span: Tracer.Span): Exit.Exit<unknown, unknown> => {
+  const status = (
+    span as unknown as {
+      readonly status:
+        | { readonly _tag: "Started" }
+        | {
+            readonly _tag: "Ended";
+            readonly exit: Exit.Exit<unknown, unknown>;
+          };
+    }
+  ).status;
+  if (status._tag !== "Ended") {
+    throw new Error(`Expected span ${span.name} to be ended`);
+  }
+  return status.exit;
+};
+
 const durationMetrics = (
   metrics: ReadonlyArray<{
     readonly id: string;
@@ -790,7 +909,7 @@ const durationMetrics = (
     }));
 
 const fakeTransport = (behavior: {
-  readonly unary?: (header: Headers) => unknown;
+  readonly unary?: (header: Headers, signal?: AbortSignal) => unknown;
   readonly stream?: (
     input: AsyncIterable<unknown>,
     header: Headers,
@@ -800,14 +919,14 @@ const fakeTransport = (behavior: {
   const transport = {
     async unary(
       _method: unknown,
-      _signal: AbortSignal | undefined,
+      signal: AbortSignal | undefined,
       _timeoutMs: number | undefined,
       header: HeadersImport | undefined,
       _input: unknown,
     ) {
       const captured = new Headers(header);
       headers.push(captured);
-      const message = await behavior.unary!(captured);
+      const message = await behavior.unary!(captured, signal);
       return {
         stream: false,
         message,

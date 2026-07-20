@@ -1,5 +1,13 @@
-import type { Context } from "effect";
-import { Stream } from "effect";
+import {
+  Cause,
+  Context,
+  Effect,
+  Exit,
+  Fiber,
+  Pull,
+  Scope,
+  Stream,
+} from "effect";
 
 /**
  * One home for the Effect `Stream` <-> connect `AsyncIterable` lifecycle.
@@ -151,48 +159,72 @@ export const responsePump = (
   context: Context.Context<never>,
   signal: AbortSignal,
 ): ResponsePump => {
-  const iterator = Stream.toAsyncIterableWith(responses, context)[
-    Symbol.asyncIterator
-  ]();
   const done: IteratorResult<unknown> = { done: true, value: undefined };
-  let resolveClosed!: (result: IteratorResult<unknown>) => void;
-  const whenClosed = new Promise<IteratorResult<unknown>>((resolve) => {
-    resolveClosed = resolve;
-  });
-  // Closing the iterator releases the handler stream's resources, but it
-  // does not settle a pull that is already in flight — the handler may be
-  // awaiting something other than the request stream. Racing every pull
-  // against the close keeps connect's generator loop from hanging on an
-  // abandoned call.
-  const closeIterator = () => {
-    resolveClosed(done);
-    return Promise.resolve(iterator.return?.(undefined as never)).catch(
-      () => undefined,
-    );
+  // Effect's AsyncIterable bridge hides its pull fibers, so own the pull and
+  // retain each fiber until it completes or close() interrupts it.
+  const scope = Scope.makeUnsafe();
+  const runFork = Effect.runForkWith(Context.add(context, Scope.Scope, scope));
+  let active: Fiber.Fiber<unknown, unknown> | undefined;
+  let current: Iterator<unknown> | undefined;
+  let pull: Pull.Pull<ReadonlyArray<unknown>, unknown> | undefined;
+  let closed = false;
+  let closing: Promise<void> | undefined;
+
+  const run = async <A, E>(
+    effect: Effect.Effect<A, E, Scope.Scope>,
+  ): Promise<Exit.Exit<A, E>> => {
+    const fiber = runFork(effect);
+    active = fiber;
+    const exit = await Effect.runPromise(Fiber.await(fiber));
+    if (active === fiber) active = undefined;
+    return exit;
+  };
+
+  const close = (): Promise<void> => {
+    if (closing) return closing;
+    closed = true;
+    signal.removeEventListener("abort", onAbort);
+    const fiber = active;
+    closing = (async () => {
+      if (fiber) await Effect.runPromise(Fiber.interrupt(fiber));
+      await Effect.runPromise(Scope.close(scope, Exit.void));
+    })().catch(() => undefined);
+    return closing;
   };
   const onAbort = () => {
-    void closeIterator();
+    void close();
   };
-  // A listener added to an already-aborted signal never fires, so pre-check:
-  // connect can abort during the server's span setup, before the pump exists.
-  // Without this, a pull on an idle handler would hang forever — the exact
-  // failure this pump is meant to prevent.
+
   if (signal.aborted) {
-    void closeIterator();
+    void close();
   } else {
     signal.addEventListener("abort", onAbort, { once: true });
   }
   return {
-    next: () => {
-      const pull = iterator.next();
-      // A raced-out pull that later rejects must not surface as an
-      // unhandled rejection.
-      pull.catch(() => undefined);
-      return Promise.race([pull, whenClosed]);
+    next: async () => {
+      if (closed) return done;
+      if (current) {
+        const result = current.next();
+        if (!result.done) return result;
+        current = undefined;
+      }
+      if (!pull) {
+        const initialized = await run(Stream.toPull(responses));
+        if (closed) return done;
+        if (Exit.isFailure(initialized)) {
+          throw Cause.squash(initialized.cause);
+        }
+        pull = initialized.value;
+      }
+      const exit = await run(pull);
+      if (closed) return done;
+      if (Exit.isSuccess(exit)) {
+        current = exit.value[Symbol.iterator]();
+        return current.next();
+      }
+      if (Pull.isDoneCause(exit.cause)) return done;
+      throw Cause.squash(exit.cause);
     },
-    close: async () => {
-      signal.removeEventListener("abort", onAbort);
-      await closeIterator();
-    },
+    close,
   };
 };

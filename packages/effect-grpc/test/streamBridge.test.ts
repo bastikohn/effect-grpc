@@ -231,6 +231,41 @@ describe("requestStream", () => {
 });
 
 describe("responsePump", () => {
+  it("interrupts an in-flight handler pull before close resolves", async () => {
+    let resume!: () => void;
+    let resolveStarted!: () => void;
+    let effects = 0;
+    const started = new Promise<void>((resolve) => {
+      resolveStarted = resolve;
+    });
+    const controller = new AbortController();
+    const pump = StreamBridge.responsePump(
+      Stream.fromEffect(
+        Effect.callback<void>((complete) => {
+          resume = () => {
+            complete(
+              Effect.sync(() => {
+                effects += 1;
+              }),
+            );
+          };
+          resolveStarted();
+        }),
+      ),
+      Context.empty(),
+      controller.signal,
+    );
+
+    const pending = pump.next();
+    await started;
+    await pump.close();
+    resume();
+    await tick();
+
+    await expect(pending).resolves.toEqual({ done: true, value: undefined });
+    expect(effects).toBe(0);
+  });
+
   it("settles a pending pull with a clean end and closes the handler once when the signal aborts", async () => {
     let finalized = 0;
     const controller = new AbortController();
@@ -257,20 +292,18 @@ describe("responsePump", () => {
     expect(finalized).toBe(1);
   });
 
-  it("settles a pending pull when the signal is already aborted before construction", async () => {
-    let finalized = 0;
+  it("does not start the handler when the signal is already aborted", async () => {
+    let started = 0;
     const controller = new AbortController();
     // connect can abort during the server's span setup, so the pump is often
     // built around a signal that has already fired. A listener added after the
     // fact never runs, so `next()` must still settle from the initial state.
     controller.abort();
     const pump = StreamBridge.responsePump(
-      Stream.never.pipe(
-        Stream.ensuring(
-          Effect.sync(() => {
-            finalized += 1;
-          }),
-        ),
+      Stream.fromEffect(
+        Effect.sync(() => {
+          started += 1;
+        }),
       ),
       Context.empty(),
       controller.signal,
@@ -281,7 +314,8 @@ describe("responsePump", () => {
       value: undefined,
     });
     await pump.close();
-    expect(finalized).toBe(1);
+    await tick();
+    expect(started).toBe(0);
   });
 
   it("delivers values and close() terminates the handler exactly once", async () => {

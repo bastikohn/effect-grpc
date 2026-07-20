@@ -3,171 +3,53 @@ import type {
   FieldModel,
   FieldValueModel,
   GeneratorFile,
-  MessageModel,
   ScalarKind,
   WellKnownKind,
 } from "./types.js";
+import type { FileUsage } from "./fileUsage.js";
+import { wellKnownKinds } from "./fileUsage.js";
 import { grpcEmptyName, grpcWellKnownName } from "./naming.js";
 import { wellKnownProtobufName } from "./wellKnown.js";
 
-export const generateSchemas = (file: GeneratorFile) => {
-  const ordered = orderMessages(file.messages);
-  const recursiveEdges = findRecursiveEdges(file.messages);
-  return [
-    ...(usesGrpcEmpty(file)
-      ? [
-          `export const ${grpcEmptyName}Schema = Schema.Struct({});`,
-          `export type ${grpcEmptyName} = Schema.Schema.Type<typeof ${grpcEmptyName}Schema>;`,
-          "",
-        ]
-      : []),
-    ...wellKnownMethodSchemas(file),
-    ...file.enums.flatMap(enumSchema),
-    ...ordered.flatMap((message) => [
-      `export const ${message.name}Schema = Schema.Struct({`,
-      ...message.fields.map(
-        (field) =>
-          `  ${field.name}: ${fieldSchema(field, message.name, recursiveEdges)},`,
-      ),
-      "});",
-      `export type ${message.name} = Schema.Schema.Type<typeof ${message.name}Schema>;`,
-      "",
-    ]),
-  ];
-};
-
-const usesGrpcEmpty = (file: GeneratorFile) =>
-  file.services.some((service) =>
-    service.methods.some(
-      (method) =>
-        method.inputType === grpcEmptyName ||
-        method.outputType === grpcEmptyName,
+export const generateSchemas = (file: GeneratorFile, usage: FileUsage) => [
+  ...(usage.usesGrpcEmpty
+    ? [
+        `export const ${grpcEmptyName}Schema = Schema.Struct({});`,
+        `export type ${grpcEmptyName} = Schema.Schema.Type<typeof ${grpcEmptyName}Schema>;`,
+        "",
+      ]
+    : []),
+  ...wellKnownMethodSchemas(usage),
+  ...file.enums.flatMap(enumSchema),
+  ...usage.orderedMessages.flatMap((message) => [
+    `export const ${message.name}Schema = Schema.Struct({`,
+    ...message.fields.map(
+      (field) =>
+        `  ${field.name}: ${fieldSchema(field, message.name, usage.recursiveEdges)},`,
     ),
-  );
+    "});",
+    `export type ${message.name} = Schema.Schema.Type<typeof ${message.name}Schema>;`,
+    "",
+  ]),
+];
 
-const wellKnownMethodSchemas = (file: GeneratorFile) =>
-  wellKnownKinds.flatMap((type) => {
-    const name = grpcWellKnownName(wellKnownProtobufName(type));
-    return usesMethodType(file, name)
-      ? [
-          `export const ${name}Schema = ${wellKnownSchema(type)};`,
-          `export type ${name} = Schema.Schema.Type<typeof ${name}Schema>;`,
-          "",
-        ]
-      : [];
-  });
-
-const wellKnownKinds = [
-  "timestamp",
-  "duration",
-  "double-value",
-  "float-value",
-  "int64-value",
-  "uint64-value",
-  "int32-value",
-  "uint32-value",
-  "bool-value",
-  "string-value",
-  "bytes-value",
-  "any",
-  "struct",
-  "value",
-  "list-value",
-  "field-mask",
-] as const satisfies ReadonlyArray<WellKnownKind>;
-
-const usesMethodType = (file: GeneratorFile, typeName: string) =>
-  file.services.some((service) =>
-    service.methods.some(
-      (method) =>
-        method.inputType === typeName || method.outputType === typeName,
-    ),
-  );
+const wellKnownMethodSchemas = (usage: FileUsage) =>
+  wellKnownKinds
+    .filter((type) => usage.wellKnownMethods.has(type))
+    .flatMap((type) => {
+      const name = grpcWellKnownName(wellKnownProtobufName(type));
+      return [
+        `export const ${name}Schema = ${wellKnownSchema(type)};`,
+        `export type ${name} = Schema.Schema.Type<typeof ${name}Schema>;`,
+        "",
+      ];
+    });
 
 const enumSchema = (field: EnumModel) => [
   `export const ${field.name}Schema = Schema.Number;`,
   `export type ${field.name} = number;`,
   "",
 ];
-
-const orderMessages = (messages: ReadonlyArray<MessageModel>) => {
-  const byName = new Map(messages.map((message) => [message.name, message]));
-  const visited = new Set<string>();
-  const ordered: Array<MessageModel> = [];
-
-  const visit = (message: MessageModel) => {
-    if (visited.has(message.name)) return;
-    visited.add(message.name);
-    for (const dependency of messageDependencies(message)) {
-      const dependencyMessage = byName.get(dependency);
-      if (dependencyMessage) visit(dependencyMessage);
-    }
-    ordered.push(message);
-  };
-
-  for (const message of messages) {
-    visit(message);
-  }
-  return ordered;
-};
-
-const messageDependencies = (message: MessageModel) =>
-  message.fields.flatMap((field) => {
-    if (field.kind === "message" && field.source === "local") {
-      return [field.messageName];
-    }
-    if (
-      field.kind === "list" &&
-      field.item.kind === "message" &&
-      field.item.source === "local"
-    ) {
-      return [field.item.messageName];
-    }
-    if (
-      field.kind === "map" &&
-      field.value.kind === "message" &&
-      field.value.source === "local"
-    ) {
-      return [field.value.messageName];
-    }
-    if (field.kind === "oneof") {
-      return field.cases.flatMap((oneofCase) =>
-        oneofCase.value.kind === "message" && oneofCase.value.source === "local"
-          ? [oneofCase.value.messageName]
-          : [],
-      );
-    }
-    return [];
-  });
-
-const findRecursiveEdges = (messages: ReadonlyArray<MessageModel>) => {
-  const dependenciesByMessage = new Map(
-    messages.map((message) => [message.name, messageDependencies(message)]),
-  );
-  const recursiveEdges = new Set<string>();
-
-  const hasPath = (
-    from: string,
-    to: string,
-    seen = new Set<string>(),
-  ): boolean => {
-    if (from === to) return true;
-    if (seen.has(from)) return false;
-    seen.add(from);
-    return (dependenciesByMessage.get(from) ?? []).some((dependency) =>
-      hasPath(dependency, to, seen),
-    );
-  };
-
-  for (const message of messages) {
-    for (const dependency of dependenciesByMessage.get(message.name) ?? []) {
-      if (hasPath(dependency, message.name)) {
-        recursiveEdges.add(`${message.name}->${dependency}`);
-      }
-    }
-  }
-  return recursiveEdges;
-};
 
 const fieldSchema = (
   field: FieldModel,

@@ -152,6 +152,84 @@ describe("generateFile", () => {
     );
     expect(output).toContain("successSchema: GetUserResponseSchema");
   });
+
+  it("omits the Stream import for unary-only services", () => {
+    const output = generateFile({
+      protoFileName: "demo/v1/ping.proto",
+      packageName: "demo.v1",
+      importExtension: "js",
+      imports: [],
+      enums: [],
+      messages: [
+        {
+          name: "PingRequest",
+          fields: [{ kind: "scalar", name: "id", type: "string" }],
+        },
+        {
+          name: "PingResponse",
+          fields: [{ kind: "scalar", name: "id", type: "string" }],
+        },
+      ],
+      services: [
+        {
+          name: "PingService",
+          typeName: "demo.v1.PingService",
+          methods: [
+            {
+              name: "Ping",
+              localName: "ping",
+              kind: "unary",
+              inputType: "PingRequest",
+              outputType: "PingResponse",
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(output).toContain(
+      'import { Context, Effect, Layer, Schema } from "effect";',
+    );
+    expect(output).not.toContain("Stream");
+  });
+
+  it("omits readField and compact when every message is empty", () => {
+    const output = generateFile({
+      protoFileName: "demo/v1/empty.proto",
+      packageName: "demo.v1",
+      importExtension: "js",
+      imports: [],
+      enums: [],
+      messages: [
+        { name: "VoidRequest", fields: [] },
+        { name: "VoidResponse", fields: [] },
+      ],
+      services: [
+        {
+          name: "VoidService",
+          typeName: "demo.v1.VoidService",
+          methods: [
+            {
+              name: "Call",
+              localName: "call",
+              kind: "unary",
+              inputType: "VoidRequest",
+              outputType: "VoidResponse",
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(output).not.toContain("readField");
+    expect(output).not.toContain("compact");
+    expect(output).toContain(
+      "export const fromVoidRequest = (_message: unknown): unknown => ({});",
+    );
+    expect(output).toContain(
+      "export const toVoidRequest = (_value: unknown): Record<string, unknown> => ({});",
+    );
+  });
 });
 
 describe("plugin fixture", () => {

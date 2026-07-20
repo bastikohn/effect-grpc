@@ -7,11 +7,11 @@ import type {
   GrpcConnectInvokerOptions,
   GrpcInvokerService,
 } from "../GrpcInvoker.js";
-import type { GrpcMethodEntry, GrpcMethodKind } from "../GrpcMethodRegistry.js";
+import * as MethodRegistry from "../GrpcMethodRegistry.js";
+import type { GrpcMethodEntry } from "../GrpcMethodRegistry.js";
 import type { GrpcStatusCode } from "../GrpcStatusCode.js";
 import * as GrpcStatusError from "../GrpcStatusError.js";
 import { TraceState } from "../GrpcTracing.js";
-import { entryCodecs } from "./codec.js";
 import { getClient } from "./connect.js";
 import { unknownTag, validateCallMetadata } from "./invoker.js";
 import { headersFromCallOptions } from "./metadata.js";
@@ -31,11 +31,6 @@ export const makeConnect = (
     const context = yield* Effect.context<never>();
     const transport = options.transport;
 
-    const lookup = (tag: string, kind: GrpcMethodKind) => {
-      const entry = options.registry.get(tag);
-      return entry && entry.kind === kind ? entry : undefined;
-    };
-
     const resolveMethod = (entry: GrpcMethodEntry) => {
       const client = getClient(transport, entry.service) as Record<
         string,
@@ -50,36 +45,15 @@ export const makeConnect = (
         : undefined;
     };
 
-    const encodeRequest = (entry: GrpcMethodEntry) => {
-      const codecs = entryCodecs(entry);
-      return (value: unknown) =>
-        Effect.try({
-          try: () => entry.toGrpcRequest(codecs.encodePayload(value)),
-          catch: (cause) =>
-            GrpcStatusError.invalidArgument(
-              "Invalid gRPC request payload",
-              cause,
-            ),
-        });
-    };
-
-    const decodeResponse = (entry: GrpcMethodEntry, message: unknown) =>
-      Effect.try({
-        try: () =>
-          entryCodecs(entry).decodeSuccess(
-            entry.fromGrpcResponse(message as never),
-          ),
-        catch: (cause) =>
-          GrpcStatusError.internal("Invalid gRPC response payload", cause),
-      });
-
     const openRequests = (
       entry: GrpcMethodEntry,
       requests: Stream.Stream<unknown, unknown>,
       controller: AbortController,
     ) =>
       StreamBridge.requestPump(
-        Stream.mapEffect(requests, encodeRequest(entry)),
+        Stream.mapEffect(requests, (value) =>
+          MethodRegistry.encodeRequest(entry, value),
+        ),
         context,
         () => controller.abort(),
       );
@@ -221,7 +195,7 @@ export const makeConnect = (
       });
 
     const unary: GrpcInvokerService["unary"] = (tag, request, callOptions) => {
-      const entry = lookup(tag, "unary");
+      const entry = MethodRegistry.lookup(options.registry, tag, "unary");
       if (!entry) return Effect.fail(unknownTag(tag));
       return withCallSpanEffect(entry, ({ span, record }) =>
         Effect.gen(function* () {
@@ -231,7 +205,10 @@ export const makeConnect = (
           if (!method) {
             return yield* Effect.fail(missingMethod(entry, record));
           }
-          const grpcRequest = yield* encodeRequest(entry)(request).pipe(
+          const grpcRequest = yield* MethodRegistry.encodeRequest(
+            entry,
+            request,
+          ).pipe(
             Effect.mapError((error) => {
               record(error.code);
               return error;
@@ -255,7 +232,10 @@ export const makeConnect = (
             record(error.code);
             return yield* Effect.fail(error);
           }
-          const response = yield* decodeResponse(entry, result.value).pipe(
+          const response = yield* MethodRegistry.decodeResponse(
+            entry,
+            result.value,
+          ).pipe(
             Effect.mapError((error) => {
               record(error.code);
               return error;
@@ -272,7 +252,11 @@ export const makeConnect = (
       request,
       callOptions,
     ) => {
-      const entry = lookup(tag, "server-streaming");
+      const entry = MethodRegistry.lookup(
+        options.registry,
+        tag,
+        "server-streaming",
+      );
       if (!entry) return Stream.fail(unknownTag(tag));
       return withCallSpanStream<GrpcStatusError.GrpcStatusError>(
         entry,
@@ -284,7 +268,10 @@ export const makeConnect = (
             if (!method) {
               return yield* Effect.fail(missingMethod(entry, record));
             }
-            const grpcRequest = yield* encodeRequest(entry)(request).pipe(
+            const grpcRequest = yield* MethodRegistry.encodeRequest(
+              entry,
+              request,
+            ).pipe(
               Effect.mapError((error) => {
                 record(error.code);
                 return error;
@@ -316,7 +303,9 @@ export const makeConnect = (
             return Stream.fromAsyncIterable(responses, (cause) =>
               GrpcStatusError.fromConnectError(cause),
             ).pipe(
-              Stream.mapEffect((message) => decodeResponse(entry, message)),
+              Stream.mapEffect((message) =>
+                MethodRegistry.decodeResponse(entry, message),
+              ),
               Stream.mapError((error) => {
                 record(error.code);
                 return error;
@@ -332,7 +321,11 @@ export const makeConnect = (
       requests: Stream.Stream<A, E>,
       callOptions?: GrpcCallOptions,
     ) => {
-      const entry = lookup(tag, "client-streaming");
+      const entry = MethodRegistry.lookup(
+        options.registry,
+        tag,
+        "client-streaming",
+      );
       if (!entry) return Effect.fail(unknownTag(tag));
       return withCallSpanEffect<unknown, GrpcStatusError.GrpcStatusError | E>(
         entry,
@@ -383,7 +376,10 @@ export const makeConnect = (
               record(error.code);
               return yield* Effect.fail(error);
             }
-            const response = yield* decodeResponse(entry, result.value).pipe(
+            const response = yield* MethodRegistry.decodeResponse(
+              entry,
+              result.value,
+            ).pipe(
               Effect.mapError((error) => {
                 record(error.code);
                 return error;
@@ -400,7 +396,11 @@ export const makeConnect = (
       requests: Stream.Stream<A, E>,
       callOptions?: GrpcCallOptions,
     ) => {
-      const entry = lookup(tag, "bidi-streaming");
+      const entry = MethodRegistry.lookup(
+        options.registry,
+        tag,
+        "bidi-streaming",
+      );
       if (!entry) return Stream.fail(unknownTag(tag));
       return withCallSpanStream<GrpcStatusError.GrpcStatusError | E>(
         entry,
@@ -449,7 +449,9 @@ export const makeConnect = (
               (cause): GrpcStatusError.GrpcStatusError | E =>
                 GrpcStatusError.fromConnectError(cause),
             ).pipe(
-              Stream.mapEffect((message) => decodeResponse(entry, message)),
+              Stream.mapEffect((message) =>
+                MethodRegistry.decodeResponse(entry, message),
+              ),
               Stream.mapError((error) => {
                 record(streamingFailureCode(error));
                 return error;

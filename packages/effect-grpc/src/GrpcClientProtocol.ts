@@ -1,12 +1,13 @@
 import type { CallOptions, Interceptor, Transport } from "@connectrpc/connect";
 import { createGrpcTransport } from "@connectrpc/connect-node";
 import type { GrpcTransportOptions } from "@connectrpc/connect-node";
-import { Context, Effect, Exit, Layer, Scope, Stream } from "effect";
+import { Context, Effect, Layer, Scope, Stream } from "effect";
 import type * as Tracer from "effect/Tracer";
 import * as RpcClient from "effect/unstable/rpc/RpcClient";
 import type { FromClientEncoded } from "effect/unstable/rpc/RpcMessage";
 
 import type { GrpcCallOptions } from "./CodegenSupport.js";
+import * as GrpcInvoker from "./GrpcInvoker.js";
 import * as GrpcMetadata from "./GrpcMetadata.js";
 import type {
   GrpcMethodEntry,
@@ -15,7 +16,6 @@ import type {
 import type { GrpcStatusCode } from "./GrpcStatusCode.js";
 import * as GrpcStatusError from "./GrpcStatusError.js";
 import { TraceState } from "./GrpcTracing.js";
-import { entryCodecs } from "./internal/codec.js";
 import { getClient } from "./internal/connect.js";
 import {
   headersFromCallOptions,
@@ -23,7 +23,6 @@ import {
   stripInternalHeaders,
 } from "./internal/metadata.js";
 import { failureExit, successExit } from "./internal/status.js";
-import * as StreamBridge from "./internal/streamBridge.js";
 import * as GrpcTracing from "./internal/tracing.js";
 
 export type { GrpcTransportOptions } from "@connectrpc/connect-node";
@@ -155,8 +154,9 @@ export const metadataInterceptor = <R>(
 /**
  * Streaming client used by generated code for client-streaming and
  * bidi-streaming methods. Effect RPC's wire protocol has no client-to-server
- * chunk variant, so these methods bridge `Stream` <-> `AsyncIterable` directly
- * over the same connect transport instead of going through `RpcClient`.
+ * chunk variant, so these methods bypass `RpcClient` — a thin facade over the
+ * corresponding {@link GrpcInvoker.GrpcInvoker} call shapes, kept until
+ * generated clients depend on the invoker directly.
  */
 export interface GrpcStreamingClientService {
   readonly clientStreaming: <A, E>(
@@ -182,7 +182,9 @@ export class GrpcStreamingClient extends Context.Service<
  */
 export const layer = (
   options: GrpcClientProtocolOptions,
-): Layer.Layer<RpcClient.Protocol | GrpcStreamingClient> =>
+): Layer.Layer<
+  RpcClient.Protocol | GrpcStreamingClient | GrpcInvoker.GrpcInvoker
+> =>
   layerFromTransport({
     registry: options.registry,
     transport: makeTransport(options),
@@ -191,15 +193,23 @@ export const layer = (
 
 /**
  * Builds the protocol layer from an existing transport. Use this to share one
- * transport across services, or to inject a fake transport in tests.
+ * transport across services, or to substitute the invocation seam in tests —
+ * the provided {@link GrpcInvoker.GrpcInvoker} is the connect adapter.
  */
 export const layerFromTransport = (
   options: GrpcClientProtocolTransportOptions,
-): Layer.Layer<RpcClient.Protocol | GrpcStreamingClient> =>
-  Layer.mergeAll(
+): Layer.Layer<
+  RpcClient.Protocol | GrpcStreamingClient | GrpcInvoker.GrpcInvoker
+> => {
+  const invoker = GrpcInvoker.layerConnect(options);
+  return Layer.mergeAll(
     Layer.effect(RpcClient.Protocol, make(options)),
-    Layer.effect(GrpcStreamingClient, makeStreaming(options)),
+    Layer.effect(GrpcStreamingClient, makeStreaming).pipe(
+      Layer.provide(invoker),
+    ),
+    invoker,
   );
+};
 
 const make = (
   options: GrpcClientProtocolTransportOptions,
@@ -323,7 +333,7 @@ const make = (
                 ),
               ).pipe(
                 Effect.onExit(() =>
-                  Scope.close(spanScope, clientSpanExit(finalCode)),
+                  Scope.close(spanScope, GrpcTracing.clientSpanExit(finalCode)),
                 ),
               );
             }),
@@ -417,329 +427,22 @@ const make = (
     }),
   );
 
-type StreamingCallResult =
-  | { readonly ok: true; readonly value: unknown }
-  | { readonly ok: false; readonly cause: unknown };
-
-const makeStreaming = (
-  options: GrpcClientProtocolTransportOptions,
-): Effect.Effect<GrpcStreamingClientService> =>
-  Effect.gen(function* () {
-    const context = yield* Effect.context<never>();
-    const transport = options.transport;
-
-    const resolveMethod = (entry: GrpcMethodEntry) => {
-      const client = getClient(transport, entry.service) as Record<
-        string,
-        unknown
-      >;
-      const method = client[entry.localName];
-      return typeof method === "function"
-        ? (method.bind(client) as (
-            requests: AsyncIterable<unknown>,
-            options?: CallOptions,
-          ) => unknown)
-        : undefined;
-    };
-
-    const encodeRequest = (entry: GrpcMethodEntry) => {
-      const codecs = entryCodecs(entry);
-      return (value: unknown) =>
-        Effect.try({
-          try: () => entry.toGrpcRequest(codecs.encodePayload(value)),
-          catch: (cause) =>
-            GrpcStatusError.invalidArgument(
-              "Invalid gRPC request payload",
-              cause,
-            ),
-        });
-    };
-
-    const decodeResponse = (entry: GrpcMethodEntry, message: unknown) =>
-      Effect.try({
-        try: () =>
-          entryCodecs(entry).decodeSuccess(
-            entry.fromGrpcResponse(message as never),
-          ),
-        catch: (cause) =>
-          GrpcStatusError.internal("Invalid gRPC response payload", cause),
-      });
-
-    const openRequests = (
-      entry: GrpcMethodEntry,
-      requests: Stream.Stream<unknown, unknown>,
-      controller: AbortController,
-    ) =>
-      StreamBridge.requestPump(
-        Stream.mapEffect(requests, encodeRequest(entry)),
-        context,
-        () => controller.abort(),
-      );
-
-    const clientStreaming = <A, E>(
-      tag: string,
-      requests: Stream.Stream<A, E>,
-      callOptions?: GrpcCallOptions,
-    ): Effect.Effect<unknown, GrpcStatusError.GrpcStatusError | E> => {
-      const entry = options.registry.get(tag);
-      if (!entry || entry.kind !== "client-streaming") {
-        return Effect.fail(
-          GrpcStatusError.unimplemented(`Unknown gRPC RPC tag: ${tag}`),
-        );
-      }
-      // `Effect.suspend` keeps the status recorder execution-local, so
-      // re-running the returned effect cannot share mutable call state
-      // across executions. The span is scope-managed (not `Effect.withSpan`)
-      // so it can close with an exit computed from the recorded status: per
-      // semconv every non-OK client status is an error — including
-      // cancellation, which surfaces as interruption and would otherwise end
-      // the span with an interrupt-only exit that exporters map to OK.
-      return Effect.suspend(() => {
-        let finalCode: GrpcStatusCode | undefined;
-        return Effect.uninterruptibleMask((restore) =>
-          Effect.gen(function* () {
-            const spanScope = yield* Scope.make();
-            const span = yield* Effect.makeSpanScoped(
-              GrpcTracing.spanName(entry),
-              GrpcTracing.clientSpanOptions(entry, options.serverAddress),
-            ).pipe(Scope.provide(spanScope));
-            const baseRecord = GrpcTracing.clientCallRecorder({
-              entry,
-              span,
-              context,
-              serverAddress: options.serverAddress,
-            });
-            const record: GrpcTracing.StatusRecorder = (code) => {
-              finalCode ??= code;
-              baseRecord(code);
-            };
-            return yield* restore(
-              Effect.gen(function* () {
-                const ambientTraceState = yield* Effect.service(TraceState);
-                const method = resolveMethod(entry);
-                if (!method) {
-                  const error = GrpcStatusError.unimplemented(
-                    `gRPC client is missing method ${entry.localName}`,
-                  );
-                  record(error.code);
-                  return yield* Effect.fail(error);
-                }
-                const controller = new AbortController();
-                const pump = openRequests(
-                  entry,
-                  requests as Stream.Stream<unknown, unknown>,
-                  controller,
-                );
-                const result = yield* Effect.promise(
-                  async (signal): Promise<StreamingCallResult> => {
-                    const abort = () => controller.abort();
-                    signal.addEventListener("abort", abort, { once: true });
-                    try {
-                      const call = method(
-                        pump.iterable,
-                        streamingCallOptions(
-                          callOptions,
-                          span,
-                          controller.signal,
-                          ambientTraceState,
-                        ),
-                      ) as Promise<unknown>;
-                      return { ok: true, value: await call };
-                    } catch (cause) {
-                      return { ok: false, cause };
-                    } finally {
-                      signal.removeEventListener("abort", abort);
-                      await pump.close();
-                    }
-                  },
-                );
-                if (!result.ok) {
-                  const failure = pump.failure();
-                  if (failure) {
-                    record(streamingFailureCode(failure.error));
-                    return yield* Effect.fail(failure.error as E);
-                  }
-                  const error = GrpcStatusError.fromConnectError(result.cause);
-                  record(error.code);
-                  return yield* Effect.fail(error);
-                }
-                const response = yield* decodeResponse(
-                  entry,
-                  result.value,
-                ).pipe(
-                  Effect.mapError((error) => {
-                    record(error.code);
-                    return error;
-                  }),
-                );
-                record("ok");
-                return response;
-              }).pipe(
-                Effect.onInterrupt(() =>
-                  Effect.sync(() => record("cancelled")),
-                ),
-                Effect.withParentSpan(span),
-              ),
-            ).pipe(
-              Effect.onExit(() =>
-                Scope.close(spanScope, clientSpanExit(finalCode)),
-              ),
-            );
-          }),
-        );
-      });
-    };
-
-    const bidiStreaming = <A, E>(
-      tag: string,
-      requests: Stream.Stream<A, E>,
-      callOptions?: GrpcCallOptions,
-    ): Stream.Stream<unknown, GrpcStatusError.GrpcStatusError | E> => {
-      const entry = options.registry.get(tag);
-      if (!entry || entry.kind !== "bidi-streaming") {
-        return Stream.fail(
-          GrpcStatusError.unimplemented(`Unknown gRPC RPC tag: ${tag}`),
-        );
-      }
-      // The span is scope-managed with an exit computed from the recorded
-      // status: an early consumer close ends the stream scope with a
-      // successful exit, but per semconv the resulting CANCELLED status is
-      // an error on the client span. The setup effect is uninterruptible so
-      // the span scope cannot leak between creation and finalizer
-      // registration.
-      return Stream.unwrap(
-        Effect.uninterruptible(
-          Effect.gen(function* () {
-            const spanScope = yield* Scope.make();
-            const span = yield* Effect.makeSpanScoped(
-              GrpcTracing.spanName(entry),
-              GrpcTracing.clientSpanOptions(entry, options.serverAddress),
-            ).pipe(Scope.provide(spanScope));
-            let finalCode: GrpcStatusCode | undefined;
-            const baseRecord = GrpcTracing.clientCallRecorder({
-              entry,
-              span,
-              context,
-              serverAddress: options.serverAddress,
-            });
-            const record: GrpcTracing.StatusRecorder = (code) => {
-              finalCode ??= code;
-              baseRecord(code);
-            };
-            const closeSpan = Effect.suspend(() =>
-              Scope.close(spanScope, clientSpanExit(finalCode)),
-            );
-            const ambientTraceState = yield* Effect.service(TraceState);
-            const method = resolveMethod(entry);
-            if (!method) {
-              const error = GrpcStatusError.unimplemented(
-                `gRPC client is missing method ${entry.localName}`,
-              );
-              record(error.code);
-              yield* closeSpan;
-              return Stream.fail(error);
-            }
-            const controller = new AbortController();
-            const pump = openRequests(
-              entry,
-              requests as Stream.Stream<unknown, unknown>,
-              controller,
-            );
-            // `record` keeps only the first status. Natural completion and
-            // failures record below; any earlier scope close (consumer
-            // short-circuiting via `Stream.take`, interruption) aborts a live
-            // call, so the finalizer's `cancelled` is correct for what
-            // remains.
-            yield* Effect.addFinalizer(() =>
-              Effect.promise(async () => {
-                controller.abort();
-                await pump.close();
-                record("cancelled");
-              }).pipe(Effect.andThen(closeSpan)),
-            );
-            const responses = method(
-              pump.iterable,
-              streamingCallOptions(
-                callOptions,
-                span,
-                controller.signal,
-                ambientTraceState,
-              ),
-            ) as AsyncIterable<unknown>;
-            return StreamBridge.responseStream(
-              responses,
-              pump,
-              (cause): GrpcStatusError.GrpcStatusError | E =>
-                GrpcStatusError.fromConnectError(cause),
-            ).pipe(
-              Stream.mapEffect((message) => decodeResponse(entry, message)),
-              Stream.mapError((error) => {
-                record(streamingFailureCode(error));
-                return error;
-              }),
-              Stream.onEnd(Effect.sync(() => record("ok"))),
-            );
-          }),
-        ),
-      );
-    };
-
-    return { clientStreaming, bidiStreaming };
-  });
-
-const streamingFailureCode = (error: unknown): GrpcStatusCode =>
-  error instanceof GrpcStatusError.GrpcStatusError ? error.code : "cancelled";
-
 /**
- * Exit used to close a client span scope. Per semconv every non-`ok` client
- * status is an error, so the span ends in a failed exit whenever a non-`ok`
- * status was recorded — even when the call surfaced as interruption or an
- * early stream close, whose natural exits exporters would map to OK.
+ * Facade over the invocation seam: generated code still resolves streaming
+ * calls through {@link GrpcStreamingClient}, which delegates to the
+ * corresponding {@link GrpcInvoker.GrpcInvoker} call shapes.
  */
-const clientSpanExit = (
-  code: GrpcStatusCode | undefined,
-): Exit.Exit<void, GrpcStatusError.GrpcStatusError> =>
-  code === undefined || code === "ok"
-    ? Exit.void
-    : Exit.fail(
-        GrpcStatusError.make({
-          code,
-          message: `RPC failed with status ${code}`,
-        }),
-      );
-
-const streamingCallOptions = (
-  options: GrpcCallOptions | undefined,
-  span: Tracer.Span,
-  signal: AbortSignal,
-  ambientTraceState: string | undefined,
-): CallOptions => {
-  const headers = new Headers(
-    headersFromCallOptions({ metadata: options?.metadata }).map(
-      ([key, value]) => [key, value] as [string, string],
-    ),
-  );
-  if (
-    !headers.has("traceparent") &&
-    span.traceId !== "noop" &&
-    span.spanId !== "noop"
-  ) {
-    headers.set("traceparent", GrpcTracing.traceparent(span));
-    // Span-annotation values win over the ambient `TraceState` reference
-    // rehydrated from the incoming request by the server protocol.
-    const traceState = GrpcTracing.findTraceState(span) ?? ambientTraceState;
-    if (traceState !== undefined && !headers.has("tracestate")) {
-      headers.set("tracestate", traceState);
-    }
-  }
+const makeStreaming: Effect.Effect<
+  GrpcStreamingClientService,
+  never,
+  GrpcInvoker.GrpcInvoker
+> = Effect.gen(function* () {
+  const invoker = yield* GrpcInvoker.GrpcInvoker;
   return {
-    headers,
-    signal,
-    ...(options?.timeoutMs !== undefined
-      ? { timeoutMs: options.timeoutMs }
-      : {}),
+    clientStreaming: invoker.clientStream,
+    bidiStreaming: invoker.bidiStream,
   };
-};
+});
 
 const headersWithTrace = (
   request: Extract<FromClientEncoded, { readonly _tag: "Request" }>,

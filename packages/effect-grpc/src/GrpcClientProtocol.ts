@@ -23,6 +23,7 @@ import {
   stripInternalHeaders,
 } from "./internal/metadata.js";
 import { failureExit, successExit } from "./internal/status.js";
+import * as StreamBridge from "./internal/streamBridge.js";
 import * as GrpcTracing from "./internal/tracing.js";
 
 export type { GrpcTransportOptions } from "@connectrpc/connect-node";
@@ -416,10 +417,6 @@ const make = (
     }),
   );
 
-interface StreamingCallState {
-  failure?: { readonly error: unknown };
-}
-
 type StreamingCallResult =
   | { readonly ok: true; readonly value: unknown }
   | { readonly ok: false; readonly cause: unknown };
@@ -471,43 +468,13 @@ const makeStreaming = (
     const openRequests = (
       entry: GrpcMethodEntry,
       requests: Stream.Stream<unknown, unknown>,
-      state: StreamingCallState,
       controller: AbortController,
-    ) => {
-      const iterator = Stream.toAsyncIterableWith(
+    ) =>
+      StreamBridge.requestPump(
         Stream.mapEffect(requests, encodeRequest(entry)),
         context,
-      )[Symbol.asyncIterator]();
-      const next = async (): Promise<IteratorResult<unknown>> => {
-        try {
-          return await iterator.next();
-        } catch (error) {
-          // gRPC has no channel for client-side failures other than cancelling
-          // the call: remember the original error so the caller sees it while
-          // the server observes `cancelled`.
-          state.failure ??= { error };
-          controller.abort();
-          throw error;
-        }
-      };
-      const close = async (): Promise<IteratorResult<unknown>> => {
-        try {
-          await iterator.return?.(undefined as never);
-        } catch {
-          // Cleanup only; the call outcome is already determined.
-        }
-        return { done: true, value: undefined };
-      };
-      return {
-        iterable: {
-          // connect aborts the request stream via `throw`; resolving done
-          // reports clean completion while the scope close interrupts the
-          // underlying stream.
-          [Symbol.asyncIterator]: () => ({ next, return: close, throw: close }),
-        } satisfies AsyncIterable<unknown>,
-        close,
-      };
-    };
+        () => controller.abort(),
+      );
 
     const clientStreaming = <A, E>(
       tag: string,
@@ -557,12 +524,10 @@ const makeStreaming = (
                   record(error.code);
                   return yield* Effect.fail(error);
                 }
-                const state: StreamingCallState = {};
                 const controller = new AbortController();
                 const pump = openRequests(
                   entry,
                   requests as Stream.Stream<unknown, unknown>,
-                  state,
                   controller,
                 );
                 const result = yield* Effect.promise(
@@ -589,9 +554,10 @@ const makeStreaming = (
                   },
                 );
                 if (!result.ok) {
-                  if (state.failure) {
-                    record(streamingFailureCode(state.failure.error));
-                    return yield* Effect.fail(state.failure.error as E);
+                  const failure = pump.failure();
+                  if (failure) {
+                    record(streamingFailureCode(failure.error));
+                    return yield* Effect.fail(failure.error as E);
                   }
                   const error = GrpcStatusError.fromConnectError(result.cause);
                   record(error.code);
@@ -673,12 +639,10 @@ const makeStreaming = (
               yield* closeSpan;
               return Stream.fail(error);
             }
-            const state: StreamingCallState = {};
             const controller = new AbortController();
             const pump = openRequests(
               entry,
               requests as Stream.Stream<unknown, unknown>,
-              state,
               controller,
             );
             // `record` keeps only the first status. Natural completion and
@@ -702,12 +666,11 @@ const makeStreaming = (
                 ambientTraceState,
               ),
             ) as AsyncIterable<unknown>;
-            return Stream.fromAsyncIterable(
+            return StreamBridge.responseStream(
               responses,
+              pump,
               (cause): GrpcStatusError.GrpcStatusError | E =>
-                state.failure
-                  ? (state.failure.error as E)
-                  : GrpcStatusError.fromConnectError(cause),
+                GrpcStatusError.fromConnectError(cause),
             ).pipe(
               Stream.mapEffect((message) => decodeResponse(entry, message)),
               Stream.mapError((error) => {

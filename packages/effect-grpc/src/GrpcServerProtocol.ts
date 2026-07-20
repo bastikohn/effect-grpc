@@ -29,6 +29,7 @@ import * as CallState from "./internal/callState.js";
 import { entryCodecs } from "./internal/codec.js";
 import { eof, requestId } from "./internal/effectRpc.js";
 import { errorFromExit } from "./internal/status.js";
+import * as StreamBridge from "./internal/streamBridge.js";
 import * as GrpcTracing from "./internal/tracing.js";
 
 export interface GrpcServerProtocolOptions {
@@ -533,22 +534,17 @@ export const make = (
         Tracer.ParentSpan,
         span,
       );
-      const iterator = Stream.toAsyncIterableWith(
+      // Closing the pump interrupts the handler fiber, so a pending pull
+      // settles when the client goes away mid-stream.
+      const pump = StreamBridge.responsePump(
         responses,
         handlerFiberContext,
-      )[Symbol.asyncIterator]();
-      // Closing the iterator interrupts the handler fiber, so a pending pull
-      // settles when the client goes away mid-stream.
-      const onAbort = () => {
-        void Promise.resolve(iterator.return?.(undefined as never)).catch(
-          () => undefined,
-        );
-      };
-      handlerContext.signal.addEventListener("abort", onAbort, { once: true });
+        handlerContext.signal,
+      );
 
       try {
         while (true) {
-          const next = await iterator.next();
+          const next = await pump.next();
           if (next.done) break;
           yield next.value;
         }
@@ -566,14 +562,11 @@ export const make = (
         }
         throw GrpcStatusError.toConnectError(error);
       } finally {
-        handlerContext.signal.removeEventListener("abort", onAbort);
         if (!completed) {
           recordStatus("cancelled");
         }
         try {
-          await Promise.resolve(iterator.return?.(undefined as never)).catch(
-            () => undefined,
-          );
+          await pump.close();
         } finally {
           await run(Scope.close(spanScope, spanExit));
         }
@@ -650,9 +643,12 @@ const streamingRequests = (
   signal: AbortSignal,
 ): Stream.Stream<unknown, GrpcStatusError.GrpcStatusError> => {
   const codecs = entryCodecs(entry);
-  return Stream.fromAsyncIterable(requests, (cause) =>
-    GrpcStatusError.fromConnectError(cause),
-  ).pipe(
+  return StreamBridge.requestStream({
+    requests,
+    signal,
+    onError: (cause) => GrpcStatusError.fromConnectError(cause),
+    onCancelled: () => GrpcStatusError.cancelled("RPC cancelled"),
+  }).pipe(
     Stream.mapEffect((message) =>
       Effect.try({
         try: () =>
@@ -663,16 +659,6 @@ const streamingRequests = (
             cause,
           ),
       }),
-    ),
-    // connect-node surfaces a client cancellation as a clean end of the
-    // request iterable plus an aborted handler signal; distinguish it from a
-    // half-close so handlers do not treat a truncated stream as complete.
-    Stream.concat(
-      Stream.suspend(() =>
-        signal.aborted
-          ? Stream.fail(GrpcStatusError.cancelled("RPC cancelled"))
-          : Stream.empty,
-      ),
     ),
   );
 };

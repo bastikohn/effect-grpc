@@ -173,7 +173,15 @@ export const responsePump = (
   const onAbort = () => {
     void closeIterator();
   };
-  signal.addEventListener("abort", onAbort, { once: true });
+  // A listener added to an already-aborted signal never fires, so pre-check:
+  // connect can abort during the server's span setup, before the pump exists.
+  // Without this, a pull on an idle handler would hang forever — the exact
+  // failure this pump is meant to prevent.
+  if (signal.aborted) {
+    void closeIterator();
+  } else {
+    signal.addEventListener("abort", onAbort, { once: true });
+  }
   return {
     next: () => {
       const pull = iterator.next();

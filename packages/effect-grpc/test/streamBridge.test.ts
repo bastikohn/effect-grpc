@@ -231,7 +231,7 @@ describe("requestStream", () => {
 });
 
 describe("responsePump", () => {
-  it("settles a pending pull and closes the handler once when the signal aborts", async () => {
+  it("settles a pending pull with a clean end and closes the handler once when the signal aborts", async () => {
     let finalized = 0;
     const controller = new AbortController();
     const pump = StreamBridge.responsePump(
@@ -246,14 +246,40 @@ describe("responsePump", () => {
       controller.signal,
     );
 
-    const pending = pump.next().then(
-      () => "done" as const,
-      () => "rejected" as const,
-    );
+    const pending = pump.next();
     await tick();
     controller.abort();
 
-    expect(["done", "rejected"]).toContain(await pending);
+    // A clean `{ done: true }` — not a rejection — so connect sees a normal
+    // end of stream rather than a thrown generator.
+    await expect(pending).resolves.toEqual({ done: true, value: undefined });
+    await pump.close();
+    expect(finalized).toBe(1);
+  });
+
+  it("settles a pending pull when the signal is already aborted before construction", async () => {
+    let finalized = 0;
+    const controller = new AbortController();
+    // connect can abort during the server's span setup, so the pump is often
+    // built around a signal that has already fired. A listener added after the
+    // fact never runs, so `next()` must still settle from the initial state.
+    controller.abort();
+    const pump = StreamBridge.responsePump(
+      Stream.never.pipe(
+        Stream.ensuring(
+          Effect.sync(() => {
+            finalized += 1;
+          }),
+        ),
+      ),
+      Context.empty(),
+      controller.signal,
+    );
+
+    await expect(pump.next()).resolves.toEqual({
+      done: true,
+      value: undefined,
+    });
     await pump.close();
     expect(finalized).toBe(1);
   });

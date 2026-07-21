@@ -167,6 +167,33 @@ describe("GrpcInvoker (in-memory adapter)", () => {
     }
   });
 
+  it.each([0, -1])(
+    "does not impose a deadline for timeoutMs=%s",
+    async (timeoutMs) => {
+      const result = await withInvoker(
+        {
+          "test.Svc/Unary": {
+            kind: "unary",
+            handler: (request) => Effect.sleep(1).pipe(Effect.as(request)),
+          },
+          "test.Svc/ClientStream": {
+            kind: "client-streaming",
+            handler: () => Effect.sleep(1).pipe(Effect.as("client response")),
+          },
+        },
+        (invoker) =>
+          Effect.all([
+            invoker.unary("test.Svc/Unary", "unary response", { timeoutMs }),
+            invoker.clientStream("test.Svc/ClientStream", Stream.empty, {
+              timeoutMs,
+            }),
+          ]),
+      );
+
+      expect(result).toEqual(["unary response", "client response"]);
+    },
+  );
+
   it("terminates the handler when the caller interrupts", async () => {
     const observed = await withInvoker(
       {
@@ -222,6 +249,39 @@ describe("GrpcInvoker (in-memory adapter)", () => {
 
     expect(result).toBe(boom);
     expect(handlerSaw?.code).toBe("cancelled");
+  });
+
+  it("replays the caller's original error when streaming handlers recover", async () => {
+    const boom = new Error("source boom");
+    const failures = await withInvoker(
+      {
+        "test.Svc/ClientStream": {
+          kind: "client-streaming",
+          handler: (requests) =>
+            Stream.runDrain(requests).pipe(
+              Effect.catch(() => Effect.succeed("recovered")),
+            ),
+        },
+        "test.Svc/BidiStream": {
+          kind: "bidi-streaming",
+          handler: (requests) =>
+            requests.pipe(Stream.catch(() => Stream.make("recovered"))),
+        },
+      },
+      (invoker) =>
+        Effect.all([
+          Effect.flip(
+            invoker.clientStream("test.Svc/ClientStream", Stream.fail(boom)),
+          ),
+          Effect.flip(
+            Stream.runCollect(
+              invoker.bidiStream("test.Svc/BidiStream", Stream.fail(boom)),
+            ),
+          ),
+        ]),
+    );
+
+    expect(failures).toEqual([boom, boom]);
   });
 
   it("finalizes the handler stream when a bidi consumer stops early", async () => {

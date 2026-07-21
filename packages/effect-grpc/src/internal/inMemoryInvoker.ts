@@ -44,7 +44,7 @@ export const makeInMemory = (
     effect: Effect.Effect<unknown, GrpcStatusError.GrpcStatusError>,
     timeoutMs: number | undefined,
   ) =>
-    timeoutMs === undefined
+    timeoutMs === undefined || timeoutMs <= 0
       ? effect
       : Effect.timeoutOrElse(effect, {
           duration: timeoutMs,
@@ -91,7 +91,10 @@ export const makeInMemory = (
       return withDeadline(
         method.handler(replay.requests, callContext(tag, options)),
         options?.timeoutMs,
-      ).pipe(Effect.mapError(replay.restore));
+      ).pipe(
+        Effect.mapError(replay.restore),
+        Effect.tap(() => replay.failIfCaptured),
+      );
     });
   };
 
@@ -104,9 +107,15 @@ export const makeInMemory = (
     if (!method) return Stream.fail(unknownTag(tag));
     return Stream.suspend(() => {
       const replay = sourceReplay<A, E>(requests);
-      return method
-        .handler(replay.requests, callContext(tag, options))
-        .pipe(Stream.mapError(replay.restore));
+      return method.handler(replay.requests, callContext(tag, options)).pipe(
+        Stream.mapError(replay.restore),
+        Stream.mapEffect((value) =>
+          replay.failIfCaptured.pipe(Effect.as(value)),
+        ),
+        Stream.concat(
+          Stream.fromEffect(replay.failIfCaptured).pipe(Stream.drain),
+        ),
+      );
     });
   };
 
@@ -128,6 +137,9 @@ const sourceReplay = <A, E>(requests: Stream.Stream<A, E>) => {
     restore: (
       error: GrpcStatusError.GrpcStatusError,
     ): GrpcStatusError.GrpcStatusError | E => (failure ? failure.error : error),
+    failIfCaptured: Effect.suspend(() =>
+      failure ? Effect.fail(failure.error) : Effect.void,
+    ),
   };
 };
 

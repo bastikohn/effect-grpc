@@ -47,5 +47,19 @@ export const stripInternalHeaders = (
 ): ReadonlyArray<readonly [string, string]> =>
   headers.filter(([key]) => key.toLowerCase() !== timeoutHeader);
 
+/**
+ * The first reserved key present in the metadata, or `undefined` if none.
+ * Lets callers reject reserved metadata with a typed error before header
+ * construction, rather than relying on {@link headersFromCallOptions}'s throw.
+ */
+export const reservedMetadataKey = (
+  metadata: GrpcMetadata.GrpcMetadata | undefined,
+): string | undefined => {
+  for (const [key] of metadata ?? GrpcMetadata.empty) {
+    if (isReservedHeader(key)) return key;
+  }
+  return undefined;
+};
+
 const isReservedHeader = (key: string) =>
   key.toLowerCase().startsWith(reservedHeaderPrefix);

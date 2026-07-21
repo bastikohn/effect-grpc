@@ -66,13 +66,12 @@ export interface GrpcClientProtocolOptions extends GrpcClientTransportOptions {
   readonly serverAddress?: URL;
 }
 
-export interface GrpcClientProtocolTransportOptions {
-  readonly registry: GrpcMethodRegistry;
-  /** A transport from {@link makeTransport}, or any connect `Transport`. */
-  readonly transport: Transport;
-  /** Address reported in client span attributes. Telemetry only. */
-  readonly serverAddress?: URL;
-}
+/**
+ * Options for {@link layerFromTransport}: the same shape the connect invoker
+ * takes, so the two never drift.
+ */
+export type GrpcClientProtocolTransportOptions =
+  GrpcInvoker.GrpcConnectInvokerOptions;
 
 /**
  * Builds the gRPC transport used by the client protocol. Wraps connect-node's

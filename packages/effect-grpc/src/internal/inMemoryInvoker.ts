@@ -9,6 +9,7 @@ import type {
 } from "../GrpcInvoker.js";
 import * as GrpcMetadata from "../GrpcMetadata.js";
 import * as GrpcStatusError from "../GrpcStatusError.js";
+import { unknownTag, validateCallMetadata } from "./invoker.js";
 
 /**
  * Test {@link GrpcInvokerService}: dispatches to in-process handlers with the
@@ -60,9 +61,13 @@ export const makeInMemory = (
   const unary: GrpcInvokerService["unary"] = (tag, request, options) => {
     const method = lookup(tag, "unary");
     if (!method) return Effect.fail(unknownTag(tag));
-    return withDeadline(
-      method.handler(request, callContext(tag, options)),
-      options?.timeoutMs,
+    return validateCallMetadata(options).pipe(
+      Effect.andThen(
+        withDeadline(
+          method.handler(request, callContext(tag, options)),
+          options?.timeoutMs,
+        ),
+      ),
     );
   };
 
@@ -73,7 +78,11 @@ export const makeInMemory = (
   ) => {
     const method = lookup(tag, "server-streaming");
     if (!method) return Stream.fail(unknownTag(tag));
-    return method.handler(request, callContext(tag, options));
+    return Stream.unwrap(
+      validateCallMetadata(options).pipe(
+        Effect.as(method.handler(request, callContext(tag, options))),
+      ),
+    );
   };
 
   const clientStream: GrpcInvokerService["clientStream"] = <A, E>(
@@ -86,16 +95,20 @@ export const makeInMemory = (
     // Execution-local failure capture: like the wire, the handler observes a
     // failed request stream as `cancelled` while the caller gets its
     // original error replayed.
-    return Effect.suspend(() => {
-      const replay = sourceReplay<A, E>(requests);
-      return withDeadline(
-        method.handler(replay.requests, callContext(tag, options)),
-        options?.timeoutMs,
-      ).pipe(
-        Effect.mapError(replay.restore),
-        Effect.tap(() => replay.failIfCaptured),
-      );
-    });
+    return validateCallMetadata(options).pipe(
+      Effect.andThen(
+        Effect.suspend(() => {
+          const replay = sourceReplay<A, E>(requests);
+          return withDeadline(
+            method.handler(replay.requests, callContext(tag, options)),
+            options?.timeoutMs,
+          ).pipe(
+            Effect.mapError(replay.restore),
+            Effect.tap(() => replay.failIfCaptured),
+          );
+        }),
+      ),
+    );
   };
 
   const bidiStream: GrpcInvokerService["bidiStream"] = <A, E>(
@@ -105,18 +118,26 @@ export const makeInMemory = (
   ) => {
     const method = lookup(tag, "bidi-streaming");
     if (!method) return Stream.fail(unknownTag(tag));
-    return Stream.suspend(() => {
-      const replay = sourceReplay<A, E>(requests);
-      return method.handler(replay.requests, callContext(tag, options)).pipe(
-        Stream.mapError(replay.restore),
-        Stream.mapEffect((value) =>
-          replay.failIfCaptured.pipe(Effect.as(value)),
+    return Stream.unwrap(
+      validateCallMetadata(options).pipe(
+        Effect.as(
+          Stream.suspend(() => {
+            const replay = sourceReplay<A, E>(requests);
+            return method
+              .handler(replay.requests, callContext(tag, options))
+              .pipe(
+                Stream.mapError(replay.restore),
+                Stream.mapEffect((value) =>
+                  replay.failIfCaptured.pipe(Effect.as(value)),
+                ),
+                Stream.concat(
+                  Stream.fromEffect(replay.failIfCaptured).pipe(Stream.drain),
+                ),
+              );
+          }),
         ),
-        Stream.concat(
-          Stream.fromEffect(replay.failIfCaptured).pipe(Stream.drain),
-        ),
-      );
-    });
+      ),
+    );
   };
 
   return { unary, serverStream, clientStream, bidiStream };
@@ -142,6 +163,3 @@ const sourceReplay = <A, E>(requests: Stream.Stream<A, E>) => {
     ),
   };
 };
-
-const unknownTag = (tag: string) =>
-  GrpcStatusError.unimplemented(`Unknown gRPC RPC tag: ${tag}`);

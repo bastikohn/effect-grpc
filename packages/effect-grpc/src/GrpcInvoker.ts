@@ -54,6 +54,7 @@ export class GrpcInvoker extends Context.Service<
 >()("@effect-grpc/effect-grpc/GrpcInvoker") {}
 
 export interface GrpcConnectInvokerOptions {
+  /** The method registry used for tag lookup, kind validation, and codecs. */
   readonly registry: GrpcMethodRegistry;
   /** A transport from `GrpcClientProtocol.makeTransport`, or any connect `Transport`. */
   readonly transport: Transport;

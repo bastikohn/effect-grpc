@@ -13,6 +13,7 @@ import * as GrpcStatusError from "../GrpcStatusError.js";
 import { TraceState } from "../GrpcTracing.js";
 import { entryCodecs } from "./codec.js";
 import { getClient } from "./connect.js";
+import { unknownTag, validateCallMetadata } from "./invoker.js";
 import { headersFromCallOptions } from "./metadata.js";
 import * as StreamBridge from "./streamBridge.js";
 import * as GrpcTracing from "./tracing.js";
@@ -192,12 +193,27 @@ export const makeConnect = (
       return error;
     };
 
+    // Reject reserved metadata up front, so it is a recorded
+    // `invalid_argument` on every shape rather than a header-construction
+    // throw (a defect on streaming shapes, a generic `unknown` on unary).
+    const recordMetadata = (
+      options: GrpcCallOptions | undefined,
+      record: GrpcTracing.StatusRecorder,
+    ) =>
+      validateCallMetadata(options).pipe(
+        Effect.mapError((error) => {
+          record(error.code);
+          return error;
+        }),
+      );
+
     const unary: GrpcInvokerService["unary"] = (tag, request, callOptions) => {
       const entry = lookup(tag, "unary");
       if (!entry) return Effect.fail(unknownTag(tag));
       return withCallSpanEffect(entry, ({ span, record }) =>
         Effect.gen(function* () {
           const ambientTraceState = yield* Effect.service(TraceState);
+          yield* recordMetadata(callOptions, record);
           const method = resolveMethod(entry);
           if (!method) {
             return yield* Effect.fail(missingMethod(entry, record));
@@ -250,6 +266,7 @@ export const makeConnect = (
         ({ span, record }) =>
           Effect.gen(function* () {
             const ambientTraceState = yield* Effect.service(TraceState);
+            yield* recordMetadata(callOptions, record);
             const method = resolveMethod(entry);
             if (!method) {
               return yield* Effect.fail(missingMethod(entry, record));
@@ -305,6 +322,7 @@ export const makeConnect = (
         ({ span, record }) =>
           Effect.gen(function* () {
             const ambientTraceState = yield* Effect.service(TraceState);
+            yield* recordMetadata(callOptions, record);
             const method = resolveMethod(entry);
             if (!method) {
               return yield* Effect.fail(missingMethod(entry, record));
@@ -372,6 +390,7 @@ export const makeConnect = (
         ({ span, record }) =>
           Effect.gen(function* () {
             const ambientTraceState = yield* Effect.service(TraceState);
+            yield* recordMetadata(callOptions, record);
             const method = resolveMethod(entry);
             if (!method) {
               return Stream.fail(missingMethod(entry, record));
@@ -431,9 +450,6 @@ interface CallSpan {
 type CallResult =
   | { readonly ok: true; readonly value: unknown }
   | { readonly ok: false; readonly cause: unknown };
-
-const unknownTag = (tag: string) =>
-  GrpcStatusError.unimplemented(`Unknown gRPC RPC tag: ${tag}`);
 
 const streamingFailureCode = (error: unknown): GrpcStatusCode =>
   error instanceof GrpcStatusError.GrpcStatusError ? error.code : "cancelled";

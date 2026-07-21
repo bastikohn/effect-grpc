@@ -1,22 +1,27 @@
-import { Deferred, Effect, Fiber, Stream } from "effect";
+import { Deferred, Effect, Fiber, Ref, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 
 import * as GrpcClientProtocol from "../src/GrpcClientProtocol.js";
 import * as GrpcInvoker from "../src/GrpcInvoker.js";
 import * as GrpcStatusError from "../src/GrpcStatusError.js";
 
+const withInvokerEffect = <A, E>(
+  handlers: GrpcInvoker.GrpcInMemoryHandlers,
+  body: (
+    invoker: GrpcInvoker.GrpcInvokerService,
+  ) => Effect.Effect<A, E, GrpcInvoker.GrpcInvoker>,
+): Effect.Effect<A, E> =>
+  Effect.gen(function* () {
+    const invoker = yield* GrpcInvoker.GrpcInvoker;
+    return yield* body(invoker);
+  }).pipe(Effect.provide(GrpcInvoker.layerInMemory(handlers)));
+
 const withInvoker = <A, E>(
   handlers: GrpcInvoker.GrpcInMemoryHandlers,
   body: (
     invoker: GrpcInvoker.GrpcInvokerService,
   ) => Effect.Effect<A, E, GrpcInvoker.GrpcInvoker>,
-): Promise<A> =>
-  Effect.runPromise(
-    Effect.gen(function* () {
-      const invoker = yield* GrpcInvoker.GrpcInvoker;
-      return yield* body(invoker);
-    }).pipe(Effect.provide(GrpcInvoker.layerInMemory(handlers))),
-  );
+): Promise<A> => Effect.runPromise(withInvokerEffect(handlers, body));
 
 describe("GrpcInvoker (in-memory adapter)", () => {
   it("round trips all four call shapes with domain values", async () => {
@@ -284,6 +289,95 @@ describe("GrpcInvoker (in-memory adapter)", () => {
     expect(failures).toEqual([boom, boom]);
   });
 
+  it("rejects reserved metadata keys with invalid_argument on every shape", async () => {
+    const reserved = { metadata: [["x-effect-grpc-foo", "bar"]] as const };
+    const codes = await withInvoker(
+      {
+        "test.Svc/Unary": {
+          kind: "unary",
+          handler: (request) => Effect.succeed(request),
+        },
+        "test.Svc/ServerStream": {
+          kind: "server-streaming",
+          handler: (request) => Stream.make(request),
+        },
+        "test.Svc/ClientStream": {
+          kind: "client-streaming",
+          handler: () => Effect.succeed("ok"),
+        },
+        "test.Svc/BidiStream": {
+          kind: "bidi-streaming",
+          handler: (requests) => requests,
+        },
+      },
+      (invoker) =>
+        Effect.gen(function* () {
+          const unary = yield* Effect.flip(
+            invoker.unary("test.Svc/Unary", {}, reserved),
+          );
+          const server = yield* Effect.flip(
+            Stream.runCollect(
+              invoker.serverStream("test.Svc/ServerStream", {}, reserved),
+            ),
+          );
+          const client = yield* Effect.flip(
+            invoker.clientStream(
+              "test.Svc/ClientStream",
+              Stream.empty,
+              reserved,
+            ),
+          );
+          const bidi = yield* Effect.flip(
+            Stream.runCollect(
+              invoker.bidiStream("test.Svc/BidiStream", Stream.empty, reserved),
+            ),
+          );
+          return [unary, server, client, bidi].map(
+            (error) => (error as GrpcStatusError.GrpcStatusError).code,
+          );
+        }),
+    );
+
+    expect(codes).toEqual([
+      "invalid_argument",
+      "invalid_argument",
+      "invalid_argument",
+      "invalid_argument",
+    ]);
+  });
+
+  it("keeps source-failure capture execution-local across re-runs", async () => {
+    const boom = new Error("first-run boom");
+    const runs = Effect.runSync(Ref.make(0));
+
+    // One effect run twice: the request stream fails only on the first run.
+    // A shared (non-execution-local) failure capture would poison the second.
+    const call = withInvokerEffect(
+      {
+        "test.Svc/ClientStream": {
+          kind: "client-streaming",
+          handler: (requests) =>
+            Stream.runDrain(requests).pipe(Effect.as("done")),
+        },
+      },
+      (invoker) =>
+        invoker.clientStream(
+          "test.Svc/ClientStream",
+          Stream.unwrap(
+            Ref.updateAndGet(runs, (n) => n + 1).pipe(
+              Effect.map((n) => (n === 1 ? Stream.fail(boom) : Stream.empty)),
+            ),
+          ),
+        ),
+    );
+
+    const first = await Effect.runPromise(Effect.flip(call));
+    const second = await Effect.runPromise(call);
+
+    expect(first).toBe(boom);
+    expect(second).toBe("done");
+  });
+
   it("finalizes the handler stream when a bidi consumer stops early", async () => {
     let finalized = 0;
     const first = await withInvoker(
@@ -354,5 +448,65 @@ describe("GrpcInvoker (connect adapter)", () => {
       "unimplemented",
       "unimplemented",
     ]);
+  });
+
+  it("fails with unimplemented when a tag is invoked as the wrong kind", async () => {
+    // `lookup` only reads `kind`, so a minimal entry exercises kind validation
+    // without a transport round trip.
+    const registry = new Map([["test.Svc/Unary", { kind: "unary" } as never]]);
+    const error = await Effect.runPromise(
+      GrpcInvoker.GrpcInvoker.pipe(
+        Effect.flatMap((invoker) =>
+          Effect.flip(
+            Stream.runCollect(invoker.serverStream("test.Svc/Unary", {})),
+          ),
+        ),
+        Effect.provide(
+          GrpcInvoker.layerConnect({
+            registry,
+            transport: GrpcClientProtocol.makeTransport({
+              baseUrl: "http://127.0.0.1:1",
+            }),
+          }),
+        ),
+      ),
+    );
+
+    expect((error as GrpcStatusError.GrpcStatusError).code).toBe(
+      "unimplemented",
+    );
+  });
+
+  it("rejects reserved metadata with invalid_argument before touching the transport", async () => {
+    // Metadata is validated before method resolution, so a minimal entry
+    // reaches the check without a network call.
+    const registry = new Map([["test.Svc/Unary", { kind: "unary" } as never]]);
+    const error = await Effect.runPromise(
+      GrpcInvoker.GrpcInvoker.pipe(
+        Effect.flatMap((invoker) =>
+          Effect.flip(
+            invoker.unary(
+              "test.Svc/Unary",
+              {},
+              {
+                metadata: [["x-effect-grpc-foo", "bar"]],
+              },
+            ),
+          ),
+        ),
+        Effect.provide(
+          GrpcInvoker.layerConnect({
+            registry,
+            transport: GrpcClientProtocol.makeTransport({
+              baseUrl: "http://127.0.0.1:1",
+            }),
+          }),
+        ),
+      ),
+    );
+
+    expect((error as GrpcStatusError.GrpcStatusError).code).toBe(
+      "invalid_argument",
+    );
   });
 });

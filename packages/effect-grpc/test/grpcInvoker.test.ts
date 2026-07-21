@@ -1,8 +1,11 @@
-import { Deferred, Effect, Fiber, Ref, Stream } from "effect";
+import type { Transport } from "@connectrpc/connect";
+import { Code, ConnectError } from "@connectrpc/connect";
+import { Deferred, Effect, Fiber, Ref, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 
 import * as GrpcClientProtocol from "../src/GrpcClientProtocol.js";
 import * as GrpcInvoker from "../src/GrpcInvoker.js";
+import type { GrpcMethodEntry } from "../src/GrpcMethodRegistry.js";
 import * as GrpcStatusError from "../src/GrpcStatusError.js";
 
 const withInvokerEffect = <A, E>(
@@ -346,6 +349,54 @@ describe("GrpcInvoker (in-memory adapter)", () => {
     ]);
   });
 
+  it("constructs unary and server-streaming handlers lazily after metadata validation", async () => {
+    let unaryCalls = 0;
+    let serverCalls = 0;
+    const reserved = { metadata: [["x-effect-grpc-foo", "bar"]] as const };
+
+    const result = await withInvoker(
+      {
+        "test.Svc/Unary": {
+          kind: "unary",
+          handler: () => {
+            unaryCalls += 1;
+            return Effect.succeed("unary");
+          },
+        },
+        "test.Svc/ServerStream": {
+          kind: "server-streaming",
+          handler: () => {
+            serverCalls += 1;
+            return Stream.make("server");
+          },
+        },
+      },
+      (invoker) => {
+        const unary = invoker.unary("test.Svc/Unary", {}, reserved);
+        const server = invoker.serverStream(
+          "test.Svc/ServerStream",
+          {},
+          reserved,
+        );
+        const afterConstruction = [unaryCalls, serverCalls];
+
+        return Effect.gen(function* () {
+          yield* Effect.flip(unary);
+          yield* Effect.flip(Stream.runCollect(server));
+          return {
+            afterConstruction,
+            afterValidation: [unaryCalls, serverCalls],
+          };
+        });
+      },
+    );
+
+    expect(result).toEqual({
+      afterConstruction: [0, 0],
+      afterValidation: [0, 0],
+    });
+  });
+
   it("keeps source-failure capture execution-local across re-runs", async () => {
     const boom = new Error("first-run boom");
     const runs = Effect.runSync(Ref.make(0));
@@ -509,4 +560,70 @@ describe("GrpcInvoker (connect adapter)", () => {
       "invalid_argument",
     );
   });
+
+  it("maps synchronous server and bidi transport throws to typed status errors", async () => {
+    const transport = {
+      stream() {
+        throw new ConnectError("transport unavailable", Code.Unavailable);
+      },
+    } as unknown as Transport;
+
+    const errors = await Effect.runPromise(
+      Effect.gen(function* () {
+        const invoker = yield* GrpcInvoker.GrpcInvoker;
+        const server = yield* Effect.flip(
+          Stream.runCollect(invoker.serverStream(serverStreamingEntry.tag, {})),
+        );
+        const bidi = yield* Effect.flip(
+          Stream.runCollect(
+            invoker.bidiStream(bidiStreamingEntry.tag, Stream.empty),
+          ),
+        );
+        return [server, bidi];
+      }).pipe(
+        Effect.provide(
+          GrpcInvoker.layerConnect({
+            registry: new Map([
+              [serverStreamingEntry.tag, serverStreamingEntry],
+              [bidiStreamingEntry.tag, bidiStreamingEntry],
+            ]),
+            transport,
+          }),
+        ),
+      ),
+    );
+
+    for (const error of errors) {
+      expect(error).toBeInstanceOf(GrpcStatusError.GrpcStatusError);
+      expect(error.code).toBe("unavailable");
+    }
+  });
 });
+
+const streamingService = {
+  typeName: "test.Svc",
+  methods: [
+    { methodKind: "server_streaming", localName: "serverStream" },
+    { methodKind: "bidi_streaming", localName: "bidiStream" },
+  ],
+} as unknown as GrpcMethodEntry["service"];
+
+const serverStreamingEntry: GrpcMethodEntry = {
+  kind: "server-streaming",
+  tag: "test.Svc/ServerStream",
+  service: streamingService,
+  localName: "serverStream",
+  payloadSchema: Schema.Unknown,
+  successSchema: Schema.Unknown,
+  toGrpcRequest: (value) => value as never,
+  fromGrpcRequest: (message) => message,
+  toGrpcResponse: (value) => value as never,
+  fromGrpcResponse: (message) => message,
+};
+
+const bidiStreamingEntry: GrpcMethodEntry = {
+  ...serverStreamingEntry,
+  kind: "bidi-streaming",
+  tag: "test.Svc/BidiStream",
+  localName: "bidiStream",
+};

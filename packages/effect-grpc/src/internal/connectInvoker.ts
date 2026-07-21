@@ -207,6 +207,19 @@ export const makeConnect = (
         }),
       );
 
+    const invokeStream = (
+      invoke: () => AsyncIterable<unknown>,
+      record: GrpcTracing.StatusRecorder,
+    ) =>
+      Effect.try({
+        try: invoke,
+        catch: (cause) => {
+          const error = GrpcStatusError.fromConnectError(cause);
+          record(error.code);
+          return error;
+        },
+      });
+
     const unary: GrpcInvokerService["unary"] = (tag, request, callOptions) => {
       const entry = lookup(tag, "unary");
       if (!entry) return Effect.fail(unknownTag(tag));
@@ -287,15 +300,19 @@ export const makeConnect = (
                 record("cancelled");
               }),
             );
-            const responses = method(
-              grpcRequest,
-              callOptionsFor(
-                callOptions,
-                span,
-                controller.signal,
-                ambientTraceState,
-              ),
-            ) as AsyncIterable<unknown>;
+            const responses = yield* invokeStream(
+              () =>
+                method(
+                  grpcRequest,
+                  callOptionsFor(
+                    callOptions,
+                    span,
+                    controller.signal,
+                    ambientTraceState,
+                  ),
+                ) as AsyncIterable<unknown>,
+              record,
+            );
             return Stream.fromAsyncIterable(responses, (cause) =>
               GrpcStatusError.fromConnectError(cause),
             ).pipe(
@@ -413,15 +430,19 @@ export const makeConnect = (
                 record("cancelled");
               }),
             );
-            const responses = method(
-              pump.iterable,
-              callOptionsFor(
-                callOptions,
-                span,
-                controller.signal,
-                ambientTraceState,
-              ),
-            ) as AsyncIterable<unknown>;
+            const responses = yield* invokeStream(
+              () =>
+                method(
+                  pump.iterable,
+                  callOptionsFor(
+                    callOptions,
+                    span,
+                    controller.signal,
+                    ambientTraceState,
+                  ),
+                ) as AsyncIterable<unknown>,
+              record,
+            );
             return StreamBridge.responseStream(
               responses,
               pump,

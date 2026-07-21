@@ -63,9 +63,11 @@ export const makeInMemory = (
     if (!method) return Effect.fail(unknownTag(tag));
     return validateCallMetadata(options).pipe(
       Effect.andThen(
-        withDeadline(
-          method.handler(request, callContext(tag, options)),
-          options?.timeoutMs,
+        Effect.suspend(() =>
+          withDeadline(
+            method.handler(request, callContext(tag, options)),
+            options?.timeoutMs,
+          ),
         ),
       ),
     );
@@ -80,7 +82,7 @@ export const makeInMemory = (
     if (!method) return Stream.fail(unknownTag(tag));
     return Stream.unwrap(
       validateCallMetadata(options).pipe(
-        Effect.as(method.handler(request, callContext(tag, options))),
+        Effect.map(() => method.handler(request, callContext(tag, options))),
       ),
     );
   };

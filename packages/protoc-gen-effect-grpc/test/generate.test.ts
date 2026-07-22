@@ -230,6 +230,104 @@ describe("generateFile", () => {
       "export const toVoidRequest = (_value: unknown): Record<string, unknown> => ({});",
     );
   });
+
+  it("emits the annotated Schema.suspend for a recursive self-edge", () => {
+    const output = generateFile({
+      protoFileName: "demo/v1/node.proto",
+      packageName: "demo.v1",
+      importExtension: "js",
+      imports: [],
+      enums: [],
+      messages: [
+        {
+          name: "Node",
+          fields: [
+            {
+              kind: "message",
+              name: "next",
+              messageName: "Node",
+              source: "local",
+              optional: true,
+            },
+          ],
+        },
+      ],
+      services: [
+        {
+          name: "NodeService",
+          typeName: "demo.v1.NodeService",
+          methods: [
+            {
+              name: "Echo",
+              localName: "echo",
+              kind: "unary",
+              inputType: "Node",
+              outputType: "Node",
+            },
+          ],
+        },
+      ],
+    });
+
+    // A cyclic edge must break the type recursion with an explicit annotation
+    // rather than the self-referential `typeof NodeSchema` form.
+    expect(output).toContain(
+      "next: Schema.optional(Schema.suspend((): Schema.Codec<unknown, unknown, never, never> => NodeSchema))",
+    );
+    expect(output).not.toContain("Schema.suspend((): typeof NodeSchema");
+  });
+
+  it("omits unary-path rpc imports for a streaming-only service", () => {
+    const output = generateFile({
+      protoFileName: "demo/v1/upload.proto",
+      packageName: "demo.v1",
+      importExtension: "js",
+      imports: [],
+      enums: [],
+      messages: [
+        {
+          name: "UploadRequest",
+          fields: [{ kind: "scalar", name: "id", type: "string" }],
+        },
+        {
+          name: "UploadResponse",
+          fields: [{ kind: "scalar", name: "id", type: "string" }],
+        },
+      ],
+      services: [
+        {
+          name: "UploadService",
+          typeName: "demo.v1.UploadService",
+          methods: [
+            {
+              name: "Upload",
+              localName: "upload",
+              kind: "client-streaming",
+              inputType: "UploadRequest",
+              outputType: "UploadResponse",
+            },
+            {
+              name: "Chat",
+              localName: "chat",
+              kind: "bidi-streaming",
+              inputType: "UploadRequest",
+              outputType: "UploadResponse",
+            },
+          ],
+        },
+      ],
+    });
+
+    // Every method bypasses Effect RPC, so the unary-path `Rpc`/`RpcClient`
+    // imports must not be emitted — only the direct streaming bridge is used.
+    expect(output).toContain(
+      'import { RpcClientError, RpcGroup } from "effect/unstable/rpc";',
+    );
+    expect(output).toContain(
+      "const streaming = yield* GrpcClientProtocol.GrpcStreamingClient;",
+    );
+    expect(output).not.toContain("RpcClient.make");
+  });
 });
 
 describe("plugin fixture", () => {
@@ -288,7 +386,7 @@ describe("plugin fixture", () => {
       "success: GrpcGoogleProtobufDurationSchema",
     );
     expect(response.file[0]?.content).toContain(
-      "toGrpcRequest: toGrpcGoogleProtobufBoolValue",
+      "toGrpcRequest: toGrpcGoogleProtobufBoolValueMessage",
     );
     expect(response.file[0]?.content).toContain(
       "fromGrpcResponse: fromGrpcGoogleProtobufDuration",

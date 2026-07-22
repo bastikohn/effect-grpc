@@ -1,10 +1,11 @@
 import { grpcEmptyName, grpcWellKnownName } from "./naming.js";
-import type {
-  FieldModel,
-  FieldValueModel,
-  GeneratorFile,
-  MessageModel,
-  WellKnownKind,
+import {
+  isRequestStreaming,
+  type FieldModel,
+  type FieldValueModel,
+  type GeneratorFile,
+  type MessageModel,
+  type WellKnownKind,
 } from "./types.js";
 import { wellKnownJsonSchemaName, wellKnownProtobufName } from "./wellKnown.js";
 
@@ -32,6 +33,8 @@ export interface FileUsage {
   readonly wellKnownFields: ReadonlySet<WellKnownKind>;
   /** Well-known kinds used as method input/output types. */
   readonly wellKnownMethods: ReadonlySet<WellKnownKind>;
+  /** Union of well-known kinds used as a field OR as a method type. */
+  readonly wellKnownUsed: ReadonlySet<WellKnownKind>;
   /** Wrapper kinds that need the boxed `{ value }` message encoding. */
   readonly boxedWrappers: ReadonlySet<WellKnownKind>;
   /** `[importedName, alias]` pairs from `@bufbuild/protobuf/wkt`, sorted. */
@@ -110,8 +113,11 @@ export const analyzeFileUsage = (file: GeneratorFile): FileUsage => {
     }
   }
 
-  const usesWellKnown = (kind: WellKnownKind) =>
-    wellKnownFields.has(kind) || wellKnownMethods.has(kind);
+  const wellKnownUsed = new Set<WellKnownKind>([
+    ...wellKnownFields,
+    ...wellKnownMethods,
+  ]);
+  const usesWellKnown = (kind: WellKnownKind) => wellKnownUsed.has(kind);
 
   const jsonWellKnownImports = wellKnownKinds
     .flatMap((kind) => {
@@ -125,17 +131,10 @@ export const analyzeFileUsage = (file: GeneratorFile): FileUsage => {
   return {
     hasServices: file.services.length > 0,
     hasRpcMethods: file.services.some((service) =>
-      service.methods.some(
-        (method) =>
-          method.kind === "unary" || method.kind === "server-streaming",
-      ),
+      service.methods.some((method) => !isRequestStreaming(method)),
     ),
     hasStreamingMethods: file.services.some((service) =>
-      service.methods.some(
-        (method) =>
-          method.kind === "client-streaming" ||
-          method.kind === "bidi-streaming",
-      ),
+      service.methods.some(isRequestStreaming),
     ),
     usesStream: file.services.some((service) =>
       service.methods.some((method) => method.kind !== "unary"),
@@ -146,6 +145,7 @@ export const analyzeFileUsage = (file: GeneratorFile): FileUsage => {
       usesBytesScalar || usesWellKnown("bytes-value") || usesWellKnown("any"),
     wellKnownFields,
     wellKnownMethods,
+    wellKnownUsed,
     boxedWrappers,
     jsonWellKnownImports,
     orderedMessages: orderMessages(file.messages),

@@ -306,7 +306,7 @@ const scalarConverters = (usage: FileUsage) =>
 
 const wellKnownConverters = (usage: FileUsage) => {
   return [
-    ...(usesWellKnown(usage, "timestamp")
+    ...(usage.wellKnownUsed.has("timestamp")
       ? [
           `${wellKnownConverterDecl(usage, "timestamp")} from${wellKnownConverterName("timestamp")} = (value: unknown): string => {`,
           "  const message = value as { readonly seconds?: bigint | number; readonly nanos?: number };",
@@ -326,7 +326,7 @@ const wellKnownConverters = (usage: FileUsage) => {
           "",
         ]
       : []),
-    ...(usesWellKnown(usage, "duration")
+    ...(usage.wellKnownUsed.has("duration")
       ? [
           `${wellKnownConverterDecl(usage, "duration")} from${wellKnownConverterName("duration")} = (value: unknown) => {`,
           "  const message = value as { readonly seconds?: bigint | number; readonly nanos?: number };",
@@ -364,7 +364,7 @@ const wellKnownConverters = (usage: FileUsage) => {
       false,
       "new Uint8Array()",
     ),
-    ...(usesWellKnown(usage, "any")
+    ...(usage.wellKnownUsed.has("any")
       ? [
           `${wellKnownConverterDecl(usage, "any")} from${wellKnownConverterName("any")} = (value: unknown) => {`,
           "  const message = value as { readonly typeUrl?: string; readonly value?: Uint8Array };",
@@ -408,7 +408,7 @@ const wrapperConverter = (
   unsigned: boolean,
   defaultValue: string,
 ) => {
-  if (!usesWellKnown(usage, type)) return [];
+  if (!usage.wellKnownUsed.has(type)) return [];
   // A wrapper value can reach the converter either already unwrapped (a bare
   // scalar, e.g. when nested through another converter) or as the `{ value }`
   // message; accept both. Nested wrapper fields use bare scalars because
@@ -451,7 +451,7 @@ const wrapperConverter = (
 
 const jsonWellKnownConverter = (usage: FileUsage, type: WellKnownKind) => {
   const schema = wellKnownJsonSchema(type);
-  return schema && usesWellKnown(usage, type)
+  return schema && usage.wellKnownUsed.has(type)
     ? [
         `${wellKnownConverterDecl(usage, type)} from${wellKnownConverterName(type)} = (value: unknown) =>`,
         `  protobufToJson(${schema}, value as never);`,
@@ -488,6 +488,3 @@ const wellKnownConverterName = (type: WellKnownKind) =>
 
 const wellKnownConverterDecl = (usage: FileUsage, type: WellKnownKind) =>
   usage.wellKnownMethods.has(type) ? "export const" : "const";
-
-const usesWellKnown = (usage: FileUsage, type: WellKnownKind) =>
-  usage.wellKnownFields.has(type) || usage.wellKnownMethods.has(type);

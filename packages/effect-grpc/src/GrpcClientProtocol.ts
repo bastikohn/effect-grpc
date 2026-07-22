@@ -1,12 +1,11 @@
 import type { CallOptions, Interceptor, Transport } from "@connectrpc/connect";
 import { createGrpcTransport } from "@connectrpc/connect-node";
 import type { GrpcTransportOptions } from "@connectrpc/connect-node";
-import { Context, Effect, Layer, Scope, Stream } from "effect";
+import { Effect, Layer, Scope } from "effect";
 import type * as Tracer from "effect/Tracer";
 import * as RpcClient from "effect/unstable/rpc/RpcClient";
 import type { FromClientEncoded } from "effect/unstable/rpc/RpcMessage";
 
-import type { GrpcCallOptions } from "./CodegenSupport.js";
 import * as GrpcInvoker from "./GrpcInvoker.js";
 import * as GrpcMetadata from "./GrpcMetadata.js";
 import type {
@@ -151,39 +150,12 @@ export const metadataInterceptor = <R>(
   );
 
 /**
- * Streaming client used by generated code for client-streaming and
- * bidi-streaming methods. Effect RPC's wire protocol has no client-to-server
- * chunk variant, so these methods bypass `RpcClient` — a thin facade over the
- * corresponding {@link GrpcInvoker.GrpcInvoker} call shapes, kept until
- * generated clients depend on the invoker directly.
- */
-export interface GrpcStreamingClientService {
-  readonly clientStreaming: <A, E>(
-    tag: string,
-    requests: Stream.Stream<A, E>,
-    options?: GrpcCallOptions,
-  ) => Effect.Effect<unknown, GrpcStatusError.GrpcStatusError | E>;
-  readonly bidiStreaming: <A, E>(
-    tag: string,
-    requests: Stream.Stream<A, E>,
-    options?: GrpcCallOptions,
-  ) => Stream.Stream<unknown, GrpcStatusError.GrpcStatusError | E>;
-}
-
-export class GrpcStreamingClient extends Context.Service<
-  GrpcStreamingClient,
-  GrpcStreamingClientService
->()("@effect-grpc/effect-grpc/GrpcStreamingClient") {}
-
-/**
  * Builds the protocol layer. The common case: pass `baseUrl` plus any
  * connect-node options (`nodeOptions`, `interceptors`, `defaultTimeoutMs`, ...).
  */
 export const layer = (
   options: GrpcClientProtocolOptions,
-): Layer.Layer<
-  RpcClient.Protocol | GrpcStreamingClient | GrpcInvoker.GrpcInvoker
-> =>
+): Layer.Layer<RpcClient.Protocol | GrpcInvoker.GrpcInvoker> =>
   layerFromTransport({
     registry: options.registry,
     transport: makeTransport(options),
@@ -197,15 +169,10 @@ export const layer = (
  */
 export const layerFromTransport = (
   options: GrpcClientProtocolTransportOptions,
-): Layer.Layer<
-  RpcClient.Protocol | GrpcStreamingClient | GrpcInvoker.GrpcInvoker
-> => {
+): Layer.Layer<RpcClient.Protocol | GrpcInvoker.GrpcInvoker> => {
   const invoker = GrpcInvoker.layerConnect(options);
   return Layer.mergeAll(
     Layer.effect(RpcClient.Protocol, make(options)),
-    Layer.effect(GrpcStreamingClient, makeStreaming).pipe(
-      Layer.provide(invoker),
-    ),
     invoker,
   );
 };
@@ -425,23 +392,6 @@ const make = (
       };
     }),
   );
-
-/**
- * Facade over the invocation seam: generated code still resolves streaming
- * calls through {@link GrpcStreamingClient}, which delegates to the
- * corresponding {@link GrpcInvoker.GrpcInvoker} call shapes.
- */
-const makeStreaming: Effect.Effect<
-  GrpcStreamingClientService,
-  never,
-  GrpcInvoker.GrpcInvoker
-> = Effect.gen(function* () {
-  const invoker = yield* GrpcInvoker.GrpcInvoker;
-  return {
-    clientStreaming: invoker.clientStream,
-    bidiStreaming: invoker.bidiStream,
-  };
-});
 
 const headersWithTrace = (
   request: Extract<FromClientEncoded, { readonly _tag: "Request" }>,

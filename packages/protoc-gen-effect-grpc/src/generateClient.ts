@@ -2,53 +2,34 @@ import {
   serviceClientLayerName,
   serviceClientName,
   serviceClientServiceName,
-  serviceGroupName,
 } from "./naming.js";
-import {
-  isRequestStreaming,
-  type GeneratorFile,
-  type MethodModel,
-  type ServiceModel,
-} from "./types.js";
+import type { GeneratorFile, MethodModel, ServiceModel } from "./types.js";
 
 export const generateClient = (file: GeneratorFile) =>
-  file.services.flatMap((service) => {
-    const hasRpcMethods = service.methods.some(
-      (method) => !isRequestStreaming(method),
-    );
-    const hasStreamingMethods = service.methods.some(isRequestStreaming);
-    return [
-      `export type ${service.name}ClientError = GrpcStatusError.GrpcStatusError | RpcClientError.RpcClientError;`,
-      "",
-      `export interface ${serviceClientServiceName(service.name)} {`,
-      ...service.methods.map(
-        (method) =>
-          `  readonly ${method.localName}: ${clientMethodSignature(service, method)};`,
-      ),
-      "}",
-      "",
-      `const make${serviceClientName(service.name)} = Effect.gen(function* () {`,
-      ...(hasRpcMethods
-        ? [
-            `  const client = yield* RpcClient.make(${serviceGroupName(service.name)});`,
-          ]
-        : []),
-      ...(hasStreamingMethods
-        ? ["  const streaming = yield* GrpcClientProtocol.GrpcStreamingClient;"]
-        : []),
-      "  return {",
-      ...service.methods.map((method) => clientMethodImpl(service, method)),
-      `  } satisfies ${serviceClientServiceName(service.name)};`,
-      "});",
-      "",
-      `export class ${serviceClientName(service.name)} extends Context.Service<${serviceClientName(service.name)}, ${serviceClientServiceName(service.name)}>()("${service.typeName}/${serviceClientName(service.name)}", {`,
-      `  make: make${serviceClientName(service.name)},`,
-      "}) {}",
-      "",
-      `export const ${serviceClientLayerName(service.name)} = Layer.effect(${serviceClientName(service.name)}, ${serviceClientName(service.name)}.make);`,
-      "",
-    ];
-  });
+  file.services.flatMap((service) => [
+    `export type ${service.name}ClientError = GrpcStatusError.GrpcStatusError;`,
+    "",
+    `export interface ${serviceClientServiceName(service.name)} {`,
+    ...service.methods.map(
+      (method) =>
+        `  readonly ${method.localName}: ${clientMethodSignature(service, method)};`,
+    ),
+    "}",
+    "",
+    `const make${serviceClientName(service.name)} = Effect.gen(function* () {`,
+    "  const invoker = yield* GrpcInvoker.GrpcInvoker;",
+    "  return {",
+    ...service.methods.map((method) => clientMethodImpl(service, method)),
+    `  } satisfies ${serviceClientServiceName(service.name)};`,
+    "});",
+    "",
+    `export class ${serviceClientName(service.name)} extends Context.Service<${serviceClientName(service.name)}, ${serviceClientServiceName(service.name)}>()("${service.typeName}/${serviceClientName(service.name)}", {`,
+    `  make: make${serviceClientName(service.name)},`,
+    "}) {}",
+    "",
+    `export const ${serviceClientLayerName(service.name)} = Layer.effect(${serviceClientName(service.name)}, ${serviceClientName(service.name)}.make);`,
+    "",
+  ]);
 
 const clientMethodSignature = (
   service: ServiceModel,
@@ -67,6 +48,8 @@ const clientMethodSignature = (
   }
 };
 
+// Every method delegates to the {@link GrpcInvoker} seam, which returns
+// `unknown` — the `as` cast pins the domain type the signature promises.
 const clientMethodImpl = (
   service: ServiceModel,
   method: MethodModel,
@@ -75,11 +58,12 @@ const clientMethodImpl = (
   const methodType = `${serviceClientServiceName(service.name)}["${method.localName}"]`;
   switch (method.kind) {
     case "unary":
+      return `    ${method.localName}: ((request, options) => invoker.unary("${tag}", request, options)) as ${methodType},`;
     case "server-streaming":
-      return `    ${method.localName}: (request, options) => client["${tag}"](request, { headers: CodegenSupport.headersFromOptions(options) }),`;
+      return `    ${method.localName}: ((request, options) => invoker.serverStream("${tag}", request, options)) as ${methodType},`;
     case "client-streaming":
-      return `    ${method.localName}: ((requests, options) => streaming.clientStreaming("${tag}", requests, options)) as ${methodType},`;
+      return `    ${method.localName}: ((requests, options) => invoker.clientStream("${tag}", requests, options)) as ${methodType},`;
     case "bidi-streaming":
-      return `    ${method.localName}: ((requests, options) => streaming.bidiStreaming("${tag}", requests, options)) as ${methodType},`;
+      return `    ${method.localName}: ((requests, options) => invoker.bidiStream("${tag}", requests, options)) as ${methodType},`;
   }
 };

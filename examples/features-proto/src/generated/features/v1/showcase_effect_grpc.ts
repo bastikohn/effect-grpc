@@ -2,8 +2,8 @@
 
 import { Buffer } from "node:buffer";
 import { Context, Effect, Layer, Schema, Stream } from "effect";
-import { Rpc, RpcClient, RpcClientError, RpcGroup } from "effect/unstable/rpc";
-import { CodegenSupport, GrpcClientProtocol, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc";
+import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc";
 import {
   FeatureShowcaseService,
 } from "./showcase_pb.js";
@@ -298,7 +298,7 @@ export const FeatureShowcaseServiceGrpcRegistry = new Map<string, GrpcMethodRegi
   ],
 ]);
 
-export type FeatureShowcaseServiceClientError = GrpcStatusError.GrpcStatusError | RpcClientError.RpcClientError;
+export type FeatureShowcaseServiceClientError = GrpcStatusError.GrpcStatusError;
 
 export interface FeatureShowcaseServiceClientService {
   readonly describe: (request: FeatureRequest, options?: CodegenSupport.GrpcCallOptions) => Effect.Effect<FeatureResponse, FeatureShowcaseServiceClientError>;
@@ -307,12 +307,11 @@ export interface FeatureShowcaseServiceClientService {
 }
 
 const makeFeatureShowcaseServiceClient = Effect.gen(function* () {
-  const client = yield* RpcClient.make(FeatureShowcaseServiceRpcGroup);
-  const streaming = yield* GrpcClientProtocol.GrpcStreamingClient;
+  const invoker = yield* GrpcInvoker.GrpcInvoker;
   return {
-    describe: (request, options) => client["features.v1.FeatureShowcaseService/Describe"](request, { headers: CodegenSupport.headersFromOptions(options) }),
-    uploadNotes: ((requests, options) => streaming.clientStreaming("features.v1.FeatureShowcaseService/UploadNotes", requests, options)) as FeatureShowcaseServiceClientService["uploadNotes"],
-    chat: ((requests, options) => streaming.bidiStreaming("features.v1.FeatureShowcaseService/Chat", requests, options)) as FeatureShowcaseServiceClientService["chat"],
+    describe: ((request, options) => invoker.unary("features.v1.FeatureShowcaseService/Describe", request, options)) as FeatureShowcaseServiceClientService["describe"],
+    uploadNotes: ((requests, options) => invoker.clientStream("features.v1.FeatureShowcaseService/UploadNotes", requests, options)) as FeatureShowcaseServiceClientService["uploadNotes"],
+    chat: ((requests, options) => invoker.bidiStream("features.v1.FeatureShowcaseService/Chat", requests, options)) as FeatureShowcaseServiceClientService["chat"],
   } satisfies FeatureShowcaseServiceClientService;
 });
 

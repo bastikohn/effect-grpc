@@ -3,7 +3,6 @@ import type { ServerClient } from "effect/unstable/rpc/Rpc";
 import type { RequestId } from "effect/unstable/rpc/RpcMessage";
 
 import * as GrpcMetadata from "./GrpcMetadata.js";
-import { headersFromCallOptions } from "./internal/metadata.js";
 
 export interface GrpcCallOptions {
   readonly metadata?: GrpcMetadata.GrpcMetadata;
@@ -15,8 +14,6 @@ export interface GrpcServerContext {
   readonly requestId: RequestId;
   readonly metadata: GrpcMetadata.GrpcMetadata;
 }
-
-export const headersFromOptions = headersFromCallOptions;
 
 export const serverContext = (options: {
   readonly client: ServerClient;

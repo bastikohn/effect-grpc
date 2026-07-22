@@ -17,6 +17,11 @@ working unchanged. Only code that consumed `RpcClient.Protocol` from these
 layers directly (e.g. hand-built `RpcClient.make(...)` clients) is affected;
 migrate such callers to the invoker.
 
+The now-dead `CodegenSupport.headersFromOptions` re-export and the internal
+`x-effect-grpc-timeout-ms` header writer are removed alongside the client
+protocol path; `CodegenSupport.GrpcCallOptions.timeoutMs` remains and is still
+honored — the invoker passes it through to connect `CallOptions`.
+
 Everything else in `GrpcClientProtocol` is unchanged: `makeTransport`,
 `metadataInterceptor`, the TLS options (`GrpcClientTlsOptions`),
 `GrpcClientTransportOptions`, `GrpcClientProtocolOptions`,

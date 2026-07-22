@@ -24,6 +24,9 @@ over the same transport and registry. Consequences:
 - Streamed messages are decoded and encoded per message with the generated
   schemas, matching the validation unary payloads get. Very hot streams pay
   that per-message cost.
+- The in-memory invoker (`GrpcInvoker.layerInMemory`) enforces `timeoutMs`
+  (failing with `deadline_exceeded`) only for unary and client-streaming
+  calls; server-streaming and bidi-streaming calls do not enforce it.
 
 ## Effect Compatibility
 

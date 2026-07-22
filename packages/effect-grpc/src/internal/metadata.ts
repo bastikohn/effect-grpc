@@ -1,11 +1,9 @@
 import * as GrpcMetadata from "../GrpcMetadata.js";
 
-export const timeoutHeader = "x-effect-grpc-timeout-ms";
 export const reservedHeaderPrefix = "x-effect-grpc-";
 
 export interface CallOptions {
   readonly metadata?: GrpcMetadata.GrpcMetadata;
-  readonly timeoutMs?: number;
 }
 
 export const headersFromCallOptions = (
@@ -24,9 +22,6 @@ export const headersFromCallOptions = (
         ? Buffer.from(value).toString("base64")
         : value,
     ]);
-  }
-  if (options?.timeoutMs !== undefined) {
-    entries.push([timeoutHeader, String(options.timeoutMs)]);
   }
   return entries;
 };

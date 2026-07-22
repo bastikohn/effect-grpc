@@ -88,6 +88,10 @@ export const lookup = <K extends GrpcMethodKind>(
 /**
  * Merges per-service registries into one, enforcing the construction
  * invariant that a tag resolves to exactly one method.
+ *
+ * @throws `Error` on a duplicate tag. Registry composition is construction
+ * work, so a violated invariant is a defect (wiring bug), not a typed
+ * failure a caller is expected to recover from.
  */
 export const merge = (
   registries: Iterable<GrpcMethodRegistry>,
@@ -135,7 +139,7 @@ export const encodeRequest = (
   value: unknown,
 ): Effect.Effect<unknown, GrpcStatusError.GrpcStatusError> =>
   Effect.try({
-    try: () => entry.toGrpcRequest(entryCodecs(entry).encodePayload(value)),
+    try: () => entry.toGrpcRequest(payloadCodecs(entry).encode(value)),
     catch: (cause) =>
       GrpcStatusError.invalidArgument("Invalid gRPC request payload", cause),
   });
@@ -147,7 +151,7 @@ export const decodeRequest = (
 ): Effect.Effect<unknown, GrpcStatusError.GrpcStatusError> =>
   Effect.try({
     try: () =>
-      entryCodecs(entry).decodePayload(entry.fromGrpcRequest(message as never)),
+      payloadCodecs(entry).decode(entry.fromGrpcRequest(message as never)),
     catch: (cause) =>
       GrpcStatusError.invalidArgument("Invalid gRPC request payload", cause),
   });
@@ -158,7 +162,7 @@ export const encodeResponse = (
   value: unknown,
 ): Effect.Effect<unknown, GrpcStatusError.GrpcStatusError> =>
   Effect.try({
-    try: () => entry.toGrpcResponse(entryCodecs(entry).encodeSuccess(value)),
+    try: () => entry.toGrpcResponse(successCodecs(entry).encode(value)),
     catch: (cause) =>
       GrpcStatusError.internal("Invalid gRPC response payload", cause),
   });
@@ -170,35 +174,46 @@ export const decodeResponse = (
 ): Effect.Effect<unknown, GrpcStatusError.GrpcStatusError> =>
   Effect.try({
     try: () =>
-      entryCodecs(entry).decodeSuccess(
-        entry.fromGrpcResponse(message as never),
-      ),
+      successCodecs(entry).decode(entry.fromGrpcResponse(message as never)),
     catch: (cause) =>
       GrpcStatusError.internal("Invalid gRPC response payload", cause),
   });
 
-interface EntryCodecs {
-  readonly encodePayload: (value: unknown) => unknown;
-  readonly decodePayload: (value: unknown) => unknown;
-  readonly encodeSuccess: (value: unknown) => unknown;
-  readonly decodeSuccess: (value: unknown) => unknown;
+interface DirectionCodecs {
+  readonly encode: (value: unknown) => unknown;
+  readonly decode: (value: unknown) => unknown;
 }
 
-const codecCache = new WeakMap<GrpcMethodEntry, EntryCodecs>();
+/*
+ * The payload and success codecs are cached separately so each direction is
+ * only built when its side is exercised — a success-schema construction
+ * failure must surface under the response policy (`internal`), never inside
+ * a request conversion as `invalid_argument`.
+ */
+const payloadCodecCache = new WeakMap<GrpcMethodEntry, DirectionCodecs>();
+const successCodecCache = new WeakMap<GrpcMethodEntry, DirectionCodecs>();
 
-/** Prepared per-entry JSON codecs, built once per entry. */
-const entryCodecs = (entry: GrpcMethodEntry): EntryCodecs => {
-  let codecs = codecCache.get(entry);
+const directionCodecs = (
+  cache: WeakMap<GrpcMethodEntry, DirectionCodecs>,
+  entry: GrpcMethodEntry,
+  schema: Schema.Codec<unknown>,
+): DirectionCodecs => {
+  let codecs = cache.get(entry);
   if (!codecs) {
-    const payload = Schema.toCodecJson(entry.payloadSchema);
-    const success = Schema.toCodecJson(entry.successSchema);
+    const json = Schema.toCodecJson(schema);
     codecs = {
-      encodePayload: Schema.encodeUnknownSync(payload),
-      decodePayload: Schema.decodeUnknownSync(payload),
-      encodeSuccess: Schema.encodeUnknownSync(success),
-      decodeSuccess: Schema.decodeUnknownSync(success),
+      encode: Schema.encodeUnknownSync(json),
+      decode: Schema.decodeUnknownSync(json),
     };
-    codecCache.set(entry, codecs);
+    cache.set(entry, codecs);
   }
   return codecs;
 };
+
+/** Prepared request-payload JSON codecs, built once per entry. */
+const payloadCodecs = (entry: GrpcMethodEntry): DirectionCodecs =>
+  directionCodecs(payloadCodecCache, entry, entry.payloadSchema);
+
+/** Prepared response-success JSON codecs, built once per entry. */
+const successCodecs = (entry: GrpcMethodEntry): DirectionCodecs =>
+  directionCodecs(successCodecCache, entry, entry.successSchema);

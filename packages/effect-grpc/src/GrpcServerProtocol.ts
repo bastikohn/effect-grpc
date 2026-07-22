@@ -700,9 +700,23 @@ const fromGrpcRequest = (entry: GrpcMethodEntry, request: unknown) => {
   }
 };
 
+// Built once per entry — the Effect RPC native path validates on every
+// request, and codec construction is too expensive for a per-call cost.
+const payloadValidatorCache = new WeakMap<
+  GrpcMethodEntry,
+  (payload: unknown) => unknown
+>();
+
 const validatePayload = (entry: GrpcMethodEntry, payload: unknown) => {
   try {
-    Schema.decodeUnknownSync(Schema.toCodecJson(entry.payloadSchema))(payload);
+    let validator = payloadValidatorCache.get(entry);
+    if (!validator) {
+      validator = Schema.decodeUnknownSync(
+        Schema.toCodecJson(entry.payloadSchema),
+      );
+      payloadValidatorCache.set(entry, validator);
+    }
+    validator(payload);
   } catch (cause) {
     throw GrpcStatusError.toConnectError(
       GrpcStatusError.invalidArgument("Invalid gRPC request payload", cause),

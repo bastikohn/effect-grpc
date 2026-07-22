@@ -1,3 +1,4 @@
+import type { DescService } from "@bufbuild/protobuf";
 import type { ConnectRouter, Interceptor } from "@connectrpc/connect";
 import { Effect, Layer, Stream } from "effect";
 import { describe, expect, it } from "tstyche";
@@ -24,6 +25,7 @@ import {
 } from "@effect-grpc/simple-proto/generated/demo/v1/user_service_effect_grpc";
 
 const registry = new Map() as GrpcMethodRegistry.GrpcMethodRegistry;
+declare const entry: GrpcMethodRegistry.GrpcMethodEntry;
 declare const context: CodegenSupport.GrpcServerContext;
 declare const metadata: GrpcMetadata.GrpcMetadata;
 interface AuthToken {
@@ -126,6 +128,42 @@ describe("public API", () => {
     expect(GrpcHealth.make).type.toBeCallableWith({
       initialStatuses: [["", "SERVING"]],
     });
+  });
+
+  it("types the method registry contract", () => {
+    expect(GrpcMethodRegistry.lookup(registry, "tag", "unary")).type.toBe<
+      GrpcMethodRegistry.GrpcUnaryMethodEntry | undefined
+    >();
+    expect(
+      GrpcMethodRegistry.lookup(registry, "tag", "bidi-streaming"),
+    ).type.toBe<GrpcMethodRegistry.GrpcBidiStreamingMethodEntry | undefined>();
+
+    expect(
+      GrpcMethodRegistry.merge([registry, registry]),
+    ).type.toBe<GrpcMethodRegistry.GrpcMethodRegistry>();
+    expect(GrpcMethodRegistry.merge).type.toBeCallableWith(
+      new Set<GrpcMethodRegistry.GrpcMethodRegistry>(),
+    );
+
+    expect(GrpcMethodRegistry.groupByService(registry)).type.toBe<
+      ReadonlyMap<
+        DescService,
+        ReadonlyArray<GrpcMethodRegistry.GrpcMethodEntry>
+      >
+    >();
+
+    expect(GrpcMethodRegistry.encodeRequest(entry, {})).type.toBe<
+      Effect.Effect<unknown, GrpcStatusError.GrpcStatusError>
+    >();
+    expect(GrpcMethodRegistry.decodeRequest(entry, {})).type.toBe<
+      Effect.Effect<unknown, GrpcStatusError.GrpcStatusError>
+    >();
+    expect(GrpcMethodRegistry.encodeResponse(entry, {})).type.toBe<
+      Effect.Effect<unknown, GrpcStatusError.GrpcStatusError>
+    >();
+    expect(GrpcMethodRegistry.decodeResponse(entry, {})).type.toBe<
+      Effect.Effect<unknown, GrpcStatusError.GrpcStatusError>
+    >();
   });
 
   it("types the health service and client", () => {

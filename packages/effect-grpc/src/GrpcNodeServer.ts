@@ -5,10 +5,8 @@ import { Context, Effect, Layer, Option, Scope } from "effect";
 import type * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 import * as RpcServer from "effect/unstable/rpc/RpcServer";
 
-import type {
-  GrpcMethodEntry,
-  GrpcMethodRegistry,
-} from "./GrpcMethodRegistry.js";
+import * as MethodRegistry from "./GrpcMethodRegistry.js";
+import type { GrpcMethodRegistry } from "./GrpcMethodRegistry.js";
 import * as GrpcServerProtocol from "./GrpcServerProtocol.js";
 
 /**
@@ -66,7 +64,7 @@ export const serveAll = <
       Layer.build(service.handlers),
     );
     const { protocol, routes } = yield* GrpcServerProtocol.make({
-      registry: mergeRegistries(
+      registry: MethodRegistry.merge(
         options.services.map((service) => service.registry),
       ),
       streamingHandlers: mergeStreamingHandlers(contexts),
@@ -174,21 +172,6 @@ const mergeStreamingHandlers = (
       for (const [tag, handler] of handlers.value) {
         merged.set(tag, handler);
       }
-    }
-  }
-  return merged;
-};
-
-const mergeRegistries = (
-  registries: ReadonlyArray<GrpcMethodRegistry>,
-): GrpcMethodRegistry => {
-  const merged = new Map<string, GrpcMethodEntry>();
-  for (const registry of registries) {
-    for (const [tag, entry] of registry) {
-      if (merged.has(tag)) {
-        throw new Error(`Duplicate gRPC RPC tag: ${tag}`);
-      }
-      merged.set(tag, entry);
     }
   }
   return merged;

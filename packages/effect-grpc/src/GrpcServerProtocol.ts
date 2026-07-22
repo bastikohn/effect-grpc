@@ -25,8 +25,8 @@ import type {
   GrpcMethodRegistry,
 } from "./GrpcMethodRegistry.js";
 import * as GrpcStatusError from "./GrpcStatusError.js";
+import * as MethodRegistry from "./GrpcMethodRegistry.js";
 import * as CallState from "./internal/callState.js";
-import { entryCodecs } from "./internal/codec.js";
 import { eof, requestId } from "./internal/effectRpc.js";
 import { errorFromExit } from "./internal/status.js";
 import * as StreamBridge from "./internal/streamBridge.js";
@@ -449,7 +449,7 @@ export const make = (
               )
               .pipe(
                 Effect.flatMap((value) =>
-                  encodeStreamingResponse(entry, value),
+                  MethodRegistry.encodeResponse(entry, value),
                 ),
                 Effect.exit,
               );
@@ -525,7 +525,9 @@ export const make = (
           streamingServerContext(headers),
         )
         .pipe(
-          Stream.mapEffect((value) => encodeStreamingResponse(entry, value)),
+          Stream.mapEffect((value) =>
+            MethodRegistry.encodeResponse(entry, value),
+          ),
         );
       const handlerFiberContext = Context.add(
         traceState === undefined
@@ -588,7 +590,9 @@ export const make = (
     };
 
     const routes = (router: ConnectRouter) => {
-      for (const [service, entries] of groupByService(options.registry)) {
+      for (const [service, entries] of MethodRegistry.groupByService(
+        options.registry,
+      )) {
         const implementation: Record<string, unknown> = {};
         for (const entry of entries) {
           switch (entry.kind) {
@@ -641,34 +645,15 @@ const streamingRequests = (
   entry: GrpcMethodEntry,
   requests: AsyncIterable<unknown>,
   signal: AbortSignal,
-): Stream.Stream<unknown, GrpcStatusError.GrpcStatusError> => {
-  const codecs = entryCodecs(entry);
-  return StreamBridge.requestStream({
+): Stream.Stream<unknown, GrpcStatusError.GrpcStatusError> =>
+  StreamBridge.requestStream({
     requests,
     signal,
     onError: (cause) => GrpcStatusError.fromConnectError(cause),
     onCancelled: () => GrpcStatusError.cancelled("RPC cancelled"),
   }).pipe(
-    Stream.mapEffect((message) =>
-      Effect.try({
-        try: () =>
-          codecs.decodePayload(entry.fromGrpcRequest(message as never)),
-        catch: (cause) =>
-          GrpcStatusError.invalidArgument(
-            "Invalid gRPC request payload",
-            cause,
-          ),
-      }),
-    ),
+    Stream.mapEffect((message) => MethodRegistry.decodeRequest(entry, message)),
   );
-};
-
-const encodeStreamingResponse = (entry: GrpcMethodEntry, value: unknown) =>
-  Effect.try({
-    try: () => entry.toGrpcResponse(entryCodecs(entry).encodeSuccess(value)),
-    catch: (cause) =>
-      GrpcStatusError.internal("Invalid gRPC response payload", cause),
-  });
 
 const streamingCauseError = (
   cause: Cause.Cause<GrpcStatusError.GrpcStatusError>,
@@ -705,19 +690,6 @@ const missingStreamingImplementation = (entry: GrpcMethodEntry) => {
       });
 };
 
-const groupByService = (registry: GrpcMethodRegistry) => {
-  const groups = new Map<GrpcMethodEntry["service"], Array<GrpcMethodEntry>>();
-  for (const entry of registry.values()) {
-    const group = groups.get(entry.service);
-    if (group) {
-      group.push(entry);
-    } else {
-      groups.set(entry.service, [entry]);
-    }
-  }
-  return groups;
-};
-
 const fromGrpcRequest = (entry: GrpcMethodEntry, request: unknown) => {
   try {
     return entry.fromGrpcRequest(request as never);
@@ -728,9 +700,23 @@ const fromGrpcRequest = (entry: GrpcMethodEntry, request: unknown) => {
   }
 };
 
+// Built once per entry — the Effect RPC native path validates on every
+// request, and codec construction is too expensive for a per-call cost.
+const payloadValidatorCache = new WeakMap<
+  GrpcMethodEntry,
+  (payload: unknown) => unknown
+>();
+
 const validatePayload = (entry: GrpcMethodEntry, payload: unknown) => {
   try {
-    Schema.decodeUnknownSync(Schema.toCodecJson(entry.payloadSchema))(payload);
+    let validator = payloadValidatorCache.get(entry);
+    if (!validator) {
+      validator = Schema.decodeUnknownSync(
+        Schema.toCodecJson(entry.payloadSchema),
+      );
+      payloadValidatorCache.set(entry, validator);
+    }
+    validator(payload);
   } catch (cause) {
     throw GrpcStatusError.toConnectError(
       GrpcStatusError.invalidArgument("Invalid gRPC request payload", cause),

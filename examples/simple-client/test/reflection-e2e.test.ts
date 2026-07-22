@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import {
   GrpcClientProtocol,
   GrpcHealth,
+  GrpcInvoker,
   GrpcMethodRegistry,
   GrpcNodeServer,
   GrpcReflection,
@@ -110,9 +111,9 @@ describe("grpc.reflection.v1 e2e", () => {
     const response = await Effect.runPromise(
       withReflectionServer(
         Effect.gen(function* () {
-          const streaming = yield* GrpcClientProtocol.GrpcStreamingClient;
-          const responses = yield* streaming
-            .bidiStreaming(
+          const invoker = yield* GrpcInvoker.GrpcInvoker;
+          const responses = yield* invoker
+            .bidiStream(
               GrpcReflection.ReflectionV1AlphaTag,
               Stream.make({ host: "", listServices: "" }),
             )
@@ -155,7 +156,7 @@ const withReflectionServer = <A, E>(
   use: Effect.Effect<
     A,
     E,
-    GrpcReflection.ReflectionClient | GrpcClientProtocol.GrpcStreamingClient
+    GrpcReflection.ReflectionClient | GrpcInvoker.GrpcInvoker
   >,
 ): Effect.Effect<A, E> =>
   Effect.scoped(

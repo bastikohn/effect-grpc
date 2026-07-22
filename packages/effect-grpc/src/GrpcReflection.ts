@@ -3,11 +3,10 @@ import { toBinary } from "@bufbuild/protobuf";
 import { base64Decode, base64Encode } from "@bufbuild/protobuf/wire";
 import { FileDescriptorProtoSchema } from "@bufbuild/protobuf/wkt";
 import { Context, Effect, Layer, Schema, Stream } from "effect";
-import type * as RpcClientError from "effect/unstable/rpc/RpcClientError";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 
 import type * as CodegenSupport from "./CodegenSupport.js";
-import * as GrpcClientProtocol from "./GrpcClientProtocol.js";
+import * as GrpcInvoker from "./GrpcInvoker.js";
 import type * as GrpcMethodRegistry from "./GrpcMethodRegistry.js";
 import type { ServeAllService } from "./GrpcNodeServer.js";
 import * as GrpcServerProtocol from "./GrpcServerProtocol.js";
@@ -558,9 +557,7 @@ export const service = (
   };
 };
 
-export type ReflectionClientError =
-  | GrpcStatusError.GrpcStatusError
-  | RpcClientError.RpcClientError;
+export type ReflectionClientError = GrpcStatusError.GrpcStatusError;
 
 /**
  * Client for the `grpc.reflection.v1.ServerReflection` service of a remote
@@ -574,10 +571,10 @@ export interface ReflectionClientService {
 }
 
 const makeReflectionClient = Effect.gen(function* () {
-  const streaming = yield* GrpcClientProtocol.GrpcStreamingClient;
+  const invoker = yield* GrpcInvoker.GrpcInvoker;
   return {
     serverReflectionInfo: ((requests, options) =>
-      streaming.bidiStreaming(
+      invoker.bidiStream(
         ReflectionV1Tag,
         requests,
         options,

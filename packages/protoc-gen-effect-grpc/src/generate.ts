@@ -16,14 +16,13 @@ export const generateFile = (file: GeneratorFile): string => {
     "Schema",
     ...(usage.usesStream ? ["Stream"] : []),
   ];
-  const rpcImports = [
-    ...(usage.hasRpcMethods ? ["Rpc", "RpcClient"] : []),
-    "RpcClientError",
-    "RpcGroup",
-  ];
+  // `Rpc`/`RpcGroup` still back the server path (`Rpc.make`/`RpcGroup.make`);
+  // the client no longer touches `RpcClient`/`RpcClientError` — it depends on
+  // the `GrpcInvoker` seam alone.
+  const rpcImports = [...(usage.hasRpcMethods ? ["Rpc"] : []), "RpcGroup"];
   const effectGrpcImports = [
     "CodegenSupport",
-    ...(usage.hasStreamingMethods ? ["GrpcClientProtocol"] : []),
+    "GrpcInvoker",
     "GrpcMethodRegistry",
     ...(usage.hasStreamingMethods ? ["GrpcServerProtocol"] : []),
     "GrpcStatusError",

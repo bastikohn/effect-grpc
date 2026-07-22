@@ -26,6 +26,7 @@ import * as RpcServer from "effect/unstable/rpc/RpcServer";
 import { describe, expect, it } from "vitest";
 
 import * as GrpcClientProtocol from "../src/GrpcClientProtocol.js";
+import * as GrpcInvoker from "../src/GrpcInvoker.js";
 import type { GrpcMethodEntry } from "../src/GrpcMethodRegistry.js";
 import * as GrpcServerProtocol from "../src/GrpcServerProtocol.js";
 import * as GrpcStatusError from "../src/GrpcStatusError.js";
@@ -204,8 +205,8 @@ describe("client telemetry", () => {
     const result = await Effect.runPromise(
       telemetry.provide(
         Effect.gen(function* () {
-          const client = yield* GrpcClientProtocol.GrpcStreamingClient;
-          const response = yield* client.clientStreaming(
+          const invoker = yield* GrpcInvoker.GrpcInvoker;
+          const response = yield* invoker.clientStream(
             clientStreamingEntry.tag,
             Stream.make({ id: "1" }, { id: "2" }),
           );
@@ -272,8 +273,8 @@ describe("client telemetry", () => {
     await Effect.runPromise(
       telemetry.provide(
         Effect.gen(function* () {
-          const client = yield* GrpcClientProtocol.GrpcStreamingClient;
-          return yield* client.clientStreaming(
+          const invoker = yield* GrpcInvoker.GrpcInvoker;
+          return yield* invoker.clientStream(
             clientStreamingEntry.tag,
             Stream.make({ id: "1" }),
           );
@@ -299,9 +300,9 @@ describe("client telemetry", () => {
     const result = await Effect.runPromise(
       telemetry.provide(
         Effect.gen(function* () {
-          const client = yield* GrpcClientProtocol.GrpcStreamingClient;
-          const error = yield* client
-            .clientStreaming(clientStreamingEntry.tag, Stream.make({ id: "1" }))
+          const invoker = yield* GrpcInvoker.GrpcInvoker;
+          const error = yield* invoker
+            .clientStream(clientStreamingEntry.tag, Stream.make({ id: "1" }))
             .pipe(Effect.flip);
           const metrics = yield* Metric.snapshot;
           return { error, metrics };
@@ -341,9 +342,9 @@ describe("client telemetry", () => {
     const result = await Effect.runPromise(
       telemetry.provide(
         Effect.gen(function* () {
-          const client = yield* GrpcClientProtocol.GrpcStreamingClient;
-          const responses = yield* client
-            .bidiStreaming(
+          const invoker = yield* GrpcInvoker.GrpcInvoker;
+          const responses = yield* invoker
+            .bidiStream(
               bidiStreamingEntry.tag,
               Stream.make({ id: "1" }, { id: "2" }),
             )
@@ -438,9 +439,9 @@ describe("client telemetry", () => {
     const result = await Effect.runPromise(
       telemetry.provide(
         Effect.gen(function* () {
-          const client = yield* GrpcClientProtocol.GrpcStreamingClient;
-          const responses = yield* client
-            .bidiStreaming(
+          const invoker = yield* GrpcInvoker.GrpcInvoker;
+          const responses = yield* invoker
+            .bidiStream(
               bidiStreamingEntry.tag,
               Stream.make({ id: "1" }, { id: "2" }, { id: "3" }),
             )
@@ -467,6 +468,212 @@ describe("client telemetry", () => {
       "rpc.method": "demo.v1.TelemetryService/Chat",
       "rpc.response.status_code": "CANCELLED",
       "error.type": "CANCELLED",
+    });
+    expect(durations[0]?.count).toBe(1);
+  });
+});
+
+// Generated clients now resolve unary and server-streaming calls through the
+// `GrpcInvoker` seam (its connect adapter's `withCallSpanEffect` /
+// `withCallSpanStream`), not `RpcClient.Protocol`. These cases assert the
+// invoker path carries the same spans, status, metrics, and trace headers.
+describe("client telemetry (invoker path)", () => {
+  const callInvokerUnary = (
+    tag: string,
+    callOptions?: Parameters<GrpcInvoker.GrpcInvokerService["unary"]>[2],
+  ) =>
+    Effect.gen(function* () {
+      const invoker = yield* GrpcInvoker.GrpcInvoker;
+      return yield* invoker.unary(tag, {}, callOptions);
+    });
+
+  it("records semconv span attributes, injects trace headers, and observes duration on unary success", async () => {
+    const telemetry = makeTestTelemetry();
+    const { transport, headers } = fakeTransport({
+      unary: () => ({ ok: true }),
+    });
+    const parent = Tracer.externalSpan({
+      traceId: "0123456789abcdef0123456789abcdef",
+      spanId: "0123456789abcdef",
+      sampled: true,
+      annotations: Context.add(Context.empty(), TraceState, "vendor=abc"),
+    });
+
+    const result = await Effect.runPromise(
+      telemetry.provide(
+        Effect.gen(function* () {
+          const response = yield* callInvokerUnary(unaryEntry.tag);
+          const metrics = yield* Metric.snapshot;
+          return { response, metrics };
+        }).pipe(
+          Effect.withParentSpan(parent),
+          Effect.provide(clientLayer(transport)),
+        ),
+      ),
+    );
+
+    expect(result.response).toEqual({ ok: true });
+    const span = telemetry.expectSpan(unaryEntry.tag);
+    expect(span.kind).toBe("client");
+    expect(span.attributes.get("rpc.system.name")).toBe("grpc");
+    expect(span.attributes.get("rpc.method")).toBe(
+      "demo.v1.TelemetryService/Get",
+    );
+    expect(span.attributes.get("server.address")).toBe("api.example.com");
+    expect(span.attributes.get("server.port")).toBe(8443);
+    expect(span.attributes.get("rpc.response.status_code")).toBe("OK");
+    expect(span.attributes.get("error.type")).toBeUndefined();
+    expect(spanEndExit(span)._tag).toBe("Success");
+
+    const traceparent = headers[0]?.get("traceparent");
+    expect(traceparent).toMatch(TRACEPARENT_PATTERN);
+    expect(traceparent).toBe(`00-${span.traceId}-${span.spanId}-01`);
+    expect(span.traceId).toBe(parent.traceId);
+    expect(headers[0]?.get("tracestate")).toBe("vendor=abc");
+
+    const durations = durationMetrics(
+      result.metrics,
+      "rpc.client.call.duration",
+    );
+    expect(durations).toHaveLength(1);
+    expect(durations[0]?.attributes).toEqual({
+      unit: "s",
+      "rpc.system.name": "grpc",
+      "rpc.method": "demo.v1.TelemetryService/Get",
+      "server.address": "api.example.com",
+      "server.port": "8443",
+      "rpc.response.status_code": "OK",
+    });
+    expect(durations[0]?.count).toBe(1);
+  });
+
+  it("respects a caller-provided traceparent", async () => {
+    const telemetry = makeTestTelemetry();
+    const { transport, headers } = fakeTransport({
+      unary: () => ({ ok: true }),
+    });
+    const provided = "00-11111111111111111111111111111111-2222222222222222-01";
+
+    await Effect.runPromise(
+      telemetry.provide(
+        callInvokerUnary(unaryEntry.tag, {
+          metadata: [["traceparent", provided]],
+        }).pipe(Effect.provide(clientLayer(transport))),
+      ),
+    );
+
+    expect(headers[0]?.get("traceparent")).toBe(provided);
+    expect(headers[0]?.get("tracestate")).toBeNull();
+  });
+
+  it("does not inject a traceparent for noop spans", async () => {
+    const telemetry = makeTestTelemetry();
+    const { transport, headers } = fakeTransport({
+      unary: () => ({ ok: true }),
+    });
+
+    await Effect.runPromise(
+      telemetry.provide(
+        callInvokerUnary(unaryEntry.tag).pipe(
+          Effect.provide(clientLayer(transport)),
+          Effect.withTracerEnabled(false),
+        ),
+      ),
+    );
+
+    expect(headers[0]?.get("traceparent")).toBeNull();
+    expect(headers[0]?.get("tracestate")).toBeNull();
+  });
+
+  it("records the status code and error.type on unary failure", async () => {
+    const telemetry = makeTestTelemetry();
+    const { transport } = fakeTransport({
+      unary: () => {
+        throw new ConnectError("missing", Code.NotFound);
+      },
+    });
+
+    const result = await Effect.runPromise(
+      telemetry.provide(
+        Effect.gen(function* () {
+          const error = yield* callInvokerUnary(unaryEntry.tag).pipe(
+            Effect.flip,
+          );
+          const metrics = yield* Metric.snapshot;
+          return { error, metrics };
+        }).pipe(Effect.provide(clientLayer(transport))),
+      ),
+    );
+
+    expect(result.error).toMatchObject({ code: "not_found" });
+    const span = telemetry.expectSpan(unaryEntry.tag);
+    expect(span.attributes.get("rpc.response.status_code")).toBe("NOT_FOUND");
+    expect(span.attributes.get("error.type")).toBe("NOT_FOUND");
+    expect(spanEndExit(span)._tag).toBe("Failure");
+
+    const durations = durationMetrics(
+      result.metrics,
+      "rpc.client.call.duration",
+    );
+    expect(durations).toHaveLength(1);
+    expect(durations[0]?.attributes).toMatchObject({
+      "rpc.method": "demo.v1.TelemetryService/Get",
+      "rpc.response.status_code": "NOT_FOUND",
+      "error.type": "NOT_FOUND",
+    });
+    expect(durations[0]?.count).toBe(1);
+  });
+
+  it("forwards trace headers and records duration for server-streaming calls", async () => {
+    const telemetry = makeTestTelemetry();
+    const { transport, headers } = fakeTransport({
+      stream: async function* () {
+        yield { seq: 1 };
+        yield { seq: 2 };
+      },
+    });
+    const parent = Tracer.externalSpan({
+      traceId: "0123456789abcdef0123456789abcdef",
+      spanId: "0123456789abcdef",
+      sampled: true,
+      annotations: Context.add(Context.empty(), TraceState, "vendor=xyz"),
+    });
+
+    const result = await Effect.runPromise(
+      telemetry.provide(
+        Effect.gen(function* () {
+          const invoker = yield* GrpcInvoker.GrpcInvoker;
+          const responses = yield* invoker
+            .serverStream(serverStreamingEntry.tag, {})
+            .pipe(Stream.runCollect);
+          const metrics = yield* Metric.snapshot;
+          return { responses, metrics };
+        }).pipe(
+          Effect.withParentSpan(parent),
+          Effect.provide(clientLayer(transport)),
+        ),
+      ),
+    );
+
+    expect(result.responses).toHaveLength(2);
+    expect(headers[0]?.get("traceparent")).toMatch(TRACEPARENT_PATTERN);
+    expect(headers[0]?.get("tracestate")).toBe("vendor=xyz");
+
+    const span = telemetry.expectSpan(serverStreamingEntry.tag);
+    expect(span.kind).toBe("client");
+    expect(span.attributes.get("rpc.method")).toBe(
+      "demo.v1.TelemetryService/Watch",
+    );
+    expect(span.attributes.get("rpc.response.status_code")).toBe("OK");
+
+    const durations = durationMetrics(
+      result.metrics,
+      "rpc.client.call.duration",
+    );
+    expect(durations).toHaveLength(1);
+    expect(durations[0]?.attributes).toMatchObject({
+      "rpc.method": "demo.v1.TelemetryService/Watch",
+      "rpc.response.status_code": "OK",
     });
     expect(durations[0]?.count).toBe(1);
   });
@@ -959,6 +1166,7 @@ const clientLayer = (transport: Transport) =>
   GrpcClientProtocol.layerFromTransport({
     registry: new Map([
       [unaryEntry.tag, unaryEntry],
+      [serverStreamingEntry.tag, serverStreamingEntry],
       [clientStreamingEntry.tag, clientStreamingEntry],
       [bidiStreamingEntry.tag, bidiStreamingEntry],
     ]),
@@ -998,6 +1206,7 @@ const testService = {
   typeName: "demo.v1.TelemetryService",
   methods: [
     { methodKind: "unary", localName: "get" },
+    { methodKind: "server_streaming", localName: "watch" },
     { methodKind: "client_streaming", localName: "upload" },
     { methodKind: "bidi_streaming", localName: "chat" },
   ],
@@ -1014,6 +1223,13 @@ const unaryEntry: GrpcMethodEntry = {
   fromGrpcRequest: (message) => message,
   toGrpcResponse: (value) => value as never,
   fromGrpcResponse: (message) => message,
+};
+
+const serverStreamingEntry: GrpcMethodEntry = {
+  ...unaryEntry,
+  kind: "server-streaming",
+  tag: "demo.v1.TelemetryService/Watch",
+  localName: "watch",
 };
 
 const clientStreamingEntry: GrpcMethodEntry = {

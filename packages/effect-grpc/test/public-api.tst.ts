@@ -8,6 +8,7 @@ import {
   GrpcAuth,
   GrpcClientProtocol,
   GrpcHealth,
+  GrpcInvoker,
   GrpcMetadata,
   GrpcMethodRegistry,
   GrpcNodeServer,
@@ -21,6 +22,7 @@ import {
   UserServiceGrpcRegistry,
   UserServiceHandlersLayer,
   UserServiceRpcGroup,
+  type UserServiceClientError,
   type UserServiceImplementation,
 } from "@effect-grpc/simple-proto/generated/demo/v1/user_service_effect_grpc";
 
@@ -226,6 +228,19 @@ describe("public API", () => {
   });
 
   it("types generated clients and handlers", () => {
+    // Regression pin: the generated client layer is satisfiable by
+    // `GrpcInvoker` alone — no residual `RpcClient.Protocol` requirement.
+    // Widening the requirement channel (e.g. reintroducing `RpcClient.Protocol`)
+    // would fail this assertion.
+    expect(UserServiceClientLayer).type.toBe<
+      Layer.Layer<UserServiceClient, never, GrpcInvoker.GrpcInvoker>
+    >();
+
+    // Regression pin: the generated client error is narrowed to
+    // `GrpcStatusError` alone. Reintroducing `RpcClientError` into the union
+    // would fail this assertion.
+    expect<UserServiceClientError>().type.toBe<GrpcStatusError.GrpcStatusError>();
+
     const layer = UserServiceClientLayer.pipe(
       Layer.provide(
         GrpcClientProtocol.layer({

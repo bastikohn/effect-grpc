@@ -139,10 +139,10 @@ describe("generateFile", () => {
     expect(output).not.toContain('Rpc.make("demo.v1.UserService/UploadUsers"');
     expect(output).not.toContain('Rpc.make("demo.v1.UserService/ChatUsers"');
     expect(output).toContain(
-      'streaming.clientStreaming("demo.v1.UserService/UploadUsers", requests, options)',
+      'invoker.clientStream("demo.v1.UserService/UploadUsers", requests, options)',
     );
     expect(output).toContain(
-      'streaming.bidiStreaming("demo.v1.UserService/ChatUsers", requests, options)',
+      'invoker.bidiStream("demo.v1.UserService/ChatUsers", requests, options)',
     );
     expect(output).toContain("GrpcServerProtocol.streamingHandlersLayer<R>({");
     expect(output).toContain('kind: "client-streaming"');
@@ -375,7 +375,7 @@ describe("generateFile", () => {
     expect(output).toContain('readField(message, "state") as CommonState');
   });
 
-  it("omits unary-path rpc imports for a streaming-only service", () => {
+  it("omits client-only rpc imports for a streaming-only service", () => {
     const output = generateFile({
       protoFileName: "demo/v1/upload.proto",
       packageName: "demo.v1",
@@ -416,15 +416,15 @@ describe("generateFile", () => {
       ],
     });
 
-    // Every method bypasses Effect RPC, so the unary-path `Rpc`/`RpcClient`
-    // imports must not be emitted — only the direct streaming bridge is used.
-    expect(output).toContain(
-      'import { RpcClientError, RpcGroup } from "effect/unstable/rpc";',
-    );
-    expect(output).toContain(
-      "const streaming = yield* GrpcClientProtocol.GrpcStreamingClient;",
-    );
-    expect(output).not.toContain("RpcClient.make");
+    // Every method bypasses Effect RPC, so the unary-path `Rpc` import is not
+    // emitted; the client depends on the `GrpcInvoker` seam alone, so the
+    // client-only `RpcClient`/`RpcClientError` imports are gone too. Only the
+    // `RpcGroup` still emitted for the (empty) server group survives.
+    expect(output).toContain('import { RpcGroup } from "effect/unstable/rpc";');
+    expect(output).toContain("const invoker = yield* GrpcInvoker.GrpcInvoker;");
+    expect(output).not.toContain("RpcClient");
+    expect(output).not.toContain("RpcClientError");
+    expect(output).not.toContain("GrpcClientProtocol");
   });
 });
 
@@ -708,10 +708,10 @@ describe("streaming methods", () => {
 
     const content = response.file[0]?.content;
     expect(content).toContain(
-      'streaming.clientStreaming("demo.v1.UserService/UploadUsers"',
+      'invoker.clientStream("demo.v1.UserService/UploadUsers"',
     );
     expect(content).toContain(
-      'streaming.bidiStreaming("demo.v1.UserService/ChatUsers"',
+      'invoker.bidiStream("demo.v1.UserService/ChatUsers"',
     );
     expect(content).not.toContain('Rpc.make("demo.v1.UserService/UploadUsers"');
     expect(content).toContain("GrpcServerProtocol.streamingHandlersLayer");

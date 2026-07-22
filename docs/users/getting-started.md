@@ -6,7 +6,7 @@ client-streaming and bidi-streaming methods bridge `Stream` and connect
 iterables directly over the same transport.
 
 1. Generate protobuf-es output with `protoc-gen-es`.
-2. Generate Effect RPC glue with `protoc-gen-effect-grpc`.
+2. Generate effect-grpc glue with `protoc-gen-effect-grpc`.
 3. Provide a generated client layer with `GrpcClientProtocol.layer`.
 4. Serve generated server handlers with `GrpcNodeServer.serveAll`.
 

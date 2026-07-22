@@ -5,14 +5,16 @@
 [![npm next](https://img.shields.io/npm/v/@effect-grpc/effect-grpc/next.svg?label=npm%40next)](https://www.npmjs.com/package/@effect-grpc/effect-grpc?activeTab=versions)
 [![license](https://img.shields.io/npm/l/@effect-grpc/effect-grpc.svg)](LICENSE)
 
-Effect RPC-backed native gRPC prototypes for unary, server-streaming,
-client-streaming, and bidi-streaming methods.
+Effect-native gRPC prototypes for unary, server-streaming, client-streaming,
+and bidi-streaming methods.
 
 This workspace is new and intentionally small. The first prototype proves that
-native gRPC paths can map through generated registries into `@effect/Rpc`
-handlers and clients without introducing runtime `.proto` loading. Methods with
-a client-side stream bridge `Stream` and connect iterables directly over the
-same transport, since the Effect RPC protocol has no client-to-server stream.
+native gRPC paths can map through generated registries into Effect clients and
+`@effect/Rpc` server handlers without introducing runtime `.proto` loading.
+Generated clients invoke all four method kinds through the `GrpcInvoker` seam
+over a connect transport. On the server, methods with a client-side stream
+bridge `Stream` and connect iterables directly over the same transport, since
+the Effect RPC protocol has no client-to-server stream.
 
 ## Packages
 
@@ -81,7 +83,8 @@ Planned:
 
 - [ ] Custom server-side interceptors.
 - [ ] Effect RPC middleware coverage for client-streaming and bidi-streaming
-      methods (today middleware only applies to unary and server-streaming;
+      methods (today middleware only applies to unary and server-streaming
+      server handlers;
       see [limitations](docs/users/limitations.md#streaming-semantics)).
 - [ ] Client retry policies.
 - [ ] gRPC-Web support.
@@ -149,7 +152,7 @@ lint:
 ```
 
 Configure both plugins in a `buf.gen.yaml`. `protoc-gen-es` emits the
-protobuf-es messages and `protoc-gen-effect-grpc` emits the Effect RPC glue:
+protobuf-es messages and `protoc-gen-effect-grpc` emits the effect-grpc glue:
 
 ```yaml
 version: v2
@@ -208,8 +211,8 @@ upgrades must update tests, generated code, and package smoke together.
 ## Error Model
 
 Every generated RPC currently uses one generic `GrpcStatusError` schema. Native
-Connect/gRPC errors are translated at the transport boundary and delivered to
-Effect RPC callers as normal RPC failure exits.
+Connect/gRPC errors are translated at the transport boundary and surface to
+callers as typed `GrpcStatusError` failures.
 
 `GrpcStatusError` is a schema-backed tagged error, so generated client failures
 are decoded into real `GrpcStatusError` instances. Discriminate them by their

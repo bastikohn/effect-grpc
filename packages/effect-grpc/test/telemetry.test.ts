@@ -7,7 +7,6 @@ import { Code, ConnectError } from "@connectrpc/connect";
 import {
   Cause,
   Context,
-  Deferred,
   Effect,
   Exit,
   Fiber,
@@ -19,9 +18,7 @@ import {
 } from "effect";
 import * as Tracer from "effect/Tracer";
 import * as Rpc from "effect/unstable/rpc/Rpc";
-import * as RpcClient from "effect/unstable/rpc/RpcClient";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
-import type { FromServerEncoded } from "effect/unstable/rpc/RpcMessage";
 import * as RpcServer from "effect/unstable/rpc/RpcServer";
 import { describe, expect, it } from "vitest";
 
@@ -42,148 +39,6 @@ const TRACEPARENT_PATTERN = /^00-[0-9a-f]{32}-[0-9a-f]{16}-0[01]$/;
 type HeadersImport = ConstructorParameters<typeof Headers>[0];
 
 describe("client telemetry", () => {
-  it("records semconv span attributes, injects trace headers, and observes duration on unary success", async () => {
-    const telemetry = makeTestTelemetry();
-    const { transport, headers } = fakeTransport({
-      unary: () => ({ ok: true }),
-    });
-    const parent = Tracer.externalSpan({
-      traceId: "0123456789abcdef0123456789abcdef",
-      spanId: "0123456789abcdef",
-      sampled: true,
-      annotations: Context.add(Context.empty(), TraceState, "vendor=abc"),
-    });
-
-    const result = await Effect.runPromise(
-      telemetry.provide(
-        Effect.gen(function* () {
-          const response = yield* callUnary(unaryEntry.tag);
-          const metrics = yield* Metric.snapshot;
-          return { response, metrics };
-        }).pipe(
-          Effect.withParentSpan(parent),
-          Effect.provide(clientLayer(transport)),
-        ),
-      ),
-    );
-
-    expect(result.response).toMatchObject({ _tag: "Exit" });
-    const span = telemetry.expectSpan(unaryEntry.tag);
-    expect(span.kind).toBe("client");
-    expect(span.attributes.get("rpc.system.name")).toBe("grpc");
-    expect(span.attributes.get("rpc.method")).toBe(
-      "demo.v1.TelemetryService/Get",
-    );
-    expect(span.attributes.get("server.address")).toBe("api.example.com");
-    expect(span.attributes.get("server.port")).toBe(8443);
-    expect(span.attributes.get("rpc.response.status_code")).toBe("OK");
-    expect(span.attributes.get("error.type")).toBeUndefined();
-    expect(spanEndExit(span)._tag).toBe("Success");
-
-    const traceparent = headers[0]?.get("traceparent");
-    expect(traceparent).toMatch(TRACEPARENT_PATTERN);
-    expect(traceparent).toBe(`00-${span.traceId}-${span.spanId}-01`);
-    expect(span.traceId).toBe(parent.traceId);
-    expect(headers[0]?.get("tracestate")).toBe("vendor=abc");
-
-    const durations = durationMetrics(
-      result.metrics,
-      "rpc.client.call.duration",
-    );
-    expect(durations).toHaveLength(1);
-    expect(durations[0]?.attributes).toEqual({
-      unit: "s",
-      "rpc.system.name": "grpc",
-      "rpc.method": "demo.v1.TelemetryService/Get",
-      "server.address": "api.example.com",
-      "server.port": "8443",
-      "rpc.response.status_code": "OK",
-    });
-    expect(durations[0]?.count).toBe(1);
-  });
-
-  it("respects a caller-provided traceparent", async () => {
-    const telemetry = makeTestTelemetry();
-    const { transport, headers } = fakeTransport({
-      unary: () => ({ ok: true }),
-    });
-    const provided = "00-11111111111111111111111111111111-2222222222222222-01";
-
-    await Effect.runPromise(
-      telemetry.provide(
-        callUnary(unaryEntry.tag, [["traceparent", provided]]).pipe(
-          Effect.provide(clientLayer(transport)),
-        ),
-      ),
-    );
-
-    expect(headers[0]?.get("traceparent")).toBe(provided);
-    expect(headers[0]?.get("tracestate")).toBeNull();
-  });
-
-  it("does not inject a traceparent for noop spans", async () => {
-    const telemetry = makeTestTelemetry();
-    const { transport, headers } = fakeTransport({
-      unary: () => ({ ok: true }),
-    });
-
-    await Effect.runPromise(
-      telemetry.provide(
-        callUnary(unaryEntry.tag).pipe(
-          Effect.provide(clientLayer(transport)),
-          Effect.withTracerEnabled(false),
-        ),
-      ),
-    );
-
-    expect(headers[0]?.get("traceparent")).toBeNull();
-    expect(headers[0]?.get("tracestate")).toBeNull();
-  });
-
-  it("records the status code and error.type on unary failure", async () => {
-    const telemetry = makeTestTelemetry();
-    const { transport } = fakeTransport({
-      unary: () => {
-        throw new ConnectError("missing", Code.NotFound);
-      },
-    });
-
-    const result = await Effect.runPromise(
-      telemetry.provide(
-        Effect.gen(function* () {
-          const response = yield* callUnary(unaryEntry.tag);
-          const metrics = yield* Metric.snapshot;
-          return { response, metrics };
-        }).pipe(Effect.provide(clientLayer(transport))),
-      ),
-    );
-
-    expect(result.response).toMatchObject({ _tag: "Exit" });
-    if (
-      result.response._tag !== "Exit" ||
-      result.response.exit._tag !== "Failure"
-    ) {
-      throw new Error("Expected failure exit");
-    }
-    const span = telemetry.expectSpan(unaryEntry.tag);
-    expect(span.attributes.get("rpc.response.status_code")).toBe("NOT_FOUND");
-    expect(span.attributes.get("error.type")).toBe("NOT_FOUND");
-    // Client spans end in an error state for every non-OK status.
-    expect(spanEndExit(span)._tag).toBe("Failure");
-
-    const durations = durationMetrics(
-      result.metrics,
-      "rpc.client.call.duration",
-    );
-    expect(durations).toHaveLength(1);
-    expect(durations[0]?.attributes).toMatchObject({
-      "rpc.method": "demo.v1.TelemetryService/Get",
-      "rpc.response.status_code": "NOT_FOUND",
-      "error.type": "NOT_FOUND",
-    });
-    expect(durations[0]?.count).toBe(1);
-  });
-
   it("forwards tracestate and records duration for client-streaming calls", async () => {
     const telemetry = makeTestTelemetry();
     const { transport, headers } = fakeTransport({
@@ -248,7 +103,10 @@ describe("client telemetry", () => {
 
     await Effect.runPromise(
       telemetry.provide(
-        callUnary(unaryEntry.tag).pipe(
+        Effect.gen(function* () {
+          const invoker = yield* GrpcInvoker.GrpcInvoker;
+          return yield* invoker.unary(unaryEntry.tag, {});
+        }).pipe(
           Effect.provide(clientLayer(transport)),
           Effect.provideService(TraceState, "vendor=ambient"),
         ),
@@ -386,29 +244,18 @@ describe("client telemetry", () => {
 
     await Effect.runPromise(
       telemetry.provide(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const protocol = yield* RpcClient.Protocol;
-            yield* protocol.run(0, () => Effect.void).pipe(Effect.forkScoped);
-            yield* Effect.yieldNow;
-
-            const fiber = yield* protocol
-              .send(0, {
-                _tag: "Request",
-                id: "1",
-                tag: unaryEntry.tag,
-                payload: {},
-                headers: [],
-              })
-              .pipe(Effect.forkScoped);
-            // Let the call reach the in-flight transport request.
-            yield* Effect.promise<void>(
-              (): Promise<void> =>
-                new Promise((resolve) => setTimeout(resolve, 10)),
-            );
-            yield* Fiber.interrupt(fiber);
-          }).pipe(Effect.provide(clientLayer(transport))),
-        ),
+        Effect.gen(function* () {
+          const invoker = yield* GrpcInvoker.GrpcInvoker;
+          const fiber = yield* invoker
+            .unary(unaryEntry.tag, {})
+            .pipe(Effect.forkChild);
+          // Let the call reach the in-flight transport request.
+          yield* Effect.promise<void>(
+            (): Promise<void> =>
+              new Promise((resolve) => setTimeout(resolve, 10)),
+          );
+          yield* Fiber.interrupt(fiber);
+        }).pipe(Effect.provide(clientLayer(transport))),
       ),
     );
 
@@ -471,13 +318,11 @@ describe("client telemetry", () => {
     });
     expect(durations[0]?.count).toBe(1);
   });
-});
 
-// Generated clients now resolve unary and server-streaming calls through the
-// `GrpcInvoker` seam (its connect adapter's `withCallSpanEffect` /
-// `withCallSpanStream`), not `RpcClient.Protocol`. These cases assert the
-// invoker path carries the same spans, status, metrics, and trace headers.
-describe("client telemetry (invoker path)", () => {
+  // Generated clients resolve every call shape through the `GrpcInvoker` seam
+  // (its connect adapter's `withCallSpanEffect` / `withCallSpanStream`). These
+  // cases assert the unary and server-streaming shapes carry the same spans,
+  // status, metrics, and trace headers as the streaming shapes above.
   const callInvokerUnary = (
     tag: string,
     callOptions?: Parameters<GrpcInvoker.GrpcInvokerService["unary"]>[2],
@@ -772,8 +617,9 @@ describe("server telemetry", () => {
       telemetry.provide(
         Effect.scoped(
           Effect.gen(function* () {
-            const downstream = yield* RpcClient.make(group).pipe(
-              Effect.provide(clientLayer(transport)),
+            const downstream = yield* Effect.provide(
+              Effect.service(GrpcInvoker.GrpcInvoker),
+              clientLayer(transport),
             );
             const { protocol, routes } = yield* GrpcServerProtocol.make({
               registry: new Map([[unaryEntry.tag, unaryEntry]]),
@@ -781,9 +627,7 @@ describe("server telemetry", () => {
             const handlers = yield* Layer.build(
               group.toLayer({
                 "demo.v1.TelemetryService/Get": () =>
-                  downstream["demo.v1.TelemetryService/Get"]({}).pipe(
-                    Effect.orDie,
-                  ),
+                  downstream.unary(unaryEntry.tag, {}).pipe(Effect.orDie),
               }),
             );
             yield* RpcServer.make(group).pipe(
@@ -1173,34 +1017,6 @@ const clientLayer = (transport: Transport) =>
     transport,
     serverAddress: new URL("http://api.example.com:8443"),
   });
-
-const callUnary = (
-  tag: string,
-  headers: ReadonlyArray<[string, string]> = [],
-) =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const protocol = yield* RpcClient.Protocol;
-      const received = yield* Deferred.make<FromServerEncoded>();
-
-      yield* protocol
-        .run(0, (message) =>
-          Deferred.succeed(received, message).pipe(Effect.asVoid),
-        )
-        .pipe(Effect.forkScoped);
-      yield* Effect.yieldNow;
-
-      yield* protocol.send(0, {
-        _tag: "Request",
-        id: "1",
-        tag,
-        payload: {},
-        headers,
-      });
-
-      return yield* Deferred.await(received);
-    }),
-  );
 
 const testService = {
   typeName: "demo.v1.TelemetryService",

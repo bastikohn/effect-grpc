@@ -10,9 +10,10 @@ Build-time protobuf generator for
 registries for the runtime package
 [`@effect-grpc/effect-grpc`](https://www.npmjs.com/package/@effect-grpc/effect-grpc).
 
-All four gRPC method kinds are generated: unary and server-streaming methods
-as Effect RPCs, client-streaming and bidi-streaming methods against the direct
-streaming bridge.
+All four gRPC method kinds are generated. Clients invoke every kind through
+the `GrpcInvoker` seam; on the server, unary and server-streaming handlers run
+as Effect RPCs while client-streaming and bidi-streaming handlers use the
+direct streaming bridge.
 
 If you don't already use [Buf](https://buf.build) or protoc, consider
 [`@effect-grpc/codegen`](https://www.npmjs.com/package/@effect-grpc/codegen)
@@ -30,7 +31,7 @@ Requires Node.js >= 22.
 ## Usage with Buf
 
 Configure both plugins in a `buf.gen.yaml`. `protoc-gen-es` emits the
-protobuf-es messages and `protoc-gen-effect-grpc` emits the Effect RPC glue:
+protobuf-es messages and `protoc-gen-effect-grpc` emits the effect-grpc glue:
 
 ```yaml
 version: v2

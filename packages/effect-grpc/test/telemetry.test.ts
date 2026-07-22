@@ -547,6 +547,44 @@ describe("client telemetry (invoker path)", () => {
     expect(durations[0]?.count).toBe(1);
   });
 
+  it("respects a caller-provided traceparent", async () => {
+    const telemetry = makeTestTelemetry();
+    const { transport, headers } = fakeTransport({
+      unary: () => ({ ok: true }),
+    });
+    const provided = "00-11111111111111111111111111111111-2222222222222222-01";
+
+    await Effect.runPromise(
+      telemetry.provide(
+        callInvokerUnary(unaryEntry.tag, {
+          metadata: [["traceparent", provided]],
+        }).pipe(Effect.provide(clientLayer(transport))),
+      ),
+    );
+
+    expect(headers[0]?.get("traceparent")).toBe(provided);
+    expect(headers[0]?.get("tracestate")).toBeNull();
+  });
+
+  it("does not inject a traceparent for noop spans", async () => {
+    const telemetry = makeTestTelemetry();
+    const { transport, headers } = fakeTransport({
+      unary: () => ({ ok: true }),
+    });
+
+    await Effect.runPromise(
+      telemetry.provide(
+        callInvokerUnary(unaryEntry.tag).pipe(
+          Effect.provide(clientLayer(transport)),
+          Effect.withTracerEnabled(false),
+        ),
+      ),
+    );
+
+    expect(headers[0]?.get("traceparent")).toBeNull();
+    expect(headers[0]?.get("tracestate")).toBeNull();
+  });
+
   it("records the status code and error.type on unary failure", async () => {
     const telemetry = makeTestTelemetry();
     const { transport } = fakeTransport({

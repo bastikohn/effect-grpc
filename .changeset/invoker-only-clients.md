@@ -21,3 +21,18 @@ removed; `GrpcClientProtocol.layer` / `layerFromTransport` no longer provide it
 regenerate your protos to pick up the new client shape. The built-in
 `GrpcReflection.ReflectionClient` migrates to the invoker and its
 `ReflectionClientError` narrows to `GrpcStatusError` accordingly.
+
+Breaking: `GrpcHealth.HealthClient` likewise migrates to the invoker (provide a
+`GrpcInvoker` to run it), and its `HealthClientError` narrows to
+`GrpcStatusError` alone (the `RpcClientError` union member is dropped).
+
+Two further consequences of routing unary and server-streaming calls through
+the invoker:
+
+- These calls no longer emit the intermediate `RpcClient.<tag>` wrapper span;
+  only the semconv gRPC client span remains (its attributes, status, and
+  duration metric are unchanged). Anyone keying trace tooling on `RpcClient.*`
+  span names for unary/server-streaming calls is affected.
+- On unary and server-streaming calls, an invalid request payload or a reserved
+  `x-effect-grpc-*` metadata key now surfaces as a typed `GrpcStatusError`
+  (`invalid_argument`) in the error channel instead of a defect.

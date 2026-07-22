@@ -77,6 +77,6 @@ The generator deliberately fails fast for:
 - well-known protobuf types outside the supported set above
 - proto2 required fields and default values
 
-Generated client errors are `GrpcStatusError` instances or `RpcClientError`
-values. Match gRPC status failures by their `_tag` (`"GrpcStatusError"`), for
-example with `Effect.catchTag("GrpcStatusError", ...)`.
+Generated and built-in client errors are `GrpcStatusError` instances. Match
+gRPC status failures by their `_tag` (`"GrpcStatusError"`), for example with
+`Effect.catchTag("GrpcStatusError", ...)`.

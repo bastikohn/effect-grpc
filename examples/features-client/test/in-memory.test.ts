@@ -1,7 +1,7 @@
 import { Effect, Layer, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { GrpcInvoker } from "@effect-grpc/effect-grpc";
+import { GrpcInvoker, GrpcStatusError } from "@effect-grpc/effect-grpc";
 import {
   UserServiceClient,
   UserServiceClientLayer,
@@ -138,5 +138,38 @@ describe("generated clients over GrpcInvoker.layerInMemory", () => {
       { text: "echo:hi", sequence: 2 },
       { text: "echo:there", sequence: 3 },
     ]);
+  });
+
+  it("surfaces a handler failure through the generated client's narrowed error channel", async () => {
+    // A handler that fails with a `GrpcStatusError`; the failure must reach the
+    // caller through the generated client's `<Service>ClientError` channel,
+    // which is now narrowed to `GrpcStatusError` alone.
+    const failingHandlers: GrpcInvoker.GrpcInMemoryHandlers = {
+      "demo.v1.UserService/GetUser": {
+        kind: "unary",
+        handler: (request) =>
+          Effect.fail(
+            GrpcStatusError.notFound(
+              `no such user: ${(request as { readonly id: string }).id}`,
+            ),
+          ),
+      },
+    };
+    const failingLayer = UserServiceClientLayer.pipe(
+      Layer.provide(GrpcInvoker.layerInMemory(failingHandlers)),
+    );
+
+    const error = await Effect.runPromise(
+      Effect.gen(function* () {
+        const client = yield* UserServiceClient;
+        // The error channel here is `UserServiceClientError`
+        // (= `GrpcStatusError`); `Effect.flip` moves it into the success slot.
+        return yield* Effect.flip(client.getUser({ id: "404" }));
+      }).pipe(Effect.provide(failingLayer)),
+    );
+
+    expect(error._tag).toBe("GrpcStatusError");
+    expect(error.code).toBe("not_found");
+    expect(error.message).toBe("no such user: 404");
   });
 });

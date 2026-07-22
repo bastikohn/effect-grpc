@@ -7,11 +7,10 @@ import {
   SubscriptionRef,
 } from "effect";
 import * as Rpc from "effect/unstable/rpc/Rpc";
-import * as RpcClient from "effect/unstable/rpc/RpcClient";
-import type * as RpcClientError from "effect/unstable/rpc/RpcClientError";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 
 import * as CodegenSupport from "./CodegenSupport.js";
+import * as GrpcInvoker from "./GrpcInvoker.js";
 import type * as GrpcMethodRegistry from "./GrpcMethodRegistry.js";
 import type { ServeAllService } from "./GrpcNodeServer.js";
 import * as GrpcStatusError from "./GrpcStatusError.js";
@@ -306,9 +305,7 @@ export const service: ServeAllService<GrpcHealth> = {
   handlers: HealthHandlersLayer,
 };
 
-export type HealthClientError =
-  | GrpcStatusError.GrpcStatusError
-  | RpcClientError.RpcClientError;
+export type HealthClientError = GrpcStatusError.GrpcStatusError;
 
 /**
  * Client for the `grpc.health.v1.Health` service of a remote server, shaped
@@ -326,16 +323,20 @@ export interface HealthClientService {
 }
 
 const makeHealthClient = Effect.gen(function* () {
-  const client = yield* RpcClient.make(HealthRpcGroup);
+  const invoker = yield* GrpcInvoker.GrpcInvoker;
   return {
-    check: (request, options) =>
-      client["grpc.health.v1.Health/Check"](request, {
-        headers: CodegenSupport.headersFromOptions(options),
-      }),
-    watch: (request, options) =>
-      client["grpc.health.v1.Health/Watch"](request, {
-        headers: CodegenSupport.headersFromOptions(options),
-      }),
+    check: ((request, options) =>
+      invoker.unary(
+        "grpc.health.v1.Health/Check",
+        request,
+        options,
+      )) as HealthClientService["check"],
+    watch: ((request, options) =>
+      invoker.serverStream(
+        "grpc.health.v1.Health/Watch",
+        request,
+        options,
+      )) as HealthClientService["watch"],
   } satisfies HealthClientService;
 });
 

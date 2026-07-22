@@ -25,11 +25,13 @@ client-streaming and bidi-streaming methods cannot flow through
 `RpcClient`/`RpcServer`. They use a parallel path over the same connect
 transport and registry:
 
-- `GrpcClientProtocol.GrpcStreamingClient` converts the caller's `Stream` into
-  the `AsyncIterable` a connect client method expects, applying the registry's
-  JSON codecs and converters per message. An `AbortController` ties Effect
-  interruption to call cancellation. If the request stream fails, the call is
-  cancelled and the original error is replayed to the caller.
+- `GrpcInvoker` is the single client-side seam for all four call shapes
+  (`GrpcInvoker.layerConnect` in production). For the streaming shapes it
+  converts the caller's `Stream` into the `AsyncIterable` a connect client
+  method expects, applying the registry's JSON codecs and converters per
+  message. An `AbortController` ties Effect interruption to call cancellation.
+  If the request stream fails, the call is cancelled and the original error is
+  replayed to the caller.
 - `GrpcServerProtocol` registers connect handlers that wrap the incoming
   `AsyncIterable` as a `Stream` (decoding per message) and run the streaming
   handler; bidi responses are pulled back out through

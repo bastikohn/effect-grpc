@@ -434,7 +434,6 @@ import {
   ImportedUserSchema,
   fromImportedUser,
   toImportedUser,
-  type ImportedUser,
 } from "./imported_common_effect_grpc.js";
 
 export const GetImportedUserResponseSchema = Schema.Struct({

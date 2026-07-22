@@ -39,6 +39,15 @@ export interface FileUsage {
   readonly boxedWrappers: ReadonlySet<WellKnownKind>;
   /** `[importedName, alias]` pairs from `@bufbuild/protobuf/wkt`, sorted. */
   readonly jsonWellKnownImports: ReadonlyArray<readonly [string, string]>;
+  /**
+   * Imported names whose bare `type` alias generated code references: enums
+   * used in a field position (`from*` converters cast with `as <Enum>`) and
+   * messages used as a method input/output (client/server signatures name the
+   * type directly). Every other position goes through the imported
+   * `Schema`/`from`/`to` symbols, so emitting the alias would leave an unused
+   * import behind.
+   */
+  readonly usedImportedTypes: ReadonlySet<string>;
   /** Messages in dependency order for schema emission. */
   readonly orderedMessages: ReadonlyArray<MessageModel>;
   /** `A->B` edges that participate in a cycle and need `Schema.suspend`. */
@@ -79,10 +88,12 @@ export const wrapperWellKnownKinds = [
 
 export const analyzeFileUsage = (file: GeneratorFile): FileUsage => {
   const wellKnownMethods = new Set<WellKnownKind>();
+  const methodTypeNames = new Set<string>();
   let usesGrpcEmpty = false;
   for (const service of file.services) {
     for (const method of service.methods) {
       for (const typeName of [method.inputType, method.outputType]) {
+        methodTypeNames.add(typeName);
         if (typeName === grpcEmptyName) usesGrpcEmpty = true;
         const kind = kindByMethodTypeName.get(typeName);
         if (kind) wellKnownMethods.add(kind);
@@ -97,9 +108,11 @@ export const analyzeFileUsage = (file: GeneratorFile): FileUsage => {
     wrapperWellKnownKinds.filter((kind) => wellKnownMethods.has(kind)),
   );
   let usesBytesScalar = false;
+  const enumFieldTypeNames = new Set<string>();
   for (const message of file.messages) {
     for (const field of message.fields) {
       for (const { value, boxed } of fieldValueOccurrences(field)) {
+        if (value.kind === "enum") enumFieldTypeNames.add(value.enumName);
         if (value.kind === "well-known") {
           wellKnownFields.add(value.type);
           if (boxed && isWrapperWellKnownKind(value.type)) {
@@ -148,6 +161,12 @@ export const analyzeFileUsage = (file: GeneratorFile): FileUsage => {
     wellKnownUsed,
     boxedWrappers,
     jsonWellKnownImports,
+    usedImportedTypes: new Set(
+      file.imports.flatMap((imported) => [
+        ...imported.enums.filter((name) => enumFieldTypeNames.has(name)),
+        ...imported.messages.filter((name) => methodTypeNames.has(name)),
+      ]),
+    ),
     orderedMessages: orderMessages(file.messages),
     recursiveEdges: findRecursiveEdges(file.messages),
   };

@@ -11,7 +11,6 @@ import {
   FeatureUserSchema,
   fromFeatureUser,
   toFeatureUser,
-  type FeatureUser,
 } from "./common_effect_grpc.js";
 
 export const UserStateSchema = Schema.Number;

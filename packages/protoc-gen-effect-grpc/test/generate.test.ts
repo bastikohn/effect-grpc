@@ -277,6 +277,104 @@ describe("generateFile", () => {
     expect(output).not.toContain("Schema.suspend((): typeof NodeSchema");
   });
 
+  it("omits the bare imported message type when only schema and converters are used", () => {
+    const output = generateFile({
+      protoFileName: "demo/v1/profile.proto",
+      packageName: "demo.v1",
+      importExtension: "js",
+      imports: [
+        {
+          protoFileName: "demo/v1/common.proto",
+          messages: ["CommonUser"],
+          enums: [],
+        },
+      ],
+      enums: [],
+      messages: [
+        {
+          name: "Profile",
+          fields: [
+            {
+              kind: "message",
+              name: "user",
+              messageName: "CommonUser",
+              source: "imported",
+              optional: true,
+            },
+          ],
+        },
+      ],
+      services: [
+        {
+          name: "ProfileService",
+          typeName: "demo.v1.ProfileService",
+          methods: [
+            {
+              name: "GetProfile",
+              localName: "getProfile",
+              kind: "unary",
+              inputType: "Profile",
+              outputType: "Profile",
+            },
+          ],
+        },
+      ],
+    });
+
+    // A field-only imported message is referenced exclusively through its
+    // schema and converters; the bare `type` alias would be an unused import
+    // and fail consumers compiling with `noUnusedLocals`.
+    expect(output).toContain("  CommonUserSchema,");
+    expect(output).toContain("  fromCommonUser,");
+    expect(output).toContain("  toCommonUser,");
+    expect(output).not.toContain("type CommonUser");
+  });
+
+  it("keeps bare imported types used by method signatures and enum casts", () => {
+    const output = generateFile({
+      protoFileName: "demo/v1/profile.proto",
+      packageName: "demo.v1",
+      importExtension: "js",
+      imports: [
+        {
+          protoFileName: "demo/v1/common.proto",
+          messages: ["CommonUser"],
+          enums: ["CommonState"],
+        },
+      ],
+      enums: [],
+      messages: [
+        {
+          name: "Profile",
+          fields: [{ kind: "enum", name: "state", enumName: "CommonState" }],
+        },
+      ],
+      services: [
+        {
+          name: "ProfileService",
+          typeName: "demo.v1.ProfileService",
+          methods: [
+            {
+              name: "GetUser",
+              localName: "getUser",
+              kind: "unary",
+              inputType: "CommonUser",
+              outputType: "CommonUser",
+            },
+          ],
+        },
+      ],
+    });
+
+    // A message used as a method input/output appears bare in client/server
+    // signatures; an imported enum field appears bare in the from-converter
+    // cast. Both aliases must stay imported.
+    expect(output).toContain("  type CommonUser,");
+    expect(output).toContain("  type CommonState,");
+    expect(output).toContain("request: CommonUser");
+    expect(output).toContain('readField(message, "state") as CommonState');
+  });
+
   it("omits unary-path rpc imports for a streaming-only service", () => {
     const output = generateFile({
       protoFileName: "demo/v1/upload.proto",

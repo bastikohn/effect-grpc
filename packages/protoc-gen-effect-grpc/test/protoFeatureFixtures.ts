@@ -185,6 +185,9 @@ const writeTypecheckProject = (
       {
         extends: "../../../tsconfig.json",
         compilerOptions: {
+          // Generated output must never emit unused locals (e.g. dead
+          // imported `type` aliases) — consumers compile with this flag.
+          noUnusedLocals: true,
           paths: {
             "@effect-grpc/effect-grpc": ["packages/effect-grpc/src/index.ts"],
             "@effect-grpc/effect-grpc/*": ["packages/effect-grpc/src/*"],

@@ -1,9 +1,11 @@
 # Protocol Bridge
 
-`GrpcClientProtocol` translates `RpcClient.Protocol` requests into native
-Connect gRPC client calls. It tracks active native calls with `AbortController`
-instances and aborts them when the protocol scope finalizes or when the Effect
-RPC client interrupts a request.
+On the client side, `GrpcInvoker` is the single seam: generated clients invoke
+all four call shapes through it, and its connect adapter resolves the native
+Connect client method, applies codecs and call options, and ties Effect
+interruption to call cancellation with an `AbortController`.
+`GrpcClientProtocol` builds the connect transport and provides the invoker
+layer — there is no client-side `RpcClient.Protocol` anymore.
 
 `GrpcServerProtocol` translates native Connect handlers into
 `RpcServer.Protocol` requests. Each native call gets one client id and call
@@ -21,9 +23,9 @@ construction and run async boundary effects with that context.
 
 The Effect RPC wire protocol has no client-to-server chunk variant
 (`FromClientEncoded` is `Request | Ack | Interrupt | Ping | Eof`), so
-client-streaming and bidi-streaming methods cannot flow through
-`RpcClient`/`RpcServer`. They use a parallel path over the same connect
-transport and registry:
+client-streaming and bidi-streaming methods cannot flow through `RpcServer` on
+the server. They use a parallel server path over the same connect transport
+and registry:
 
 - `GrpcInvoker` is the single client-side seam for all four call shapes
   (`GrpcInvoker.layerConnect` in production). For the streaming shapes it
@@ -45,6 +47,7 @@ transport and registry:
   with `cancelled` when the signal is aborted at end-of-stream, and the handler
   fiber is interrupted through the same signal.
 
-Because both paths share the transport, interceptors and metadata behave
-identically; anything hung off Effect RPC middleware applies only to the RPC
-path.
+Because both server paths share the transport, interceptors and metadata
+behave identically; anything hung off Effect RPC middleware applies only to
+the server-side RPC path (unary and server-streaming handlers) — clients never
+see it.

@@ -8,6 +8,13 @@ failures, cancellation in both directions, and protocol scope finalization.
 Runtime protocol tests should cover behavior that can be asserted without a real
 socket, including call-state backpressure and server protocol cleanup.
 
+`GrpcInvoker` is the single client seam; `GrpcInvoker.layerInMemory` is its
+network-free stand-in, and invoker tests assert both adapters share invocation
+semantics. Known limitation: the in-memory adapter enforces `timeoutMs` (as
+`deadline_exceeded`) only for unary and client-streaming calls — stream-shaped
+calls expose `timeoutMs` on the call context but leave mid-stream deadline
+enforcement to transports.
+
 Generator tests should use descriptor/plugin fixtures for every unsupported
 protobuf construct so codegen fails clearly instead of emitting incorrect
 schemas or converters.

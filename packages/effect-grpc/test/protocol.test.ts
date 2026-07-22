@@ -1,6 +1,5 @@
 import type { ConnectRouter, HandlerContext } from "@connectrpc/connect";
 import { Deferred, Effect, Fiber, Queue, Ref, Schema, Stream } from "effect";
-import * as RpcClient from "effect/unstable/rpc/RpcClient";
 import type { FromServerEncoded } from "effect/unstable/rpc/RpcMessage";
 import { describe, expect, it } from "vitest";
 
@@ -10,52 +9,6 @@ import * as GrpcServerProtocol from "../src/GrpcServerProtocol.js";
 import * as GrpcStatusError from "../src/GrpcStatusError.js";
 import * as CallState from "../src/internal/callState.js";
 import { failureExit, successExit } from "../src/internal/status.js";
-
-describe("GrpcClientProtocol", () => {
-  it("maps an unknown registry tag to unimplemented", async () => {
-    const response = await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const protocol = yield* RpcClient.Protocol;
-          const received = yield* Deferred.make<FromServerEncoded>();
-
-          yield* protocol
-            .run(0, (message) =>
-              Deferred.succeed(received, message).pipe(Effect.asVoid),
-            )
-            .pipe(Effect.forkScoped);
-          yield* Effect.yieldNow;
-
-          yield* protocol.send(0, {
-            _tag: "Request",
-            id: "1",
-            tag: "missing.Service/Call",
-            payload: {},
-            headers: [],
-          });
-
-          return yield* Deferred.await(received);
-        }),
-      ).pipe(
-        Effect.provide(
-          GrpcClientProtocol.layer({
-            baseUrl: "http://127.0.0.1:1",
-            registry: new Map(),
-          }),
-        ),
-      ),
-    );
-
-    expect(response?._tag).toBe("Exit");
-    if (response?._tag !== "Exit" || response.exit._tag !== "Failure") {
-      throw new Error("Expected failure exit");
-    }
-    expect(response.exit.cause[0]).toMatchObject({
-      _tag: "Fail",
-      error: { code: "unimplemented" },
-    });
-  });
-});
 
 describe("metadataInterceptor", () => {
   it("adds metadata as defaults, lets per-call win, and re-reads per call", async () => {

@@ -5,14 +5,16 @@ client-streaming, and bidi-streaming.
 
 ## Streaming Semantics
 
-Unary and server-streaming methods run through `effect/unstable/rpc`
-(`RpcClient`/`RpcServer`). The Effect RPC wire protocol has no client-to-server
-stream, so client-streaming and bidi-streaming methods bypass it and bridge
-`Stream` and connect `AsyncIterable` directly over the same transport and
-registry. Consequences:
+Generated clients invoke all four method kinds through the `GrpcInvoker` seam
+over the connect transport. On the server, unary and server-streaming handlers
+run through `effect/unstable/rpc` (`RpcServer`); the Effect RPC wire protocol
+has no client-to-server stream, so client-streaming and bidi-streaming
+handlers bypass it and bridge `Stream` and connect `AsyncIterable` directly
+over the same transport and registry. Consequences:
 
 - Anything hung off Effect RPC middleware applies only to unary and
-  server-streaming methods; the direct streaming path does not see it.
+  server-streaming server handlers; clients and the direct streaming path do
+  not see it.
 - gRPC has no channel for a client-side error other than cancelling the call.
   If the request `Stream` passed to a generated client method fails, the call
   is cancelled (the server observes `cancelled` or an interrupted handler) and

@@ -62,6 +62,14 @@ describe("public API", () => {
       baseUrl: "http://127.0.0.1:50051",
       registry,
     });
+    // Regression pin: the client layer provides `GrpcInvoker` alone — the
+    // `RpcClient.Protocol` client path is retired.
+    expect(
+      GrpcClientProtocol.layer({
+        baseUrl: "http://127.0.0.1:50051",
+        registry,
+      }),
+    ).type.toBe<Layer.Layer<GrpcInvoker.GrpcInvoker>>();
     expect(GrpcClientProtocol.metadataInterceptor).type.toBeCallableWith(
       Effect.succeed(metadata),
     );

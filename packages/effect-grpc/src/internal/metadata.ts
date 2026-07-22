@@ -31,22 +31,6 @@ export const headersFromCallOptions = (
   return entries;
 };
 
-export const readTimeoutMs = (
-  headers: ReadonlyArray<readonly [string, string]>,
-): number | undefined => {
-  const value = headers.find(
-    ([key]) => key.toLowerCase() === timeoutHeader,
-  )?.[1];
-  if (value === undefined) return undefined;
-  const timeoutMs = Number(value);
-  return Number.isFinite(timeoutMs) ? timeoutMs : undefined;
-};
-
-export const stripInternalHeaders = (
-  headers: ReadonlyArray<readonly [string, string]>,
-): ReadonlyArray<readonly [string, string]> =>
-  headers.filter(([key]) => key.toLowerCase() !== timeoutHeader);
-
 /**
  * The first reserved key present in the metadata, or `undefined` if none.
  * Lets callers reject reserved metadata with a typed error before header

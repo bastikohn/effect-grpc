@@ -7,6 +7,7 @@ import { Code, ConnectError } from "@connectrpc/connect";
 import {
   Cause,
   Context,
+  Deferred,
   Effect,
   Exit,
   Fiber,
@@ -814,6 +815,232 @@ describe("server telemetry", () => {
     expect(durations[0]?.count).toBe(1);
   });
 
+  // Regression pin for the client-abort span path: on abort, the connect
+  // signal must interrupt only the handler body — the spanned effect has to
+  // survive long enough to record `cancelled` while the span is open. The
+  // OTLP exporter serializes a span inside `end()`, so a status attribute
+  // written after an interrupt-torn span end never leaves the process.
+  const abortedEffectCall = (
+    entry: GrpcMethodEntry,
+    handler: (
+      interrupted: Deferred.Deferred<boolean>,
+    ) => GrpcServerProtocol.GrpcHandler,
+    call: (
+      implementation: Record<string, unknown>,
+      context: HandlerContext,
+    ) => Promise<unknown>,
+  ) =>
+    Effect.gen(function* () {
+      const interrupted = yield* Deferred.make<boolean>();
+      const { routes } = yield* GrpcServerProtocol.make({
+        registry: new Map([[entry.tag, entry]]),
+        handlers: new Map<string, GrpcServerProtocol.GrpcHandler>([
+          [entry.tag, handler(interrupted)],
+        ]),
+      });
+      const implementation = captureImplementation(routes);
+      const abort = new AbortController();
+
+      const error = yield* Effect.promise(async () => {
+        const pending = call(
+          implementation,
+          handlerContext(undefined, abort.signal),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        abort.abort();
+        try {
+          await pending;
+        } catch (cause) {
+          return GrpcStatusError.fromConnectError(cause);
+        }
+        throw new Error("Expected the aborted call to fail");
+      });
+      const handlerInterrupted = yield* Deferred.await(interrupted);
+      const metrics = yield* Metric.snapshot;
+      return { error, handlerInterrupted, metrics };
+    });
+
+  const expectCancelledSpanEnd = (
+    telemetry: ReturnType<typeof makeTestTelemetry>,
+    tag: string,
+  ) => {
+    const span = telemetry.expectSpan(tag);
+    const end = telemetry.endState(span);
+    // The status must already be on the span when it ends...
+    expect(end.attributesAtEnd.get("rpc.response.status_code")).toBe(
+      "CANCELLED",
+    );
+    // ...and nothing may be written after the end — post-end attributes are
+    // exactly what real exporters drop.
+    expect(end.attributesAfterEnd).toEqual([]);
+    // Per semconv, `cancelled` is not a server fault.
+    expect(end.attributesAtEnd.get("error.type")).toBeUndefined();
+    // The span must close cleanly with the recorded status, not with an
+    // interrupt-only exit (which exporters map to an attributeless close).
+    expect(spanEndExit(span)._tag).toBe("Success");
+  };
+
+  it("records CANCELLED while the span is open when the client aborts a unary call", async () => {
+    const telemetry = makeTestTelemetry();
+
+    const result = await Effect.runPromise(
+      telemetry.provide(
+        abortedEffectCall(
+          unaryEntry,
+          (interrupted) => ({
+            kind: "unary",
+            handler: () =>
+              Effect.never.pipe(
+                Effect.onInterrupt(() =>
+                  Deferred.succeed(interrupted, true).pipe(Effect.asVoid),
+                ),
+              ),
+          }),
+          (implementation, context) =>
+            (
+              implementation.get as (
+                request: unknown,
+                context: HandlerContext,
+              ) => Promise<unknown>
+            )({}, context),
+        ),
+      ),
+    );
+
+    expect(result.error).toMatchObject({ code: "cancelled" });
+    expect(result.handlerInterrupted).toBe(true);
+    expectCancelledSpanEnd(telemetry, unaryEntry.tag);
+
+    const durations = durationMetrics(
+      result.metrics,
+      "rpc.server.call.duration",
+    );
+    expect(durations).toHaveLength(1);
+    expect(durations[0]?.attributes).toMatchObject({
+      "rpc.method": "demo.v1.TelemetryService/Get",
+      "rpc.response.status_code": "CANCELLED",
+    });
+    expect(durations[0]?.attributes?.["error.type"]).toBeUndefined();
+  });
+
+  it("records CANCELLED while the span is open when the client aborts a client-streaming call", async () => {
+    const telemetry = makeTestTelemetry();
+
+    const result = await Effect.runPromise(
+      telemetry.provide(
+        abortedEffectCall(
+          clientStreamingEntry,
+          (interrupted) => ({
+            kind: "client-streaming",
+            handler: () =>
+              Effect.never.pipe(
+                Effect.onInterrupt(() =>
+                  Deferred.succeed(interrupted, true).pipe(Effect.asVoid),
+                ),
+              ),
+          }),
+          (implementation, context) =>
+            (
+              implementation.upload as (
+                requests: AsyncIterable<unknown>,
+                context: HandlerContext,
+              ) => Promise<unknown>
+            )(
+              (async function* () {
+                yield { id: "1" };
+              })(),
+              context,
+            ),
+        ),
+      ),
+    );
+
+    expect(result.error).toMatchObject({ code: "cancelled" });
+    expect(result.handlerInterrupted).toBe(true);
+    expectCancelledSpanEnd(telemetry, clientStreamingEntry.tag);
+
+    const durations = durationMetrics(
+      result.metrics,
+      "rpc.server.call.duration",
+    );
+    expect(durations).toHaveLength(1);
+    expect(durations[0]?.attributes).toMatchObject({
+      "rpc.method": "demo.v1.TelemetryService/Upload",
+      "rpc.response.status_code": "CANCELLED",
+    });
+  });
+
+  // Regression pin for the pump path: a handler stream failing with an
+  // interrupt-only cause (the handler interrupting itself, not a client
+  // abort) must map to CANCELLED like the effect-shaped calls do — before
+  // the fix the pump squashed the cause into a generic error that mapped to
+  // INTERNAL with an error span.
+  it("maps a handler-side interrupt on a server stream to CANCELLED, not INTERNAL", async () => {
+    const telemetry = makeTestTelemetry();
+
+    const result = await Effect.runPromise(
+      telemetry.provide(
+        Effect.gen(function* () {
+          const { routes } = yield* GrpcServerProtocol.make({
+            registry: new Map([
+              [serverStreamingEntry.tag, serverStreamingEntry],
+            ]),
+            handlers: new Map<string, GrpcServerProtocol.GrpcHandler>([
+              [
+                serverStreamingEntry.tag,
+                {
+                  kind: "server-streaming",
+                  handler: () =>
+                    Stream.make({ sequence: 1 }).pipe(
+                      Stream.concat(Stream.fromEffect(Effect.interrupt)),
+                    ),
+                },
+              ],
+            ]),
+          });
+          const implementation = captureImplementation(routes);
+
+          const outcome = yield* Effect.promise(async () => {
+            const received: Array<unknown> = [];
+            try {
+              for await (const value of (
+                implementation.watch as (
+                  request: unknown,
+                  context: HandlerContext,
+                ) => AsyncIterable<unknown>
+              )({}, handlerContext())) {
+                received.push(value);
+              }
+            } catch (cause) {
+              return {
+                received,
+                error: GrpcStatusError.fromConnectError(cause),
+              };
+            }
+            throw new Error("Expected the interrupted handler stream to fail");
+          });
+          const metrics = yield* Metric.snapshot;
+          return { outcome, metrics };
+        }),
+      ),
+    );
+
+    expect(result.outcome.received).toEqual([{ sequence: 1 }]);
+    expect(result.outcome.error).toMatchObject({ code: "cancelled" });
+    expectCancelledSpanEnd(telemetry, serverStreamingEntry.tag);
+
+    const durations = durationMetrics(
+      result.metrics,
+      "rpc.server.call.duration",
+    );
+    expect(durations).toHaveLength(1);
+    expect(durations[0]?.attributes).toMatchObject({
+      "rpc.method": "demo.v1.TelemetryService/Watch",
+      "rpc.response.status_code": "CANCELLED",
+    });
+    expect(durations[0]?.attributes?.["error.type"]).toBeUndefined();
+  });
+
   it("records mid-stream bidi failures with the failure status", async () => {
     const telemetry = makeTestTelemetry();
 
@@ -926,12 +1153,49 @@ describe("tracestate decoding", () => {
 // Test harness
 // ---------------------------------------------------------------------------
 
+/**
+ * Attribute activity around a span's end. Real exporters (Effect's OTLP
+ * tracer serializes the span inside `end()`) drop attributes written after
+ * the span has ended, while Effect's in-memory span silently accepts them —
+ * so status assertions must check `attributesAtEnd`, not `span.attributes`.
+ */
+interface SpanEndState {
+  readonly attributesAtEnd: ReadonlyMap<string, unknown>;
+  readonly attributesAfterEnd: ReadonlyArray<string>;
+}
+
 const makeTestTelemetry = () => {
   const spans: Array<Tracer.Span> = [];
+  const endStates = new Map<
+    Tracer.Span,
+    {
+      attributesAtEnd: ReadonlyMap<string, unknown> | undefined;
+      readonly attributesAfterEnd: Array<string>;
+    }
+  >();
   const native = Context.get(Context.empty(), Tracer.Tracer);
   const tracer = Tracer.make({
     span(options) {
       const span = native.span(options);
+      // Mirror what the OTLP exporter observes: snapshot the attributes at
+      // the moment `end()` runs and record any attribute written afterwards.
+      const state = {
+        attributesAtEnd: undefined as ReadonlyMap<string, unknown> | undefined,
+        attributesAfterEnd: [] as Array<string>,
+      };
+      endStates.set(span, state);
+      const originalEnd = span.end.bind(span);
+      const originalAttribute = span.attribute.bind(span);
+      span.end = (endTime, exit) => {
+        state.attributesAtEnd ??= new Map(span.attributes);
+        originalEnd(endTime, exit);
+      };
+      span.attribute = (key, value) => {
+        if (state.attributesAtEnd !== undefined) {
+          state.attributesAfterEnd.push(key);
+        }
+        originalAttribute(key, value);
+      };
       spans.push(span);
       return span;
     },
@@ -951,7 +1215,14 @@ const makeTestTelemetry = () => {
     }
     return span;
   };
-  return { spans, provide, expectSpan };
+  const endState = (span: Tracer.Span): SpanEndState => {
+    const state = endStates.get(span);
+    if (!state || state.attributesAtEnd === undefined) {
+      throw new Error(`Expected span ${span.name} to be ended`);
+    }
+    return state as SpanEndState;
+  };
+  return { spans, provide, expectSpan, endState };
 };
 
 /** The exit a span was ended with; throws when the span is still open. */
@@ -1112,8 +1383,11 @@ const captureImplementation = (
   return implementation;
 };
 
-const handlerContext = (headers?: HeadersImport): HandlerContext =>
+const handlerContext = (
+  headers?: HeadersImport,
+  signal?: AbortSignal,
+): HandlerContext =>
   ({
     requestHeader: new Headers(headers),
-    signal: new AbortController().signal,
+    signal: signal ?? new AbortController().signal,
   }) as HandlerContext;

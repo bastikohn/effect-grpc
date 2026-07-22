@@ -159,9 +159,13 @@ export const make = (
 
     /**
      * Execution template for effect-shaped calls (unary, client-streaming):
-     * one server span, semconv status recording, the connect `signal` bound
-     * to the running effect, and non-server-fault failures carried as values
-     * so the span closes cleanly before the error reaches connect.
+     * one server span, semconv status recording, and non-server-fault
+     * failures carried as values so the span closes cleanly before the error
+     * reaches connect. The connect `signal` interrupts only the handler body
+     * (raced against {@link abortCancelled}), never the surrounding spanned
+     * effect: a client abort must record its `cancelled` status while the
+     * span is still open — exporters serialize a span when it ends, so
+     * attributes written after an interrupt-torn span end are lost.
      */
     const handleEffectCall = async (
       entry: GrpcMethodEntry,
@@ -180,8 +184,9 @@ export const make = (
             const span = yield* Effect.currentSpan.pipe(Effect.orDie);
             const recordStatus = serverRecorder(entry, span);
             record = recordStatus;
-            const result = yield* body(
-              CodegenSupport.serverContext(headers),
+            const result = yield* Effect.raceFirst(
+              body(CodegenSupport.serverContext(headers)),
+              abortCancelled(handlerContext.signal),
             ).pipe(Effect.exit);
             if (result._tag === "Failure") {
               const error = causeError(result.cause);
@@ -214,7 +219,6 @@ export const make = (
               Effect.succeed<ServerCallOutcome>({ ok: false, error }),
             ),
           ),
-          { signal: handlerContext.signal },
         );
       } catch (cause) {
         const error = rejectionError(cause, handlerContext.signal);
@@ -286,7 +290,13 @@ export const make = (
         recordStatus(handlerContext.signal.aborted ? "cancelled" : "ok");
       } catch (cause) {
         completed = true;
-        const error = rejectionError(cause, handlerContext.signal);
+        // The pump surfaces the handler stream's real `Cause` so the shared
+        // mapper sees interrupts as interrupts (-> `cancelled`), not as a
+        // squashed generic error (-> `internal`).
+        const error =
+          cause instanceof StreamBridge.PumpFailure
+            ? causeError(cause.cause)
+            : rejectionError(cause, handlerContext.signal);
         recordStatus(error.code);
         // Per semconv, only server-fault codes end the server span in an
         // error state; a cancelled or otherwise client-caused end closes
@@ -431,15 +441,48 @@ const decodedRequestStream = (
     Stream.mapEffect((message) => MethodRegistry.decodeRequest(entry, message)),
   );
 
-/** The single cause -> gRPC status mapper for every call shape. */
+/**
+ * Fails with `cancelled` when the connect signal aborts, and never otherwise.
+ * Raced against the handler body in `handleEffectCall` so a client abort
+ * interrupts only the body fiber: the surrounding spanned effect survives to
+ * record the `cancelled` status while the span is still open and to close the
+ * span cleanly instead of tearing it down with an interrupt.
+ */
+const abortCancelled = (
+  signal: AbortSignal,
+): Effect.Effect<never, GrpcStatusError.GrpcStatusError> =>
+  Effect.callback((resume) => {
+    const onAbort = () =>
+      resume(Effect.fail(GrpcStatusError.cancelled("RPC cancelled")));
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+    return Effect.sync(() => signal.removeEventListener("abort", onAbort));
+  });
+
+/**
+ * The single cause -> gRPC status mapper for every call shape: effect-shaped
+ * calls run their handler's exit cause through it directly, and stream-shaped
+ * calls feed it the cause surfaced by `StreamBridge.responsePump` (as a
+ * {@link StreamBridge.PumpFailure}). An interrupt-only cause — a handler
+ * interrupting itself — maps to `cancelled`, a `GrpcStatusError` failure
+ * keeps its code, and everything else is a server fault (`internal`).
+ */
 const causeError = (
-  cause: Cause.Cause<GrpcStatusError.GrpcStatusError>,
-): GrpcStatusError.GrpcStatusError =>
-  Option.getOrElse(Cause.findErrorOption(cause), () =>
-    Cause.hasInterrupts(cause)
-      ? GrpcStatusError.cancelled("RPC cancelled")
-      : GrpcStatusError.internal("RPC handler defect", Cause.squash(cause)),
-  );
+  cause: Cause.Cause<unknown>,
+): GrpcStatusError.GrpcStatusError => {
+  const failure = Option.getOrUndefined(Cause.findErrorOption(cause));
+  if (failure !== undefined) {
+    return failure instanceof GrpcStatusError.GrpcStatusError
+      ? failure
+      : GrpcStatusError.internal("RPC handler defect", failure);
+  }
+  return Cause.hasInterrupts(cause)
+    ? GrpcStatusError.cancelled("RPC cancelled")
+    : GrpcStatusError.internal("RPC handler defect", Cause.squash(cause));
+};
 
 const rejectionError = (
   cause: unknown,

@@ -37,6 +37,7 @@ declare const authMetadata: Effect.Effect<
   never,
   AuthToken
 >;
+declare const serverHandlers: GrpcServerProtocol.GrpcHandlers;
 const implementation: UserServiceImplementation = {
   getUser: (request) =>
     Effect.succeed({
@@ -135,6 +136,38 @@ describe("public API", () => {
     expect(GrpcHealth.make).type.toBeCallableWith({
       initialStatuses: [["", "SERVING"]],
     });
+  });
+
+  it("pins the serveAll handlers seam and the protocol constructor", () => {
+    // Regression pin: `ServeAllService.handlers` is a `GrpcHandlers` layer,
+    // not `Layer<any>` — a wrong layer (e.g. the health *state* layer instead
+    // of `HealthHandlersLayer`) used to typecheck and then silently answer
+    // every method `unimplemented`.
+    expect(GrpcNodeServer.serveAll).type.not.toBeCallableWith({
+      host: "127.0.0.1",
+      port: 50051,
+      services: [
+        {
+          registry: UserServiceGrpcRegistry,
+          handlers: GrpcHealth.layer(),
+        },
+      ],
+    });
+    // The retired Effect RPC wiring's `group` field is gone from the service
+    // entry. (An excess `group:` property in a `serveAll` call is not
+    // flagged by tsc — `const`-generic inference adopts the literal's own
+    // type, so freshness-based excess-property checking never fires.)
+    expect<GrpcNodeServer.ServeAllService>().type.not.toHaveProperty("group");
+
+    // `make` accepts the unified handlers map and requires no `Scope` (or
+    // anything else) to build the routes.
+    expect(GrpcServerProtocol.make).type.toBeCallableWith({
+      registry,
+      handlers: serverHandlers,
+    });
+    expect(
+      GrpcServerProtocol.make({ registry, handlers: serverHandlers }),
+    ).type.toBe<Effect.Effect<GrpcServerProtocol.GrpcServerProtocolResult>>();
   });
 
   it("types the method registry contract", () => {

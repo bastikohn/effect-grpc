@@ -36,7 +36,7 @@ export interface ServeOptions {
 
 export interface ServeAllService<R = never> {
   readonly registry: GrpcMethodRegistry;
-  readonly handlers: Layer.Layer<any, never, R>;
+  readonly handlers: Layer.Layer<GrpcServerProtocol.GrpcHandlers, never, R>;
 }
 
 export interface ServeAllOptions<
@@ -144,7 +144,7 @@ export const serve = (
   });
 
 const mergeHandlers = (
-  contexts: ReadonlyArray<Context.Context<unknown>>,
+  contexts: ReadonlyArray<Context.Context<GrpcServerProtocol.GrpcHandlers>>,
 ): GrpcServerProtocol.GrpcHandlers => {
   const merged = new Map<string, GrpcServerProtocol.GrpcHandler>();
   for (const context of contexts) {

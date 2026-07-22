@@ -132,6 +132,67 @@ describe("GrpcServerProtocol", () => {
     });
   });
 
+  it("rejects server-streaming methods without a registered handler as unimplemented", async () => {
+    const error = await Effect.runPromise(
+      Effect.gen(function* () {
+        const { routes } = yield* GrpcServerProtocol.make({
+          registry: new Map([[serverStreamingEntry.tag, serverStreamingEntry]]),
+        });
+        const implementation = captureServerStreamingImplementation(routes);
+
+        return yield* Effect.promise(async () => {
+          try {
+            for await (const value of implementation.watch(
+              {},
+              handlerContext(),
+            )) {
+              void value;
+            }
+          } catch (cause) {
+            return GrpcStatusError.fromConnectError(cause);
+          }
+          throw new Error("Expected missing handler to fail");
+        });
+      }),
+    );
+
+    expect(error).toMatchObject({
+      code: "unimplemented",
+      message: "Missing handler for demo.v1.TestService/Watch",
+    });
+  });
+
+  it("treats a handler registered under the wrong kind as unimplemented", async () => {
+    const error = await Effect.runPromise(
+      Effect.gen(function* () {
+        const { routes } = yield* GrpcServerProtocol.make({
+          registry: new Map([[unaryEntry.tag, unaryEntry]]),
+          // Registered under the unary tag but with a streaming shape — the
+          // kind guard must fast-fail instead of invoking the wrong shape.
+          handlers: handlers(unaryEntry.tag, {
+            kind: "server-streaming",
+            handler: () => Stream.empty,
+          }),
+        });
+        const implementation = captureUnaryImplementation(routes);
+
+        return yield* Effect.promise(async () => {
+          try {
+            await implementation.get({}, handlerContext());
+          } catch (cause) {
+            return GrpcStatusError.fromConnectError(cause);
+          }
+          throw new Error("Expected wrong-kind handler to fail");
+        });
+      }),
+    );
+
+    expect(error).toMatchObject({
+      code: "unimplemented",
+      message: "Missing handler for demo.v1.TestService/Get",
+    });
+  });
+
   it("maps request converter failures to invalid_argument", async () => {
     const error = await Effect.runPromise(
       Effect.gen(function* () {

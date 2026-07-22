@@ -1,7 +1,8 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "verbatimModuleSyntax": false
+    "verbatimModuleSyntax": false,
+    "noUnusedLocals": true
   },
   "include": ["src", "test", "tsdown.config.ts", "vitest.config.ts"]
 }

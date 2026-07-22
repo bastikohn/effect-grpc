@@ -53,17 +53,23 @@ export const generateFile = (file: GeneratorFile): string => {
           `} from "${pbImport}";`,
         ]
       : []),
+    // The bare `type` aliases are only emitted when the generated code
+    // references them (see `FileUsage.usedImportedTypes`); everything else in
+    // the file derives its types from the imported `Schema`/`from`/`to`
+    // symbols, and an unreferenced alias fails `noUnusedLocals` in consumers.
     ...file.imports.flatMap((imported) => [
       "import {",
       ...imported.enums.flatMap((enumName) => [
         `  ${enumName}Schema,`,
-        `  type ${enumName},`,
+        ...(usage.usedImportedTypes.has(enumName)
+          ? [`  type ${enumName},`]
+          : []),
       ]),
       ...imported.messages.flatMap((message) => [
         `  ${message}Schema,`,
         `  from${message},`,
         `  to${message},`,
-        `  type ${message},`,
+        ...(usage.usedImportedTypes.has(message) ? [`  type ${message},`] : []),
       ]),
       `} from "${effectImportPath(file.protoFileName, imported.protoFileName, file.importExtension)}";`,
     ]),

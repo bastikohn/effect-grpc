@@ -1,10 +1,11 @@
-import { Context, Metric, Option } from "effect";
+import { Context, Exit, Metric, Option } from "effect";
 import * as Tracer from "effect/Tracer";
 import * as Headers from "effect/unstable/http/Headers";
 import * as HttpTraceContext from "effect/unstable/http/HttpTraceContext";
 
 import type { GrpcMethodEntry } from "../GrpcMethodRegistry.js";
 import type { GrpcStatusCode } from "../GrpcStatusCode.js";
+import * as GrpcStatusError from "../GrpcStatusError.js";
 import { TraceState } from "../GrpcTracing.js";
 import * as GrpcMetrics from "./metrics.js";
 
@@ -165,6 +166,24 @@ const callRecorder = (
     }).updateUnsafe((performance.now() - start) / 1000, context);
   };
 };
+
+/**
+ * Exit used to close a client span scope. Per semconv every non-`ok` client
+ * status is an error, so the span ends in a failed exit whenever a non-`ok`
+ * status was recorded — even when the call surfaced as interruption or an
+ * early stream close, whose natural exits exporters would map to OK.
+ */
+export const clientSpanExit = (
+  code: GrpcStatusCode | undefined,
+): Exit.Exit<void, GrpcStatusError.GrpcStatusError> =>
+  code === undefined || code === "ok"
+    ? Exit.void
+    : Exit.fail(
+        GrpcStatusError.make({
+          code,
+          message: `RPC failed with status ${code}`,
+        }),
+      );
 
 /**
  * Per OTel gRPC semconv, only this subset of status codes marks a SERVER span

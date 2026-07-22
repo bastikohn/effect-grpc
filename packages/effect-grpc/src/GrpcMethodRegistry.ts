@@ -128,9 +128,9 @@ export const groupByService = (
  * Conversions between domain values and wire messages, with one error
  * policy: request-payload problems are the caller's fault
  * (`invalid_argument`), response-payload problems are the producer's fault
- * (`internal`). The direct streaming paths bypass Effect RPC, so these
- * apply the same JSON codecs `RpcClient`/`RpcServer` would (domain value
- * <-> encoded payload) around the registry's per-message converters.
+ * (`internal`). The registry is the sole codec authority — both protocol
+ * sides apply these JSON codecs (domain value <-> encoded payload) around
+ * the registry's per-message converters.
  */
 
 /** Client side: domain request value -> wire request message. */

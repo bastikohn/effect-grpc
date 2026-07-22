@@ -2,7 +2,6 @@
 
 import { Buffer } from "node:buffer";
 import { Context, Effect, Layer, Schema, Stream } from "effect";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
 import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc";
 import {
   FeatureShowcaseService,
@@ -61,15 +60,6 @@ export const ChatMessageSchema = Schema.Struct({
   sequence: Schema.Number,
 });
 export type ChatMessage = Schema.Schema.Type<typeof ChatMessageSchema>;
-
-export const FeatureShowcaseService_DescribeRpc = Rpc.make("features.v1.FeatureShowcaseService/Describe", {
-  payload: FeatureRequestSchema,
-  success: FeatureResponseSchema,
-  error: GrpcStatusError.GrpcStatusError,
-});
-
-export const FeatureShowcaseServiceRpcGroup = RpcGroup.make(FeatureShowcaseService_DescribeRpc);
-export type FeatureShowcaseServiceRpcs = typeof FeatureShowcaseService_DescribeRpc;
 
 const readField = (message: unknown, field: string): unknown =>
   typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
@@ -329,20 +319,19 @@ export interface FeatureShowcaseServiceImplementation<R = never> {
 
 export const FeatureShowcaseServiceHandlersLayer = <R>(
   implementation: FeatureShowcaseServiceImplementation<R>,
-): Layer.Layer<Rpc.ToHandler<FeatureShowcaseServiceRpcs> | GrpcServerProtocol.GrpcStreamingHandlers, never, R> =>
-  Layer.mergeAll(
-    FeatureShowcaseServiceRpcGroup.toLayer({
-      "features.v1.FeatureShowcaseService/Describe": (request, options) => implementation.describe(request, CodegenSupport.serverContext(options)),
-    }) as Layer.Layer<Rpc.ToHandler<FeatureShowcaseServiceRpcs>, never, R>,
-    GrpcServerProtocol.streamingHandlersLayer<R>({
-      "features.v1.FeatureShowcaseService/UploadNotes": {
-        kind: "client-streaming",
-        handler: (requests, context) => implementation.uploadNotes(requests as Stream.Stream<Note, GrpcStatusError.GrpcStatusError>, context),
-      },
-      "features.v1.FeatureShowcaseService/Chat": {
-        kind: "bidi-streaming",
-        handler: (requests, context) => implementation.chat(requests as Stream.Stream<ChatMessage, GrpcStatusError.GrpcStatusError>, context),
-      },
-    }),
-  );
+): Layer.Layer<GrpcServerProtocol.GrpcHandlers, never, R> =>
+  GrpcServerProtocol.handlersLayer<R>({
+    "features.v1.FeatureShowcaseService/Describe": {
+      kind: "unary",
+      handler: (request, context) => implementation.describe(request as FeatureRequest, context),
+    },
+    "features.v1.FeatureShowcaseService/UploadNotes": {
+      kind: "client-streaming",
+      handler: (requests, context) => implementation.uploadNotes(requests as Stream.Stream<Note, GrpcStatusError.GrpcStatusError>, context),
+    },
+    "features.v1.FeatureShowcaseService/Chat": {
+      kind: "bidi-streaming",
+      handler: (requests, context) => implementation.chat(requests as Stream.Stream<ChatMessage, GrpcStatusError.GrpcStatusError>, context),
+    },
+  });
 

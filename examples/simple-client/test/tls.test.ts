@@ -10,7 +10,6 @@ import {
   UserServiceClientLayer,
   UserServiceGrpcRegistry,
   UserServiceHandlersLayer,
-  UserServiceRpcGroup,
   type UserServiceImplementation,
 } from "@effect-grpc/simple-proto/generated/demo/v1/user_service_effect_grpc";
 
@@ -148,7 +147,6 @@ const withServer = <A, E, R>(
         tls: options.tls,
         services: [
           {
-            group: UserServiceRpcGroup,
             registry: UserServiceGrpcRegistry,
             handlers: UserServiceHandlersLayer(implementation),
           },

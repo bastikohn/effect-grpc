@@ -6,13 +6,12 @@ import {
   Stream,
   SubscriptionRef,
 } from "effect";
-import * as Rpc from "effect/unstable/rpc/Rpc";
-import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 
-import * as CodegenSupport from "./CodegenSupport.js";
+import type * as CodegenSupport from "./CodegenSupport.js";
 import * as GrpcInvoker from "./GrpcInvoker.js";
 import type * as GrpcMethodRegistry from "./GrpcMethodRegistry.js";
 import type { ServeAllService } from "./GrpcNodeServer.js";
+import * as GrpcServerProtocol from "./GrpcServerProtocol.js";
 import * as GrpcStatusError from "./GrpcStatusError.js";
 import * as HealthPb from "./internal/healthPb.js";
 
@@ -65,22 +64,6 @@ export const HealthCheckResponseSchema = Schema.Struct({
 export type HealthCheckResponse = Schema.Schema.Type<
   typeof HealthCheckResponseSchema
 >;
-
-export const Health_CheckRpc = Rpc.make("grpc.health.v1.Health/Check", {
-  payload: HealthCheckRequestSchema,
-  success: HealthCheckResponseSchema,
-  error: GrpcStatusError.GrpcStatusError,
-});
-
-export const Health_WatchRpc = Rpc.make("grpc.health.v1.Health/Watch", {
-  payload: HealthCheckRequestSchema,
-  success: HealthCheckResponseSchema,
-  error: GrpcStatusError.GrpcStatusError,
-  stream: true,
-});
-
-export const HealthRpcGroup = RpcGroup.make(Health_CheckRpc, Health_WatchRpc);
-export type HealthRpcs = typeof Health_CheckRpc | typeof Health_WatchRpc;
 
 const servingStatusCodes: Record<ServingStatus, HealthPb.ServingStatusCode> = {
   UNKNOWN: 0,
@@ -272,27 +255,35 @@ export const layer = (options?: GrpcHealthOptions): Layer.Layer<GrpcHealth> =>
  * {@link GrpcHealth}.
  */
 export const HealthHandlersLayer: Layer.Layer<
-  Rpc.ToHandler<HealthRpcs>,
+  GrpcServerProtocol.GrpcHandlers,
   never,
   GrpcHealth
-> = HealthRpcGroup.toLayer({
-  "grpc.health.v1.Health/Check": (request) =>
-    Effect.gen(function* () {
-      const health = yield* GrpcHealth;
-      const status = yield* health.check(request.service);
-      return { status };
-    }),
-  "grpc.health.v1.Health/Watch": (request) =>
-    Stream.unwrap(
+> = GrpcServerProtocol.handlersLayer<GrpcHealth>({
+  "grpc.health.v1.Health/Check": {
+    kind: "unary",
+    handler: (request) =>
       Effect.gen(function* () {
         const health = yield* GrpcHealth;
-        return Stream.map(
-          health.watch(request.service),
-          (status): HealthCheckResponse => ({ status }),
+        const status = yield* health.check(
+          (request as HealthCheckRequest).service,
         );
+        return { status } satisfies HealthCheckResponse;
       }),
-    ),
-}) as Layer.Layer<Rpc.ToHandler<HealthRpcs>, never, GrpcHealth>;
+  },
+  "grpc.health.v1.Health/Watch": {
+    kind: "server-streaming",
+    handler: (request) =>
+      Stream.unwrap(
+        Effect.gen(function* () {
+          const health = yield* GrpcHealth;
+          return Stream.map(
+            health.watch((request as HealthCheckRequest).service),
+            (status): HealthCheckResponse => ({ status }),
+          );
+        }),
+      ),
+  },
+});
 
 /**
  * Ready-made entry for `GrpcNodeServer.serveAll`: registers the
@@ -300,7 +291,6 @@ export const HealthHandlersLayer: Layer.Layer<
  * {@link GrpcHealth} (provide it with {@link layer}).
  */
 export const service: ServeAllService<GrpcHealth> = {
-  group: HealthRpcGroup,
   registry: HealthGrpcRegistry,
   handlers: HealthHandlersLayer,
 };

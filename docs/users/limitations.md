@@ -6,15 +6,14 @@ client-streaming, and bidi-streaming.
 ## Streaming Semantics
 
 Generated clients invoke all four method kinds through the `GrpcInvoker` seam
-over the connect transport. On the server, unary and server-streaming handlers
-run through `effect/unstable/rpc` (`RpcServer`); the Effect RPC wire protocol
-has no client-to-server stream, so client-streaming and bidi-streaming
-handlers bypass it and bridge `Stream` and connect `AsyncIterable` directly
-over the same transport and registry. Consequences:
+over the connect transport. On the server, all four method kinds run through
+the unified `GrpcServerProtocol.GrpcHandlers` map, bridging `Stream` and
+connect `AsyncIterable` directly over the same transport and registry.
+Consequences:
 
-- Anything hung off Effect RPC middleware applies only to unary and
-  server-streaming server handlers; clients and the direct streaming path do
-  not see it.
+- There is no Effect RPC middleware hook on either side; cross-cutting
+  behavior belongs in connect interceptors (client) or in the handler
+  implementations (server).
 - gRPC has no channel for a client-side error other than cancelling the call.
   If the request `Stream` passed to a generated client method fails, the call
   is cancelled (the server observes `cancelled` or an interrupted handler) and
@@ -30,9 +29,10 @@ over the same transport and registry. Consequences:
 
 ## Effect Compatibility
 
-This prototype currently targets `effect@4.0.0-beta.92`. It uses
-`effect/unstable/rpc`, so compatibility is intentionally pinned. Effect beta
-upgrades must update tests, generated code, and package smoke together.
+This prototype currently targets `effect@4.0.0-beta.92`. It uses unstable
+Effect modules (e.g. `effect/unstable/http` for trace-context propagation), so
+compatibility is intentionally pinned. Effect beta upgrades must update tests,
+generated code, and package smoke together.
 
 The generator currently supports:
 

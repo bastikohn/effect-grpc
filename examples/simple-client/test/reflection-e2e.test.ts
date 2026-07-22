@@ -16,7 +16,6 @@ import {
 import {
   UserServiceGrpcRegistry,
   UserServiceHandlersLayer,
-  UserServiceRpcGroup,
   type UserServiceImplementation,
 } from "@effect-grpc/simple-proto/generated/demo/v1/user_service_effect_grpc";
 
@@ -164,7 +163,6 @@ const withReflectionServer = <A, E>(
       const port = yield* freePort;
       const services = [
         {
-          group: UserServiceRpcGroup,
           registry: UserServiceGrpcRegistry,
           handlers: UserServiceHandlersLayer(implementation),
         },

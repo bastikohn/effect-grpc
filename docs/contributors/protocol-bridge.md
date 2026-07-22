@@ -7,47 +7,45 @@ interruption to call cancellation with an `AbortController`.
 `GrpcClientProtocol` builds the connect transport and provides the invoker
 layer — there is no client-side `RpcClient.Protocol` anymore.
 
-`GrpcServerProtocol` translates native Connect handlers into
-`RpcServer.Protocol` requests. Each native call gets one client id and call
-state. Cleanup is idempotent, removes abort listeners, ends the call state, and
-signals the protocol `disconnects` queue.
+On the server side, `GrpcServerProtocol.GrpcHandlers` is the single seam: a
+map from method tag to one handler per call shape. Generated `*HandlersLayer`
+functions publish their handlers through the `GrpcHandlers` context key inside
+the handlers layer; `GrpcNodeServer.serveAll` builds each layer, collects the
+maps, and `GrpcServerProtocol.make` registers connect routes for every
+registry entry. Methods without a registered handler fail with
+`unimplemented`. The `GrpcMethodRegistry` is the sole codec authority: request
+messages are decoded (`invalid_argument` on failure) and response values are
+encoded (`internal` on failure) per message around the handler.
 
-Server-streaming uses a bounded queue between Effect RPC responses and the
-native async iterable. Offers backpressure when the queue is full, and cleanup
-shuts the queue down so waiting consumers do not hang.
+Execution runs through two templates behind four thin connect adapters
+(connect imposes four handler signatures — Promise vs async-generator):
 
-Bridge callbacks capture the current Effect context once during protocol
-construction and run async boundary effects with that context.
+- Effect-shaped calls (unary, client-streaming) run the handler effect with
+  the connect `signal` bound to the running fiber, inside one server span.
+  Non-server-fault failures are carried as values so the span closes cleanly
+  before the error reaches connect; unary is the same template with a single
+  decoded request value instead of a request stream.
+- Stream-shaped calls (server-streaming, bidi-streaming) pull the handler's
+  response stream through `StreamBridge.responsePump`, so demand follows
+  connect's iteration and HTTP/2 flow control, and closing the pump interrupts
+  the handler fiber when the client goes away. The pump spawns the handler
+  fiber with the scoped server span as parent and the incoming `tracestate`
+  provided, so downstream client calls inherit span context and propagation.
 
-## Direct Streaming Bridge
+`internal/streamBridge.ts` owns the `Stream` <-> `AsyncIterable` termination
+semantics on both sides:
 
-The Effect RPC wire protocol has no client-to-server chunk variant
-(`FromClientEncoded` is `Request | Ack | Interrupt | Ping | Eof`), so
-client-streaming and bidi-streaming methods cannot flow through `RpcServer` on
-the server. They use a parallel server path over the same connect transport
-and registry:
+- `GrpcInvoker`'s connect adapter converts the caller's `Stream` into the
+  `AsyncIterable` a connect client method expects. If the request stream
+  fails, the call is cancelled and the original error is replayed to the
+  caller.
+- The server protocol wraps the incoming request `AsyncIterable` as a `Stream`
+  (decoding per message). connect-node surfaces a client cancellation
+  server-side as a clean end of the request iterable plus an aborted handler
+  signal, so the request stream fails with `cancelled` when the signal is
+  aborted at end-of-stream, and the handler fiber is interrupted through the
+  same signal.
 
-- `GrpcInvoker` is the single client-side seam for all four call shapes
-  (`GrpcInvoker.layerConnect` in production). For the streaming shapes it
-  converts the caller's `Stream` into the `AsyncIterable` a connect client
-  method expects, applying the registry's JSON codecs and converters per
-  message. An `AbortController` ties Effect interruption to call cancellation.
-  If the request stream fails, the call is cancelled and the original error is
-  replayed to the caller.
-- `GrpcServerProtocol` registers connect handlers that wrap the incoming
-  `AsyncIterable` as a `Stream` (decoding per message) and run the streaming
-  handler; bidi responses are pulled back out through
-  `Stream.toAsyncIterableWith`, so backpressure falls out of pull semantics and
-  HTTP/2 flow control.
-- Generated `*HandlersLayer` functions publish streaming handlers through the
-  `GrpcServerProtocol.GrpcStreamingHandlers` context key inside the handlers
-  layer; `GrpcNodeServer.serveAll` builds each layer and collects the maps.
-- connect-node surfaces a client cancellation server-side as a clean end of the
-  request iterable plus an aborted handler signal, so the request stream fails
-  with `cancelled` when the signal is aborted at end-of-stream, and the handler
-  fiber is interrupted through the same signal.
-
-Because both server paths share the transport, interceptors and metadata
-behave identically; anything hung off Effect RPC middleware applies only to
-the server-side RPC path (unary and server-streaming handlers) — clients never
-see it.
+Because every call shape shares the transport and the same handler seam,
+interceptors, metadata, status mapping, and telemetry behave identically
+across all four kinds.

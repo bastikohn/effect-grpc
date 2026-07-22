@@ -21,7 +21,6 @@ import {
   UserServiceClientLayer,
   UserServiceGrpcRegistry,
   UserServiceHandlersLayer,
-  UserServiceRpcGroup,
   type UserServiceClientError,
   type UserServiceImplementation,
 } from "@effect-grpc/simple-proto/generated/demo/v1/user_service_effect_grpc";
@@ -116,7 +115,6 @@ describe("public API", () => {
       tls: { key: "PEM", cert: "PEM" },
       services: [
         {
-          group: UserServiceRpcGroup,
           registry: UserServiceGrpcRegistry,
           handlers: UserServiceHandlersLayer(implementation),
         },
@@ -127,7 +125,6 @@ describe("public API", () => {
       port: 50051,
       services: [
         {
-          group: UserServiceRpcGroup,
           registry: UserServiceGrpcRegistry,
           handlers: UserServiceHandlersLayer(implementation),
         },
@@ -201,7 +198,6 @@ describe("public API", () => {
   it("types the reflection service and client", () => {
     const services = [
       {
-        group: UserServiceRpcGroup,
         registry: UserServiceGrpcRegistry,
         handlers: UserServiceHandlersLayer(implementation),
       },
@@ -236,6 +232,19 @@ describe("public API", () => {
   });
 
   it("types generated clients and handlers", () => {
+    // Regression pin: the generated handlers layer publishes the unified
+    // 4-kind handler map — the Effect RPC server path
+    // (`Rpc.ToHandler`/`RpcGroup`) is retired.
+    expect(UserServiceHandlersLayer(implementation)).type.toBe<
+      Layer.Layer<GrpcServerProtocol.GrpcHandlers>
+    >();
+
+    // Regression pin: `GrpcServerContext` is narrowed to metadata — the
+    // Effect RPC `client`/`requestId` fields are gone.
+    expect(context.metadata).type.toBe<GrpcMetadata.GrpcMetadata>();
+    expect(context).type.not.toHaveProperty("client");
+    expect(context).type.not.toHaveProperty("requestId");
+
     // Regression pin: the generated client layer is satisfiable by
     // `GrpcInvoker` alone — no residual `RpcClient.Protocol` requirement.
     // Widening the requirement channel (e.g. reintroducing `RpcClient.Protocol`)

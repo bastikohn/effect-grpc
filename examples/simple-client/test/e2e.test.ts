@@ -20,7 +20,6 @@ import {
   UserServiceClientLayer,
   UserServiceGrpcRegistry,
   UserServiceHandlersLayer,
-  UserServiceRpcGroup,
   type UserServiceImplementation,
 } from "@effect-grpc/simple-proto/generated/demo/v1/user_service_effect_grpc";
 
@@ -666,7 +665,6 @@ describe("simple demo e2e", () => {
             shutdownTimeoutMs: 20,
             services: [
               {
-                group: UserServiceRpcGroup,
                 registry: UserServiceGrpcRegistry,
                 handlers: UserServiceHandlersLayer(implementation),
               },
@@ -706,7 +704,6 @@ const withServer = <A, E, R>(
         port,
         services: [
           {
-            group: UserServiceRpcGroup,
             registry: UserServiceGrpcRegistry,
             handlers: UserServiceHandlersLayer(
               options?.implementation ?? defaultImplementation,

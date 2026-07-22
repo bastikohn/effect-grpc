@@ -10,16 +10,12 @@ import {
   Effect,
   Exit,
   Fiber,
-  Layer,
   Metric,
   Option,
   Schema,
   Stream,
 } from "effect";
 import * as Tracer from "effect/Tracer";
-import * as Rpc from "effect/unstable/rpc/Rpc";
-import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
-import * as RpcServer from "effect/unstable/rpc/RpcServer";
 import { describe, expect, it } from "vitest";
 
 import * as GrpcClientProtocol from "../src/GrpcClientProtocol.js";
@@ -28,7 +24,6 @@ import type { GrpcMethodEntry } from "../src/GrpcMethodRegistry.js";
 import * as GrpcServerProtocol from "../src/GrpcServerProtocol.js";
 import * as GrpcStatusError from "../src/GrpcStatusError.js";
 import { TraceState } from "../src/GrpcTracing.js";
-import { failureExit, successExit } from "../src/internal/status.js";
 import {
   externalSpanFromHeaders,
   traceStateFromHeaders,
@@ -537,33 +532,29 @@ describe("server telemetry", () => {
 
     const result = await Effect.runPromise(
       telemetry.provide(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const { protocol, routes } = yield* GrpcServerProtocol.make({
-              registry: new Map([[unaryEntry.tag, unaryEntry]]),
-            });
-            const implementation = captureImplementation(routes);
+        Effect.gen(function* () {
+          const { routes } = yield* GrpcServerProtocol.make({
+            registry: new Map([[unaryEntry.tag, unaryEntry]]),
+            handlers: new Map<string, GrpcServerProtocol.GrpcHandler>([
+              [
+                unaryEntry.tag,
+                { kind: "unary", handler: () => Effect.succeed({ ok: true }) },
+              ],
+            ]),
+          });
+          const implementation = captureImplementation(routes);
 
-            yield* protocol
-              .run((clientId, data) =>
-                data._tag === "Request"
-                  ? protocol.send(clientId, successExit(data.id, { ok: true }))
-                  : Effect.void,
-              )
-              .pipe(Effect.forkScoped);
-
-            const response = yield* Effect.promise(() =>
-              (
-                implementation.get as (
-                  request: unknown,
-                  context: HandlerContext,
-                ) => Promise<unknown>
-              )({}, handlerContext(incomingHeaders)),
-            );
-            const metrics = yield* Metric.snapshot;
-            return { response, metrics };
-          }),
-        ),
+          const response = yield* Effect.promise(() =>
+            (
+              implementation.get as (
+                request: unknown,
+                context: HandlerContext,
+              ) => Promise<unknown>
+            )({}, handlerContext(incomingHeaders)),
+          );
+          const metrics = yield* Metric.snapshot;
+          return { response, metrics };
+        }),
       ),
     );
 
@@ -602,51 +593,40 @@ describe("server telemetry", () => {
     const { transport, headers } = fakeTransport({
       unary: () => ({ ok: true }),
     });
-    // Real `RpcServer` in the middle, mirroring `serveAll` wiring: the
-    // handler fiber is spawned by `RpcServer` (which drops span-parent
-    // annotations for unary methods), so this exercises the rehydration of
-    // `tracestate` through the request context into downstream injection.
-    const rpc = Rpc.make("demo.v1.TelemetryService/Get", {
-      payload: Schema.Unknown,
-      success: Schema.Unknown,
-      error: GrpcStatusError.GrpcStatusError,
-    });
-    const group = RpcGroup.make(rpc);
 
     const result = await Effect.runPromise(
       telemetry.provide(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const downstream = yield* Effect.provide(
-              Effect.service(GrpcInvoker.GrpcInvoker),
-              clientLayer(transport),
-            );
-            const { protocol, routes } = yield* GrpcServerProtocol.make({
-              registry: new Map([[unaryEntry.tag, unaryEntry]]),
-            });
-            const handlers = yield* Layer.build(
-              group.toLayer({
-                "demo.v1.TelemetryService/Get": () =>
-                  downstream.unary(unaryEntry.tag, {}).pipe(Effect.orDie),
-              }),
-            );
-            yield* RpcServer.make(group).pipe(
-              Effect.provideService(RpcServer.Protocol, protocol),
-              Effect.provideContext(handlers),
-              Effect.forkScoped,
-            );
-            yield* Effect.yieldNow;
-            const implementation = captureImplementation(routes);
-            return yield* Effect.promise(() =>
-              (
-                implementation.get as (
-                  request: unknown,
-                  context: HandlerContext,
-                ) => Promise<unknown>
-              )({}, handlerContext(incomingHeaders)),
-            );
-          }),
-        ),
+        Effect.gen(function* () {
+          const downstream = yield* Effect.provide(
+            Effect.service(GrpcInvoker.GrpcInvoker),
+            clientLayer(transport),
+          );
+          // The handler runs inside the request fiber with the incoming
+          // `tracestate` provided from the headers, so downstream client
+          // calls pick it up for header injection.
+          const { routes } = yield* GrpcServerProtocol.make({
+            registry: new Map([[unaryEntry.tag, unaryEntry]]),
+            handlers: new Map<string, GrpcServerProtocol.GrpcHandler>([
+              [
+                unaryEntry.tag,
+                {
+                  kind: "unary",
+                  handler: () =>
+                    downstream.unary(unaryEntry.tag, {}).pipe(Effect.orDie),
+                },
+              ],
+            ]),
+          });
+          const implementation = captureImplementation(routes);
+          return yield* Effect.promise(() =>
+            (
+              implementation.get as (
+                request: unknown,
+                context: HandlerContext,
+              ) => Promise<unknown>
+            )({}, handlerContext(incomingHeaders)),
+          );
+        }),
       ),
     );
 
@@ -655,46 +635,106 @@ describe("server telemetry", () => {
     expect(headers[0]?.get("tracestate")).toBe("vendor=abc");
   });
 
+  it("forwards incoming tracestate to downstream client calls made from a server-streaming handler", async () => {
+    const telemetry = makeTestTelemetry();
+    const { transport, headers } = fakeTransport({
+      unary: () => ({ ok: true }),
+    });
+
+    const result = await Effect.runPromise(
+      telemetry.provide(
+        Effect.gen(function* () {
+          const downstream = yield* Effect.provide(
+            Effect.service(GrpcInvoker.GrpcInvoker),
+            clientLayer(transport),
+          );
+          // The handler fiber is spawned by the response pump; this pins the
+          // pump context rehydration: the scoped server span parents the
+          // downstream span and the incoming `tracestate` is injected.
+          const { routes } = yield* GrpcServerProtocol.make({
+            registry: new Map([
+              [serverStreamingEntry.tag, serverStreamingEntry],
+            ]),
+            handlers: new Map<string, GrpcServerProtocol.GrpcHandler>([
+              [
+                serverStreamingEntry.tag,
+                {
+                  kind: "server-streaming",
+                  handler: () =>
+                    Stream.fromEffect(
+                      downstream.unary(unaryEntry.tag, {}).pipe(Effect.orDie),
+                    ),
+                },
+              ],
+            ]),
+          });
+          const implementation = captureImplementation(routes);
+          return yield* Effect.promise(async () => {
+            const responses: Array<unknown> = [];
+            for await (const value of (
+              implementation.watch as (
+                request: unknown,
+                context: HandlerContext,
+              ) => AsyncIterable<unknown>
+            )({}, handlerContext(incomingHeaders))) {
+              responses.push(value);
+            }
+            return responses;
+          });
+        }),
+      ),
+    );
+
+    expect(result).toEqual([{ ok: true }]);
+    expect(headers[0]?.get("traceparent")).toMatch(TRACEPARENT_PATTERN);
+    expect(headers[0]?.get("tracestate")).toBe("vendor=abc");
+
+    const serverSpan = telemetry.expectSpan(serverStreamingEntry.tag);
+    expect(serverSpan.kind).toBe("server");
+    expect(serverSpan.traceId).toBe(traceId);
+    // The downstream client span must be parented to the server span.
+    const clientSpan = telemetry.expectSpan(unaryEntry.tag);
+    expect(clientSpan.kind).toBe("client");
+    expect(clientSpan.traceId).toBe(traceId);
+  });
+
   it("records NOT_FOUND without error.type on unary failure (not a server fault)", async () => {
     const telemetry = makeTestTelemetry();
 
     const result = await Effect.runPromise(
       telemetry.provide(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const { protocol, routes } = yield* GrpcServerProtocol.make({
-              registry: new Map([[unaryEntry.tag, unaryEntry]]),
-            });
-            const implementation = captureImplementation(routes);
+        Effect.gen(function* () {
+          const { routes } = yield* GrpcServerProtocol.make({
+            registry: new Map([[unaryEntry.tag, unaryEntry]]),
+            handlers: new Map<string, GrpcServerProtocol.GrpcHandler>([
+              [
+                unaryEntry.tag,
+                {
+                  kind: "unary",
+                  handler: () =>
+                    Effect.fail(GrpcStatusError.notFound("missing")),
+                },
+              ],
+            ]),
+          });
+          const implementation = captureImplementation(routes);
 
-            yield* protocol
-              .run((clientId, data) =>
-                data._tag === "Request"
-                  ? protocol.send(
-                      clientId,
-                      failureExit(data.id, GrpcStatusError.notFound("missing")),
-                    )
-                  : Effect.void,
-              )
-              .pipe(Effect.forkScoped);
-
-            const error = yield* Effect.promise(async () => {
-              try {
-                await (
-                  implementation.get as (
-                    request: unknown,
-                    context: HandlerContext,
-                  ) => Promise<unknown>
-                )({}, handlerContext());
-              } catch (cause) {
-                return cause;
-              }
-              throw new Error("Expected unary handler to fail");
-            });
-            const metrics = yield* Metric.snapshot;
-            return { error, metrics };
-          }),
-        ),
+          const error = yield* Effect.promise(async () => {
+            try {
+              await (
+                implementation.get as (
+                  request: unknown,
+                  context: HandlerContext,
+                ) => Promise<unknown>
+              )({}, handlerContext());
+            } catch (cause) {
+              return cause;
+            }
+            throw new Error("Expected unary handler to fail");
+          });
+          const metrics = yield* Metric.snapshot;
+          return { error, metrics };
+        }),
       ),
     );
 
@@ -722,41 +762,37 @@ describe("server telemetry", () => {
 
     const result = await Effect.runPromise(
       telemetry.provide(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const { protocol, routes } = yield* GrpcServerProtocol.make({
-              registry: new Map([[unaryEntry.tag, unaryEntry]]),
-            });
-            const implementation = captureImplementation(routes);
+        Effect.gen(function* () {
+          const { routes } = yield* GrpcServerProtocol.make({
+            registry: new Map([[unaryEntry.tag, unaryEntry]]),
+            handlers: new Map<string, GrpcServerProtocol.GrpcHandler>([
+              [
+                unaryEntry.tag,
+                {
+                  kind: "unary",
+                  handler: () => Effect.fail(GrpcStatusError.internal("boom")),
+                },
+              ],
+            ]),
+          });
+          const implementation = captureImplementation(routes);
 
-            yield* protocol
-              .run((clientId, data) =>
-                data._tag === "Request"
-                  ? protocol.send(
-                      clientId,
-                      failureExit(data.id, GrpcStatusError.internal("boom")),
-                    )
-                  : Effect.void,
-              )
-              .pipe(Effect.forkScoped);
-
-            const error = yield* Effect.promise(async () => {
-              try {
-                await (
-                  implementation.get as (
-                    request: unknown,
-                    context: HandlerContext,
-                  ) => Promise<unknown>
-                )({}, handlerContext());
-              } catch (cause) {
-                return cause;
-              }
-              throw new Error("Expected unary handler to fail");
-            });
-            const metrics = yield* Metric.snapshot;
-            return { error, metrics };
-          }),
-        ),
+          const error = yield* Effect.promise(async () => {
+            try {
+              await (
+                implementation.get as (
+                  request: unknown,
+                  context: HandlerContext,
+                ) => Promise<unknown>
+              )({}, handlerContext());
+            } catch (cause) {
+              return cause;
+            }
+            throw new Error("Expected unary handler to fail");
+          });
+          const metrics = yield* Metric.snapshot;
+          return { error, metrics };
+        }),
       ),
     );
 
@@ -783,55 +819,50 @@ describe("server telemetry", () => {
 
     const result = await Effect.runPromise(
       telemetry.provide(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const { routes } = yield* GrpcServerProtocol.make({
-              registry: new Map([[bidiStreamingEntry.tag, bidiStreamingEntry]]),
-              streamingHandlers: new Map<
-                string,
-                GrpcServerProtocol.GrpcStreamingHandler
-              >([
-                [
-                  bidiStreamingEntry.tag,
-                  {
-                    kind: "bidi-streaming",
-                    handler: (requests) =>
-                      Stream.mapEffect(requests, (request) =>
-                        (request as { readonly id: string }).id === "boom"
-                          ? Effect.fail(GrpcStatusError.notFound("boom"))
-                          : Effect.succeed(request),
-                      ),
-                  },
-                ],
-              ]),
-            });
-            const implementation = captureImplementation(routes);
+        Effect.gen(function* () {
+          const { routes } = yield* GrpcServerProtocol.make({
+            registry: new Map([[bidiStreamingEntry.tag, bidiStreamingEntry]]),
+            handlers: new Map<string, GrpcServerProtocol.GrpcHandler>([
+              [
+                bidiStreamingEntry.tag,
+                {
+                  kind: "bidi-streaming",
+                  handler: (requests) =>
+                    Stream.mapEffect(requests, (request) =>
+                      (request as { readonly id: string }).id === "boom"
+                        ? Effect.fail(GrpcStatusError.notFound("boom"))
+                        : Effect.succeed(request),
+                    ),
+                },
+              ],
+            ]),
+          });
+          const implementation = captureImplementation(routes);
 
-            const error = yield* Effect.promise(async () => {
-              try {
-                for await (const value of (
-                  implementation.chat as (
-                    request: AsyncIterable<unknown>,
-                    context: HandlerContext,
-                  ) => AsyncIterable<unknown>
-                )(
-                  (async function* () {
-                    yield { id: "1" };
-                    yield { id: "boom" };
-                  })(),
-                  handlerContext(incomingHeaders),
-                )) {
-                  void value;
-                }
-              } catch (cause) {
-                return GrpcStatusError.fromConnectError(cause);
+          const error = yield* Effect.promise(async () => {
+            try {
+              for await (const value of (
+                implementation.chat as (
+                  request: AsyncIterable<unknown>,
+                  context: HandlerContext,
+                ) => AsyncIterable<unknown>
+              )(
+                (async function* () {
+                  yield { id: "1" };
+                  yield { id: "boom" };
+                })(),
+                handlerContext(incomingHeaders),
+              )) {
+                void value;
               }
-              throw new Error("Expected bidi handler failure");
-            });
-            const metrics = yield* Metric.snapshot;
-            return { error, metrics };
-          }),
-        ),
+            } catch (cause) {
+              return GrpcStatusError.fromConnectError(cause);
+            }
+            throw new Error("Expected bidi handler failure");
+          });
+          const metrics = yield* Metric.snapshot;
+          return { error, metrics };
+        }),
       ),
     );
 

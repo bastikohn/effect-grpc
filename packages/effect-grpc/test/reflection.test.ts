@@ -318,10 +318,7 @@ const withReflectionServer = (
             ...GrpcHealth.HealthGrpcRegistry,
             ...reflection.registry,
           ]),
-          streamingHandlers: Context.get(
-            context,
-            GrpcServerProtocol.GrpcStreamingHandlers,
-          ),
+          handlers: Context.get(context, GrpcServerProtocol.GrpcHandlers),
         });
 
         const implementation = captureImplementations(routes)[serviceTypeName];

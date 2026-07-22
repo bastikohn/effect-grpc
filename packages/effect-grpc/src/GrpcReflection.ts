@@ -3,7 +3,6 @@ import { toBinary } from "@bufbuild/protobuf";
 import { base64Decode, base64Encode } from "@bufbuild/protobuf/wire";
 import { FileDescriptorProtoSchema } from "@bufbuild/protobuf/wkt";
 import { Context, Effect, Layer, Schema, Stream } from "effect";
-import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 
 import type * as CodegenSupport from "./CodegenSupport.js";
 import * as GrpcInvoker from "./GrpcInvoker.js";
@@ -546,11 +545,8 @@ export const service = (
       respond(index, request as ServerReflectionRequest),
     );
   return {
-    // The only method is bidi-streaming, which bypasses Effect RPC, so the
-    // group is empty; the cast bridges RpcGroup's invariance on `never`.
-    group: RpcGroup.make() as unknown as RpcGroup.RpcGroup<any>,
     registry: ReflectionGrpcRegistry,
-    handlers: GrpcServerProtocol.streamingHandlersLayer({
+    handlers: GrpcServerProtocol.handlersLayer({
       [ReflectionV1Tag]: { kind: "bidi-streaming", handler },
       [ReflectionV1AlphaTag]: { kind: "bidi-streaming", handler },
     }),

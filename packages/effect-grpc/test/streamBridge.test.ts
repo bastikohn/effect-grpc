@@ -79,6 +79,36 @@ describe("requestPump", () => {
     expect(finalized).toBe(1);
   });
 
+  // Regression pin: Effect's AsyncIterable bridge abandons an in-flight pull
+  // on return() without interrupting it. The pump must own its pull fibers so
+  // ending a call interrupts the user's request stream — otherwise the pull
+  // (and its interrupt cleanup) leaks for every call that ends while the
+  // stream awaits its next element, the normal state for a bidi stream.
+  it("interrupts an in-flight request pull before close resolves", async () => {
+    let interrupted = 0;
+    const pump = StreamBridge.requestPump(
+      Stream.fromEffect(
+        Effect.never.pipe(
+          Effect.onInterrupt(() =>
+            Effect.sync(() => {
+              interrupted += 1;
+            }),
+          ),
+        ),
+      ),
+      Context.empty(),
+      noop,
+    );
+
+    const iterator = pump.iterable[Symbol.asyncIterator]();
+    const pending = iterator.next();
+    await tick();
+    await pump.close();
+
+    expect(interrupted).toBe(1);
+    await expect(pending).resolves.toEqual({ done: true, value: undefined });
+  });
+
   it("close resolves even when stream cleanup fails", async () => {
     const pump = StreamBridge.requestPump(
       Stream.make(1).pipe(
@@ -227,6 +257,40 @@ describe("requestStream", () => {
     );
 
     expect(error).toEqual({ mapped: boom });
+  });
+
+  // Regression pin: connect's request iterable strictly queues a `return()`
+  // issued while a `next()` is pending until that pull settles. A handler
+  // tearing down its consumption mid-pull (timeout, race) with an idle client
+  // must not await that queued cleanup — before the fix the teardown (and the
+  // whole call) hung until the client sent a message or went away.
+  it("does not block teardown on a return() queued behind a pending pull", async () => {
+    const controller = new AbortController();
+    let returned = 0;
+    const requests: AsyncIterable<unknown> = {
+      [Symbol.asyncIterator]: () => ({
+        next: () => new Promise<IteratorResult<unknown>>(() => {}),
+        return: () => {
+          returned += 1;
+          return new Promise<IteratorResult<unknown>>(() => {});
+        },
+      }),
+    };
+
+    const result = await Effect.runPromise(
+      Stream.runDrain(
+        StreamBridge.requestStream(options(requests, controller.signal)),
+      ).pipe(
+        Effect.timeoutOrElse({
+          duration: 100,
+          orElse: () => Effect.succeed("teardown completed"),
+        }),
+      ),
+    );
+
+    expect(result).toBe("teardown completed");
+    // The cleanup is still issued — just not awaited.
+    expect(returned).toBe(1);
   });
 });
 

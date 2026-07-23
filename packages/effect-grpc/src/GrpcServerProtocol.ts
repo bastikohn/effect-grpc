@@ -1,4 +1,9 @@
-import type { ConnectRouter, HandlerContext } from "@connectrpc/connect";
+import {
+  Code,
+  ConnectError,
+  type ConnectRouter,
+  type HandlerContext,
+} from "@connectrpc/connect";
 import {
   Cause,
   Context,
@@ -163,8 +168,8 @@ export const make = (
      * one server span, semconv status recording, and non-server-fault
      * failures carried as values so the span closes cleanly before the error
      * reaches connect. The connect `signal` interrupts only the handler body
-     * (raced against {@link abortCancelled}), never the surrounding spanned
-     * effect: a client abort must record its `cancelled` status while the
+     * (raced against {@link abortFailure}), never the surrounding spanned
+     * effect: a signal abort must record its status while the
      * span is still open — exporters serialize a span when it ends, so
      * attributes written after an interrupt-torn span end are lost.
      */
@@ -187,7 +192,7 @@ export const make = (
             record = recordStatus;
             const result = yield* Effect.raceFirst(
               body(CodegenSupport.serverContext(headers)),
-              abortCancelled(handlerContext.signal),
+              abortFailure(handlerContext.signal),
             ).pipe(Effect.exit);
             if (result._tag === "Failure") {
               const error = causeError(result.cause);
@@ -287,6 +292,17 @@ export const make = (
         handlerContext.signal,
       );
 
+      // Records the status of a signal-aborted or abandoned call: a deadline
+      // expiry is a server fault and must also end the span in an error
+      // state, while a client cancellation closes it cleanly.
+      const recordAbort = () => {
+        const error = abortError(handlerContext.signal);
+        recordStatus(error.code);
+        if (GrpcTracing.isServerError(error.code)) {
+          spanExit = Exit.fail(error);
+        }
+      };
+
       try {
         while (true) {
           const next = await pump.next();
@@ -294,7 +310,11 @@ export const make = (
           yield next.value;
         }
         completed = true;
-        recordStatus(handlerContext.signal.aborted ? "cancelled" : "ok");
+        if (handlerContext.signal.aborted) {
+          recordAbort();
+        } else {
+          recordStatus("ok");
+        }
       } catch (cause) {
         completed = true;
         // The pump surfaces the handler stream's real `Cause` so the shared
@@ -314,7 +334,7 @@ export const make = (
         throw GrpcStatusError.toConnectError(error);
       } finally {
         if (!completed) {
-          recordStatus("cancelled");
+          recordAbort();
         }
         try {
           await pump.close();
@@ -443,24 +463,40 @@ const decodedRequestStream = (
     requests,
     signal,
     onError: (cause) => GrpcStatusError.fromConnectError(cause),
-    onCancelled: () => GrpcStatusError.cancelled("RPC cancelled"),
+    onCancelled: () => abortError(signal),
   }).pipe(
     Stream.mapEffect((message) => MethodRegistry.decodeRequest(entry, message)),
   );
 
 /**
- * Fails with `cancelled` when the connect signal aborts, and never otherwise.
- * Raced against the handler body in `handleEffectCall` so a client abort
- * interrupts only the body fiber: the surrounding spanned effect survives to
- * record the `cancelled` status while the span is still open and to close the
- * span cleanly instead of tearing it down with an interrupt.
+ * The gRPC status for an aborted connect signal. connect-node enforces the
+ * incoming `grpc-timeout` by aborting the handler signal with a
+ * `deadline_exceeded` `ConnectError` as the abort reason; any other abort is
+ * a client cancellation.
  */
-const abortCancelled = (
+const abortError = (
+  signal: AbortSignal,
+  cause?: unknown,
+): GrpcStatusError.GrpcStatusError => {
+  const reason: unknown = signal.reason;
+  return reason instanceof ConnectError && reason.code === Code.DeadlineExceeded
+    ? GrpcStatusError.deadlineExceeded("RPC deadline exceeded", cause ?? reason)
+    : GrpcStatusError.cancelled("RPC cancelled", cause);
+};
+
+/**
+ * Fails with the signal's abort status ({@link abortError}) when the connect
+ * signal aborts, and never otherwise. Raced against the handler body in
+ * `handleEffectCall` so a signal abort interrupts only the body fiber: the
+ * surrounding spanned effect survives to record the status while the span is
+ * still open and to close the span with the right exit instead of tearing it
+ * down with an interrupt.
+ */
+const abortFailure = (
   signal: AbortSignal,
 ): Effect.Effect<never, GrpcStatusError.GrpcStatusError> =>
   Effect.callback((resume) => {
-    const onAbort = () =>
-      resume(Effect.fail(GrpcStatusError.cancelled("RPC cancelled")));
+    const onAbort = () => resume(Effect.fail(abortError(signal)));
     if (signal.aborted) {
       onAbort();
       return;
@@ -498,7 +534,7 @@ const rejectionError = (
   cause instanceof GrpcStatusError.GrpcStatusError
     ? cause
     : signal.aborted
-      ? GrpcStatusError.cancelled("RPC cancelled", cause)
+      ? abortError(signal, cause)
       : GrpcStatusError.internal("RPC handler defect", cause);
 
 const missingImplementation = (entry: GrpcMethodEntry) => {

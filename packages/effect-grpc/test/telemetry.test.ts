@@ -1288,6 +1288,144 @@ describe("server telemetry", () => {
       "error.type": "INTERNAL",
     });
   });
+
+  // connect-node enforces the incoming `grpc-timeout` by aborting the handler
+  // signal with a deadline_exceeded ConnectError as the abort reason, while a
+  // plain client cancel carries no such reason. Regression pins: the server
+  // must surface DEADLINE_EXCEEDED — a server-fault status per the repo's
+  // semconv subset — instead of collapsing every abort into CANCELLED.
+  const deadlineAbort = () => {
+    const controller = new AbortController();
+    const expire = () =>
+      controller.abort(
+        new ConnectError("the operation timed out", Code.DeadlineExceeded),
+      );
+    return { signal: controller.signal, expire };
+  };
+
+  it("records DEADLINE_EXCEEDED when connect's deadline aborts a unary call", async () => {
+    const telemetry = makeTestTelemetry();
+
+    const result = await Effect.runPromise(
+      telemetry.provide(
+        Effect.gen(function* () {
+          const { routes } = yield* GrpcServerProtocol.make({
+            registry: new Map([[unaryEntry.tag, unaryEntry]]),
+            handlers: new Map<string, GrpcServerProtocol.GrpcHandler>([
+              [unaryEntry.tag, { kind: "unary", handler: () => Effect.never }],
+            ]),
+          });
+          const implementation = captureImplementation(routes);
+          const { signal, expire } = deadlineAbort();
+
+          const error = yield* Effect.promise(async () => {
+            const pending = (
+              implementation.get as (
+                request: unknown,
+                context: HandlerContext,
+              ) => Promise<unknown>
+            )({}, handlerContext(undefined, signal));
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            expire();
+            try {
+              await pending;
+            } catch (cause) {
+              return GrpcStatusError.fromConnectError(cause);
+            }
+            throw new Error("Expected the deadline expiry to fail the call");
+          });
+          const metrics = yield* Metric.snapshot;
+          return { error, metrics };
+        }),
+      ),
+    );
+
+    expect(result.error).toMatchObject({ code: "deadline_exceeded" });
+    const span = telemetry.expectSpan(unaryEntry.tag);
+    const end = telemetry.endState(span);
+    expect(end.attributesAtEnd.get("rpc.response.status_code")).toBe(
+      "DEADLINE_EXCEEDED",
+    );
+    expect(end.attributesAtEnd.get("error.type")).toBe("DEADLINE_EXCEEDED");
+    expect(end.attributesAfterEnd).toEqual([]);
+    // deadline_exceeded is a server fault: the span ends in an error state.
+    expect(spanEndExit(span)._tag).toBe("Failure");
+
+    const durations = durationMetrics(
+      result.metrics,
+      "rpc.server.call.duration",
+    );
+    expect(durations).toHaveLength(1);
+    expect(durations[0]?.attributes).toMatchObject({
+      "rpc.method": "demo.v1.TelemetryService/Get",
+      "rpc.response.status_code": "DEADLINE_EXCEEDED",
+      "error.type": "DEADLINE_EXCEEDED",
+    });
+  });
+
+  it("records DEADLINE_EXCEEDED when connect's deadline aborts a server stream", async () => {
+    const telemetry = makeTestTelemetry();
+
+    const result = await Effect.runPromise(
+      telemetry.provide(
+        Effect.gen(function* () {
+          const { routes } = yield* GrpcServerProtocol.make({
+            registry: new Map([
+              [serverStreamingEntry.tag, serverStreamingEntry],
+            ]),
+            handlers: new Map<string, GrpcServerProtocol.GrpcHandler>([
+              [
+                serverStreamingEntry.tag,
+                { kind: "server-streaming", handler: () => Stream.never },
+              ],
+            ]),
+          });
+          const implementation = captureImplementation(routes);
+          const { signal, expire } = deadlineAbort();
+          setTimeout(expire, 10);
+
+          // On expiry the pump closes the handler and the generator ends
+          // cleanly — connect itself writes the deadline trailer.
+          const received = yield* Effect.promise(async () => {
+            const values: Array<unknown> = [];
+            for await (const value of (
+              implementation.watch as (
+                request: unknown,
+                context: HandlerContext,
+              ) => AsyncIterable<unknown>
+            )({}, handlerContext(undefined, signal))) {
+              values.push(value);
+            }
+            return values;
+          });
+          const metrics = yield* Metric.snapshot;
+          return { received, metrics };
+        }),
+      ),
+    );
+
+    expect(result.received).toEqual([]);
+    const span = telemetry.expectSpan(serverStreamingEntry.tag);
+    const end = telemetry.endState(span);
+    expect(end.attributesAtEnd.get("rpc.response.status_code")).toBe(
+      "DEADLINE_EXCEEDED",
+    );
+    expect(end.attributesAtEnd.get("error.type")).toBe("DEADLINE_EXCEEDED");
+    expect(end.attributesAfterEnd).toEqual([]);
+    // deadline_exceeded is a server fault: the span ends in an error state.
+    expect(spanEndExit(span)._tag).toBe("Failure");
+
+    const durations = durationMetrics(
+      result.metrics,
+      "rpc.server.call.duration",
+    );
+    expect(durations).toHaveLength(1);
+    expect(durations[0]?.attributes).toMatchObject({
+      "rpc.method": "demo.v1.TelemetryService/Watch",
+      "rpc.response.status_code": "DEADLINE_EXCEEDED",
+      "error.type": "DEADLINE_EXCEEDED",
+    });
+  });
 });
 
 describe("tracestate decoding", () => {

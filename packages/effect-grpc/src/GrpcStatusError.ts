@@ -59,6 +59,9 @@ export const unimplemented = (message: string) =>
 export const cancelled = (message: string, cause?: unknown) =>
   make({ code: "cancelled", message, cause });
 
+export const deadlineExceeded = (message: string, cause?: unknown) =>
+  make({ code: "deadline_exceeded", message, cause });
+
 export const fromConnectError = (cause: unknown): GrpcStatusError => {
   const error = ConnectError.from(cause);
   return make({

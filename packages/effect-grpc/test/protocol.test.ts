@@ -496,6 +496,59 @@ describe("GrpcServerProtocol streaming bridge", () => {
     expect(result).toEqual({ items: [{ id: "1" }, { id: "2" }] });
   });
 
+  // Regression pin for the request-stream teardown hang: connect's request
+  // iterable queues a `return()` issued while a `next()` is pending until
+  // that pull settles. A handler that stops consuming mid-pull (here via
+  // `Effect.timeoutOrElse`) while the client is connected but idle must still
+  // complete — before the fix the call never settled and the server could not
+  // enforce its own timeout.
+  it("lets a handler abandon the request stream mid-pull while the client is idle", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const { routes } = yield* GrpcServerProtocol.make({
+          registry: new Map([[clientStreamingEntry.tag, clientStreamingEntry]]),
+          handlers: handlers(clientStreamingEntry.tag, {
+            kind: "client-streaming",
+            handler: (requests) =>
+              Stream.runDrain(requests).pipe(
+                Effect.as({ drained: true }),
+                Effect.timeoutOrElse({
+                  duration: 50,
+                  orElse: () => Effect.succeed({ timedOut: true }),
+                }),
+              ),
+          }),
+        });
+        const implementation = captureUnaryImplementation(routes);
+
+        // connect's strict-queueing semantics for an idle client: the first
+        // message arrives, the next pull stays pending forever, and a
+        // return() issued behind it never settles.
+        const idleRequests: AsyncIterable<unknown> = {
+          [Symbol.asyncIterator]: () => {
+            let first = true;
+            return {
+              next: () => {
+                if (first) {
+                  first = false;
+                  return Promise.resolve({ done: false, value: { id: "1" } });
+                }
+                return new Promise<IteratorResult<unknown>>(() => {});
+              },
+              return: () => new Promise<IteratorResult<unknown>>(() => {}),
+            };
+          },
+        };
+
+        return yield* Effect.promise(() =>
+          implementation.upload(idleRequests as never, handlerContext()),
+        );
+      }),
+    );
+
+    expect(result).toEqual({ timedOut: true });
+  });
+
   it("bridges bidi streams and maps mid-stream handler failures", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {

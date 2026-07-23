@@ -73,27 +73,17 @@ export const requestPump = (
   abortCall: () => void,
 ): RequestPump => {
   let failure: SourceFailure | undefined;
-  const iterator = Stream.toAsyncIterableWith(requests, context)[
-    Symbol.asyncIterator
-  ]();
-  const next = async (): Promise<IteratorResult<unknown>> => {
-    try {
-      return await iterator.next();
-    } catch (error) {
-      // gRPC has no channel for client-side failures other than cancelling
-      // the call: remember the original error so the caller sees it while
-      // the server observes `cancelled`.
-      failure ??= { error };
-      abortCall();
-      throw error;
-    }
-  };
+  const pull = ownedPull(requests, context, (cause) => {
+    // gRPC has no channel for client-side failures other than cancelling
+    // the call: remember the original error so the caller sees it while
+    // the server observes `cancelled`.
+    const error: unknown = Cause.squash(cause);
+    failure ??= { error };
+    abortCall();
+    throw error;
+  });
   const close = async (): Promise<IteratorResult<unknown>> => {
-    try {
-      await iterator.return?.(undefined as never);
-    } catch {
-      // Cleanup only; the call outcome is already determined.
-    }
+    await pull.close();
     return { done: true, value: undefined };
   };
   return {
@@ -101,10 +91,14 @@ export const requestPump = (
       // connect aborts the request stream via `throw`; resolving done
       // reports clean completion while the underlying stream is interrupted
       // by the iterator close.
-      [Symbol.asyncIterator]: () => ({ next, return: close, throw: close }),
+      [Symbol.asyncIterator]: () => ({
+        next: pull.next,
+        return: close,
+        throw: close,
+      }),
     },
     close: async () => {
-      await close();
+      await pull.close();
     },
     failure: () => failure,
   };
@@ -136,7 +130,10 @@ export const requestStream = <E>(options: {
   readonly onError: (cause: unknown) => E;
   readonly onCancelled: () => E;
 }): Stream.Stream<unknown, E> =>
-  Stream.fromAsyncIterable(options.requests, options.onError).pipe(
+  Stream.fromAsyncIterable(
+    detachedCleanup(options.requests),
+    options.onError,
+  ).pipe(
     // connect-node surfaces a client cancellation as a clean end of the
     // request iterable plus an aborted handler signal; distinguish it from a
     // half-close so handlers do not treat a truncated stream as complete.
@@ -148,6 +145,35 @@ export const requestStream = <E>(options: {
       ),
     ),
   );
+
+/**
+ * connect's request iterable strictly queues a `return()` issued while a
+ * `next()` is pending until that pull settles — but a handler that stops
+ * consuming mid-pull (timeout, race) tears the stream down exactly then, and
+ * awaiting the queued cleanup would block the handler's interruption (and
+ * with it the whole call) until the client sends another message or goes
+ * away. Issue the cleanup without awaiting it: the abandoned pull belongs to
+ * connect's own call teardown.
+ */
+const detachedCleanup = (
+  iterable: AsyncIterable<unknown>,
+): AsyncIterable<unknown> => ({
+  [Symbol.asyncIterator]: () => {
+    const iterator = iterable[Symbol.asyncIterator]();
+    return {
+      next: () => iterator.next(),
+      return: () => {
+        void Promise.resolve(iterator.return?.(undefined)).catch(
+          () => undefined,
+        );
+        return Promise.resolve<IteratorResult<unknown>>({
+          done: true,
+          value: undefined,
+        });
+      },
+    };
+  },
+});
 
 /**
  * Server response side: pumps a handler's Effect `Stream` into the iterator
@@ -173,9 +199,44 @@ export const responsePump = (
   context: Context.Context<never>,
   signal: AbortSignal,
 ): ResponsePump => {
+  const pull = ownedPull(responses, context, (cause) => {
+    throw new PumpFailure(cause);
+  });
+  const close = (): Promise<void> => {
+    signal.removeEventListener("abort", onAbort);
+    return pull.close();
+  };
+  const onAbort = () => {
+    void close();
+  };
+
+  if (signal.aborted) {
+    void close();
+  } else {
+    signal.addEventListener("abort", onAbort, { once: true });
+  }
+  return { next: pull.next, close };
+};
+
+/**
+ * The pull machine under both pumps. Effect's own AsyncIterable bridge hides
+ * its pull fibers and abandons a pull in flight on return(), so own the pull:
+ * spawn each one in an owned scope and retain the active fiber until it
+ * completes or close() interrupts it — teardown must reach into the stream
+ * (its finalizers, its interrupt cleanup), not walk away from it.
+ *
+ * A failed pull is delegated to `onFailure`, which must throw; after close(),
+ * `next()` reports a clean end.
+ */
+const ownedPull = (
+  stream: Stream.Stream<unknown, unknown>,
+  context: Context.Context<never>,
+  onFailure: (cause: Cause.Cause<unknown>) => never,
+): {
+  readonly next: () => Promise<IteratorResult<unknown>>;
+  readonly close: () => Promise<void>;
+} => {
   const done: IteratorResult<unknown> = { done: true, value: undefined };
-  // Effect's AsyncIterable bridge hides its pull fibers, so own the pull and
-  // retain each fiber until it completes or close() interrupts it.
   const scope = Scope.makeUnsafe();
   const runFork = Effect.runForkWith(Context.add(context, Scope.Scope, scope));
   let active: Fiber.Fiber<unknown, unknown> | undefined;
@@ -197,7 +258,6 @@ export const responsePump = (
   const close = (): Promise<void> => {
     if (closing) return closing;
     closed = true;
-    signal.removeEventListener("abort", onAbort);
     const fiber = active;
     closing = (async () => {
       if (fiber) await Effect.runPromise(Fiber.interrupt(fiber));
@@ -205,15 +265,7 @@ export const responsePump = (
     })().catch(() => undefined);
     return closing;
   };
-  const onAbort = () => {
-    void close();
-  };
 
-  if (signal.aborted) {
-    void close();
-  } else {
-    signal.addEventListener("abort", onAbort, { once: true });
-  }
   return {
     next: async () => {
       if (closed) return done;
@@ -223,11 +275,9 @@ export const responsePump = (
         current = undefined;
       }
       if (!pull) {
-        const initialized = await run(Stream.toPull(responses));
+        const initialized = await run(Stream.toPull(stream));
         if (closed) return done;
-        if (Exit.isFailure(initialized)) {
-          throw new PumpFailure(initialized.cause);
-        }
+        if (Exit.isFailure(initialized)) return onFailure(initialized.cause);
         pull = initialized.value;
       }
       const exit = await run(pull);
@@ -237,7 +287,7 @@ export const responsePump = (
         return current.next();
       }
       if (Pull.isDoneCause(exit.cause)) return done;
-      throw new PumpFailure(exit.cause);
+      return onFailure(exit.cause);
     },
     close,
   };

@@ -11,6 +11,7 @@ import {
   Effect,
   Exit,
   Fiber,
+  Layer,
   Metric,
   Option,
   Schema,
@@ -1114,6 +1115,179 @@ describe("server telemetry", () => {
     expect(durations[0]?.attributes?.["error.type"]).toBeUndefined();
     expect(durations[0]?.count).toBe(1);
   });
+
+  // Regression pin for `handlersLayer`: the layer captures the whole
+  // build-time context, and before the fix it was provided *over* the
+  // per-call context — a handler built under a startup span then observed
+  // that (already ended) span instead of the gRPC server span, breaking
+  // child-span parenting and incoming trace propagation.
+  it("keeps request-local tracing over build-time context captured by handlersLayer", async () => {
+    const telemetry = makeTestTelemetry();
+
+    const result = await Effect.runPromise(
+      telemetry.provide(
+        Effect.gen(function* () {
+          // Build the handlers layer the way `serveAll` does during startup:
+          // under an ambient (bootstrap) span, with a build-time dependency.
+          const handlersContext = yield* Layer.build(
+            GrpcServerProtocol.handlersLayer({
+              [unaryEntry.tag]: {
+                kind: "unary",
+                handler: () =>
+                  Effect.gen(function* () {
+                    const dep = yield* Effect.service(BuildDep);
+                    yield* Effect.void.pipe(
+                      Effect.withSpan("handler-child-unary"),
+                    );
+                    return { origin: dep.origin };
+                  }),
+              },
+              [serverStreamingEntry.tag]: {
+                kind: "server-streaming",
+                handler: () =>
+                  Stream.fromEffect(
+                    Effect.void.pipe(
+                      Effect.withSpan("handler-child-stream"),
+                      Effect.as({ ok: true }),
+                    ),
+                  ),
+              },
+            }),
+          ).pipe(
+            Effect.scoped,
+            Effect.withSpan("bootstrap"),
+            Effect.provideService(BuildDep, { origin: "build" }),
+          );
+
+          const { routes } = yield* GrpcServerProtocol.make({
+            registry: new Map([
+              [unaryEntry.tag, unaryEntry],
+              [serverStreamingEntry.tag, serverStreamingEntry],
+            ]),
+            handlers: Context.get(
+              handlersContext,
+              GrpcServerProtocol.GrpcHandlers,
+            ),
+          });
+          const implementation = captureImplementation(routes);
+
+          const unaryResponse = yield* Effect.promise(() =>
+            (
+              implementation.get as (
+                request: unknown,
+                context: HandlerContext,
+              ) => Promise<unknown>
+            )({}, handlerContext(incomingHeaders)),
+          );
+          yield* Effect.promise(async () => {
+            for await (const value of (
+              implementation.watch as (
+                request: unknown,
+                context: HandlerContext,
+              ) => AsyncIterable<unknown>
+            )({}, handlerContext(incomingHeaders))) {
+              void value;
+            }
+          });
+          return unaryResponse;
+        }),
+      ),
+    );
+
+    // The build-time dependency must still resolve for the handler...
+    expect(result).toEqual({ origin: "build" });
+    // ...while spans created by the handler parent to the per-call server
+    // span on the incoming trace, not to the bootstrap span.
+    const unaryServerSpan = telemetry.expectSpan(unaryEntry.tag);
+    const unaryChild = telemetry.expectSpan("handler-child-unary");
+    expect(unaryChild.traceId).toBe(traceId);
+    expect(Option.getOrThrow(unaryChild.parent).spanId).toBe(
+      unaryServerSpan.spanId,
+    );
+
+    const streamServerSpan = telemetry.expectSpan(serverStreamingEntry.tag);
+    const streamChild = telemetry.expectSpan("handler-child-stream");
+    expect(streamChild.traceId).toBe(traceId);
+    expect(Option.getOrThrow(streamChild.parent).spanId).toBe(
+      streamServerSpan.spanId,
+    );
+  });
+
+  // Regression pin for the stream-call boundary: the bidi adapter invokes
+  // user handler code eagerly, so a synchronous throw used to escape before
+  // the try/finally that closes the span scope — surfacing as UNKNOWN to the
+  // client and leaking the server span.
+  it("maps a synchronously throwing bidi handler to INTERNAL and still closes the span", async () => {
+    const telemetry = makeTestTelemetry();
+
+    const result = await Effect.runPromise(
+      telemetry.provide(
+        Effect.gen(function* () {
+          const { routes } = yield* GrpcServerProtocol.make({
+            registry: new Map([[bidiStreamingEntry.tag, bidiStreamingEntry]]),
+            handlers: new Map<string, GrpcServerProtocol.GrpcHandler>([
+              [
+                bidiStreamingEntry.tag,
+                {
+                  kind: "bidi-streaming",
+                  handler: () => {
+                    throw new Error("sync defect");
+                  },
+                },
+              ],
+            ]),
+          });
+          const implementation = captureImplementation(routes);
+
+          const error = yield* Effect.promise(async () => {
+            try {
+              for await (const value of (
+                implementation.chat as (
+                  requests: AsyncIterable<unknown>,
+                  context: HandlerContext,
+                ) => AsyncIterable<unknown>
+              )(
+                (async function* () {
+                  yield { id: "1" };
+                })(),
+                handlerContext(),
+              )) {
+                void value;
+              }
+            } catch (cause) {
+              return GrpcStatusError.fromConnectError(cause);
+            }
+            throw new Error("Expected the throwing bidi handler to fail");
+          });
+          const metrics = yield* Metric.snapshot;
+          return { error, metrics };
+        }),
+      ),
+    );
+
+    expect(result.error).toMatchObject({ code: "internal" });
+    const span = telemetry.expectSpan(bidiStreamingEntry.tag);
+    // `endState` throws when the span never ended (the leaked-scope case).
+    const end = telemetry.endState(span);
+    expect(end.attributesAtEnd.get("rpc.response.status_code")).toBe(
+      "INTERNAL",
+    );
+    expect(end.attributesAtEnd.get("error.type")).toBe("INTERNAL");
+    expect(end.attributesAfterEnd).toEqual([]);
+    // A server-fault code ends the span in an error state.
+    expect(spanEndExit(span)._tag).toBe("Failure");
+
+    const durations = durationMetrics(
+      result.metrics,
+      "rpc.server.call.duration",
+    );
+    expect(durations).toHaveLength(1);
+    expect(durations[0]?.attributes).toMatchObject({
+      "rpc.method": "demo.v1.TelemetryService/Chat",
+      "rpc.response.status_code": "INTERNAL",
+      "error.type": "INTERNAL",
+    });
+  });
 });
 
 describe("tracestate decoding", () => {
@@ -1319,6 +1493,11 @@ const clientLayer = (transport: Transport) =>
     transport,
     serverAddress: new URL("http://api.example.com:8443"),
   });
+
+/** Build-time handler dependency for the `handlersLayer` regression test. */
+const BuildDep = Context.Service<{ readonly origin: string }>(
+  "effect-grpc-test/BuildDep",
+);
 
 const testService = {
   typeName: "demo.v1.TelemetryService",

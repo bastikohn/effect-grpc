@@ -87,7 +87,8 @@ export const GrpcHandlers = Context.Service<GrpcHandlers>(
 /**
  * Builds the layer generated `*HandlersLayer` functions use to publish their
  * handlers. Captures the context so handler requirements `R` are resolved
- * where the layer is built.
+ * where the layer is built; request-local services provided per call (the
+ * server span, the incoming tracestate) take precedence over the capture.
  */
 export const handlersLayer = <R = never>(
   handlers: Record<string, GrpcHandler<R>>,
@@ -109,36 +110,36 @@ const bindHandler = <R>(
   entry: GrpcHandler<R>,
   context: Context.Context<R>,
 ): GrpcHandler => {
+  // The captured context carries the whole ambient build-time context, not
+  // just `R` — merge it *beneath* the per-call context so request-local
+  // services (the server span, the incoming tracestate) stay authoritative
+  // over whatever happened to be in scope while the layer was built.
+  const merge = (callContext: Context.Context<never>) =>
+    Context.merge(context, callContext);
   switch (entry.kind) {
     case "unary":
       return {
         kind: entry.kind,
         handler: (request, serverContext) =>
-          Effect.provideContext(entry.handler(request, serverContext), context),
+          Effect.updateContext(entry.handler(request, serverContext), merge),
       };
     case "server-streaming":
       return {
         kind: entry.kind,
         handler: (request, serverContext) =>
-          Stream.provideContext(entry.handler(request, serverContext), context),
+          Stream.updateContext(entry.handler(request, serverContext), merge),
       };
     case "client-streaming":
       return {
         kind: entry.kind,
         handler: (requests, serverContext) =>
-          Effect.provideContext(
-            entry.handler(requests, serverContext),
-            context,
-          ),
+          Effect.updateContext(entry.handler(requests, serverContext), merge),
       };
     case "bidi-streaming":
       return {
         kind: entry.kind,
         handler: (requests, serverContext) =>
-          Stream.provideContext(
-            entry.handler(requests, serverContext),
-            context,
-          ),
+          Stream.updateContext(entry.handler(requests, serverContext), merge),
       };
   }
 };
@@ -261,7 +262,13 @@ export const make = (
       let spanExit: Exit.Exit<void, GrpcStatusError.GrpcStatusError> =
         Exit.void;
       let completed = false;
-      const responses = body(CodegenSupport.serverContext(headers));
+      // The stream adapters invoke user handler code eagerly, so `body` can
+      // throw synchronously. `Stream.suspend` moves that throw into the
+      // stream's cause channel, where the pump normalizes it (-> INTERNAL)
+      // and the `finally` below still closes the span scope.
+      const responses = Stream.suspend(() =>
+        body(CodegenSupport.serverContext(headers)),
+      );
       // The pump spawns the handler fiber with this context, so the scoped
       // span parents the handler's spans and the incoming `tracestate` is
       // rehydrated for downstream client calls to pick up.

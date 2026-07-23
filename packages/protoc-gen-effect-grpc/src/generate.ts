@@ -1,7 +1,6 @@
 import { analyzeFileUsage } from "./fileUsage.js";
 import { generateClient } from "./generateClient.js";
 import { generateRegistry } from "./generateRegistry.js";
-import { generateRpcs } from "./generateRpcs.js";
 import { generateSchemas } from "./generateSchemas.js";
 import { generateServer } from "./generateServer.js";
 import { effectImportPath, pbImportPath } from "./naming.js";
@@ -16,15 +15,14 @@ export const generateFile = (file: GeneratorFile): string => {
     "Schema",
     ...(usage.usesStream ? ["Stream"] : []),
   ];
-  // `Rpc`/`RpcGroup` still back the server path (`Rpc.make`/`RpcGroup.make`);
-  // the client no longer touches `RpcClient`/`RpcClientError` — it depends on
-  // the `GrpcInvoker` seam alone.
-  const rpcImports = [...(usage.hasRpcMethods ? ["Rpc"] : []), "RpcGroup"];
+  // Generated code no longer touches Effect RPC on either side: clients
+  // depend on the `GrpcInvoker` seam and servers publish their handlers
+  // through `GrpcServerProtocol.handlersLayer`.
   const effectGrpcImports = [
     "CodegenSupport",
     "GrpcInvoker",
     "GrpcMethodRegistry",
-    ...(usage.hasStreamingMethods ? ["GrpcServerProtocol"] : []),
+    "GrpcServerProtocol",
     "GrpcStatusError",
   ];
 
@@ -45,7 +43,6 @@ export const generateFile = (file: GeneratorFile): string => {
     `import { ${effectImports.join(", ")} } from "effect";`,
     ...(usage.hasServices
       ? [
-          `import { ${rpcImports.join(", ")} } from "effect/unstable/rpc";`,
           `import { ${effectGrpcImports.join(", ")} } from "@effect-grpc/effect-grpc";`,
           "import {",
           ...descriptorImports.map((item) => `  ${item},`),
@@ -74,7 +71,6 @@ export const generateFile = (file: GeneratorFile): string => {
     ]),
     "",
     ...generateSchemas(file, usage),
-    ...generateRpcs(file),
     ...generateRegistry(file, usage),
     ...generateClient(file),
     ...generateServer(file),

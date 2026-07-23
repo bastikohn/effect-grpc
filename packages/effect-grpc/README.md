@@ -3,8 +3,8 @@
 [![npm version](https://img.shields.io/npm/v/@effect-grpc/effect-grpc.svg)](https://www.npmjs.com/package/@effect-grpc/effect-grpc)
 [![license](https://img.shields.io/npm/l/@effect-grpc/effect-grpc.svg)](https://github.com/bastikohn/effect-grpc/blob/main/LICENSE)
 
-Runtime support for generated [Effect](https://effect.website) RPC-backed
-native gRPC clients and servers. Pairs with the build-time generator
+Runtime support for generated [Effect](https://effect.website)-native gRPC
+clients and servers. Pairs with the build-time generator
 [`@effect-grpc/protoc-gen-effect-grpc`](https://www.npmjs.com/package/@effect-grpc/protoc-gen-effect-grpc)
 (or the one-shot
 [`@effect-grpc/codegen`](https://www.npmjs.com/package/@effect-grpc/codegen)
@@ -21,9 +21,9 @@ pnpm add @effect-grpc/effect-grpc @bufbuild/protobuf @connectrpc/connect effect
 dependencies. This package is ESM-only and requires Node.js >= 22.
 
 > [!NOTE]
-> The current prerelease line targets `effect@4.0.0-beta.92` exactly (it builds
-> on `effect/unstable/rpc`). Install from the `next` dist-tag for Effect v4
-> betas, or `latest` for the Effect v3 line.
+> The current prerelease line targets `effect@4.0.0-beta.92` exactly (it
+> builds on unstable Effect modules). Install from the `next` dist-tag for
+> Effect v4 betas, or `latest` for the Effect v3 line.
 
 ## Quickstart
 
@@ -38,7 +38,6 @@ import { GrpcNodeServer } from "@effect-grpc/effect-grpc";
 import {
   UserServiceGrpcRegistry,
   UserServiceHandlersLayer,
-  UserServiceRpcGroup,
 } from "./generated/demo/v1/user_service_effect_grpc.js";
 
 const program = Effect.scoped(
@@ -47,7 +46,6 @@ const program = Effect.scoped(
     port: 50051,
     services: [
       {
-        group: UserServiceRpcGroup,
         registry: UserServiceGrpcRegistry,
         handlers: UserServiceHandlersLayer({
           getUser: (request) =>
@@ -90,10 +88,9 @@ const program = Effect.gen(function* () {
 
 ## Features
 
-- All four gRPC method kinds. Unary and server-streaming methods run through
-  `effect/unstable/rpc`; client-streaming and bidi-streaming methods bridge
-  `Stream` and connect iterables directly over the same transport (the Effect
-  RPC protocol has no client-to-server stream).
+- All four gRPC method kinds, bridging `Effect`/`Stream` values and connect
+  calls directly over one transport — the `GrpcInvoker` seam on the client and
+  a unified handlers map on the server.
 - TLS and mTLS on both sides: `tls` on `GrpcNodeServer.serve`/`serveAll` and on
   `GrpcClientProtocol.layer`/`makeTransport`.
 - Bearer authentication via `GrpcAuth`: a per-request `authorization` header

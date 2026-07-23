@@ -40,6 +40,17 @@ export interface SourceFailure {
 }
 
 /**
+ * Carries the `Cause` of a handler-stream failure across the promise boundary
+ * of {@link responsePump}. `next()` rejects with this wrapper instead of a
+ * squashed error so the caller can map the real cause — an interrupt-only
+ * cause (handler interrupted itself -> `cancelled`) is indistinguishable from
+ * a generic defect once squashed.
+ */
+export class PumpFailure {
+  constructor(readonly cause: Cause.Cause<unknown>) {}
+}
+
+/**
  * Client request side: pumps an Effect `Stream` into the `AsyncIterable`
  * connect consumes as the request stream of a client-streaming or
  * bidi-streaming call.
@@ -144,7 +155,10 @@ export const requestStream = <E>(options: {
  * client goes away.
  */
 export interface ResponsePump {
-  /** Pull one response; connect's generator loop drives this. */
+  /**
+   * Pull one response; connect's generator loop drives this. Rejects with a
+   * {@link PumpFailure} carrying the handler stream's `Cause` when it fails.
+   */
   readonly next: () => Promise<IteratorResult<unknown>>;
   /**
    * Removes the abort listener and closes the handler stream. Safe to call
@@ -212,7 +226,7 @@ export const responsePump = (
         const initialized = await run(Stream.toPull(responses));
         if (closed) return done;
         if (Exit.isFailure(initialized)) {
-          throw Cause.squash(initialized.cause);
+          throw new PumpFailure(initialized.cause);
         }
         pull = initialized.value;
       }
@@ -223,7 +237,7 @@ export const responsePump = (
         return current.next();
       }
       if (Pull.isDoneCause(exit.cause)) return done;
-      throw Cause.squash(exit.cause);
+      throw new PumpFailure(exit.cause);
     },
     close,
   };

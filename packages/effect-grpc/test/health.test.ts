@@ -1,6 +1,5 @@
 import type { ConnectRouter, HandlerContext } from "@connectrpc/connect";
 import { Context, Effect, Layer, Stream } from "effect";
-import * as RpcServer from "effect/unstable/rpc/RpcServer";
 import { describe, expect, it } from "vitest";
 
 import * as GrpcHealth from "../src/GrpcHealth.js";
@@ -152,7 +151,7 @@ interface HealthHarness {
 
 /**
  * Runs the real `Health` handlers behind the server protocol: handlers layer,
- * RPC server, and connect route implementation, without a TCP listener.
+ * handlers map, and connect route implementation, without a TCP listener.
  */
 const withHealthServer = <A>(
   test: (harness: HealthHarness) => Effect.Effect<A>,
@@ -166,15 +165,10 @@ const withHealthServer = <A>(
             Layer.provideMerge(GrpcHealth.layer(options)),
           ),
         );
-        const { protocol, routes } = yield* GrpcServerProtocol.make({
+        const { routes } = yield* GrpcServerProtocol.make({
           registry: GrpcHealth.HealthGrpcRegistry,
+          handlers: Context.get(context, GrpcServerProtocol.GrpcHandlers),
         });
-        yield* RpcServer.make(GrpcHealth.HealthRpcGroup).pipe(
-          Effect.provideService(RpcServer.Protocol, protocol),
-          Effect.provideContext(context),
-          Effect.forkScoped,
-        );
-        yield* Effect.yieldNow;
 
         const implementation = captureImplementation(routes);
         return yield* test({

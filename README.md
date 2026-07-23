@@ -10,11 +10,11 @@ and bidi-streaming methods.
 
 This workspace is new and intentionally small. The first prototype proves that
 native gRPC paths can map through generated registries into Effect clients and
-`@effect/Rpc` server handlers without introducing runtime `.proto` loading.
-Generated clients invoke all four method kinds through the `GrpcInvoker` seam
-over a connect transport. On the server, methods with a client-side stream
-bridge `Stream` and connect iterables directly over the same transport, since
-the Effect RPC protocol has no client-to-server stream.
+server handlers without introducing runtime `.proto` loading. Generated
+clients invoke all four method kinds through the `GrpcInvoker` seam over a
+connect transport; generated server handlers publish all four method kinds
+into a unified handlers map, bridging `Stream` and connect iterables directly
+over the same transport.
 
 ## Packages
 
@@ -82,10 +82,6 @@ Shipped:
 Planned:
 
 - [ ] Custom server-side interceptors.
-- [ ] Effect RPC middleware coverage for client-streaming and bidi-streaming
-      methods (today middleware only applies to unary and server-streaming
-      server handlers;
-      see [limitations](docs/users/limitations.md#streaming-semantics)).
 - [ ] Client retry policies.
 - [ ] gRPC-Web support.
 - [ ] Track Effect v4 to a stable release and drop the beta pin.
@@ -204,9 +200,10 @@ Unknown options and unsupported values fail codegen with a clear error.
 
 ## Effect Compatibility
 
-This prototype currently targets `effect@4.0.0-beta.92`. It uses
-`effect/unstable/rpc`, so compatibility is intentionally pinned. Effect beta
-upgrades must update tests, generated code, and package smoke together.
+This prototype currently targets `effect@4.0.0-beta.92`. It uses unstable
+Effect modules (e.g. `effect/unstable/http`), so compatibility is
+intentionally pinned. Effect beta upgrades must update tests, generated code,
+and package smoke together.
 
 ## Error Model
 

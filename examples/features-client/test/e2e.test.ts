@@ -24,7 +24,6 @@ import {
   UserServiceClientLayer,
   UserServiceGrpcRegistry,
   UserServiceHandlersLayer,
-  UserServiceRpcGroup,
   type UserServiceImplementation,
 } from "@effect-grpc/simple-proto/generated/demo/v1/user_service_effect_grpc";
 import {
@@ -32,7 +31,6 @@ import {
   FeatureShowcaseServiceClientLayer,
   FeatureShowcaseServiceGrpcRegistry,
   FeatureShowcaseServiceHandlersLayer,
-  FeatureShowcaseServiceRpcGroup,
   type FeatureRequest,
   type FeatureShowcaseServiceImplementation,
 } from "@effect-grpc/features-proto/generated/features/v1/showcase_effect_grpc";
@@ -466,7 +464,6 @@ const withServer = <A, E, R>(
         port,
         services: [
           {
-            group: FeatureShowcaseServiceRpcGroup,
             registry: FeatureShowcaseServiceGrpcRegistry,
             handlers: FeatureShowcaseServiceHandlersLayer({
               ...implementation,
@@ -474,7 +471,6 @@ const withServer = <A, E, R>(
             }),
           },
           {
-            group: UserServiceRpcGroup,
             registry: UserServiceGrpcRegistry,
             handlers: UserServiceHandlersLayer(userImplementation),
           },

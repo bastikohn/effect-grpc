@@ -2,8 +2,6 @@ import * as http2 from "node:http2";
 import type { ConnectRouter } from "@connectrpc/connect";
 import { connectNodeAdapter } from "@connectrpc/connect-node";
 import { Context, Effect, Layer, Option, Scope } from "effect";
-import type * as RpcGroup from "effect/unstable/rpc/RpcGroup";
-import * as RpcServer from "effect/unstable/rpc/RpcServer";
 
 import * as MethodRegistry from "./GrpcMethodRegistry.js";
 import type { GrpcMethodRegistry } from "./GrpcMethodRegistry.js";
@@ -37,9 +35,8 @@ export interface ServeOptions {
 }
 
 export interface ServeAllService<R = never> {
-  readonly group: RpcGroup.RpcGroup<any>;
   readonly registry: GrpcMethodRegistry;
-  readonly handlers: Layer.Layer<any, never, R>;
+  readonly handlers: Layer.Layer<GrpcServerProtocol.GrpcHandlers, never, R>;
 }
 
 export interface ServeAllOptions<
@@ -57,31 +54,18 @@ export const serveAll = <
   options: ServeAllOptions<Services>,
 ): Effect.Effect<never, never, Scope.Scope | ServiceRequirements<Services>> =>
   Effect.gen(function* () {
-    // Handlers layers are built individually so each service's streaming
-    // handlers (carried inside the layer) can be collected without one
-    // service's map overriding another's.
+    // Handlers layers are built individually so each service's handlers
+    // (carried inside the layer) can be collected without one service's map
+    // overriding another's.
     const contexts = yield* Effect.forEach(options.services, (service) =>
       Layer.build(service.handlers),
     );
-    const { protocol, routes } = yield* GrpcServerProtocol.make({
+    const { routes } = yield* GrpcServerProtocol.make({
       registry: MethodRegistry.merge(
         options.services.map((service) => service.registry),
       ),
-      streamingHandlers: mergeStreamingHandlers(contexts),
+      handlers: mergeHandlers(contexts),
     });
-
-    const [firstService, ...remainingServices] = options.services;
-    if (firstService !== undefined) {
-      const group = remainingServices.reduce(
-        (group, service) => group.merge(service.group),
-        firstService.group,
-      );
-      yield* RpcServer.make(group).pipe(
-        Effect.provideService(RpcServer.Protocol, protocol),
-        Effect.provideContext(contexts.reduce(Context.merge)),
-        Effect.forkScoped,
-      );
-    }
 
     return yield* serve({
       host: options.host,
@@ -159,14 +143,14 @@ export const serve = (
     return server as never;
   });
 
-const mergeStreamingHandlers = (
-  contexts: ReadonlyArray<Context.Context<unknown>>,
-): GrpcServerProtocol.GrpcStreamingHandlers => {
-  const merged = new Map<string, GrpcServerProtocol.GrpcStreamingHandler>();
+const mergeHandlers = (
+  contexts: ReadonlyArray<Context.Context<GrpcServerProtocol.GrpcHandlers>>,
+): GrpcServerProtocol.GrpcHandlers => {
+  const merged = new Map<string, GrpcServerProtocol.GrpcHandler>();
   for (const context of contexts) {
     const handlers = Context.getOption(
       context,
-      GrpcServerProtocol.GrpcStreamingHandlers,
+      GrpcServerProtocol.GrpcHandlers,
     );
     if (Option.isSome(handlers)) {
       for (const [tag, handler] of handlers.value) {

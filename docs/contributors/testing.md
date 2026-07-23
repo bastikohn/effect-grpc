@@ -5,8 +5,9 @@ behavior across all four method kinds. They cover success, status failures,
 metadata, trace headers, deadlines, mid-stream failures, request-stream
 failures, cancellation in both directions, and protocol scope finalization.
 
-Runtime protocol tests should cover behavior that can be asserted without a real
-socket, including call-state backpressure and server protocol cleanup.
+Runtime protocol tests should cover behavior that can be asserted without a
+real socket, including the codec error policy per call shape, unimplemented
+methods, and handler interruption when a call is aborted.
 
 `GrpcInvoker` is the single client seam; `GrpcInvoker.layerInMemory` is its
 network-free stand-in, and invoker tests assert both adapters share invocation

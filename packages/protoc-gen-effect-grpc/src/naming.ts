@@ -31,14 +31,6 @@ export const effectImportPath = (
   return path.startsWith(".") ? path : `./${path}`;
 };
 
-export const rpcConstName = (serviceName: string, methodName: string) =>
-  `${serviceName}_${methodName}Rpc`;
-
-export const serviceGroupName = (serviceName: string) =>
-  `${serviceName}RpcGroup`;
-
-export const serviceRpcsName = (serviceName: string) => `${serviceName}Rpcs`;
-
 export const serviceClientServiceName = (serviceName: string) =>
   `${serviceName}ClientService`;
 

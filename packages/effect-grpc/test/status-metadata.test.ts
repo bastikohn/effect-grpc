@@ -5,7 +5,6 @@ import * as GrpcMetadata from "../src/GrpcMetadata.js";
 import * as GrpcStatusCode from "../src/GrpcStatusCode.js";
 import * as GrpcStatusError from "../src/GrpcStatusError.js";
 import { headersFromCallOptions } from "../src/internal/metadata.js";
-import { errorFromExit, failureExit } from "../src/internal/status.js";
 
 describe("GrpcStatusCode", () => {
   it("converts to and from Connect codes", () => {
@@ -57,14 +56,6 @@ describe("GrpcStatusError", () => {
     );
 
     expect(error.details).toEqual(details);
-  });
-
-  it("does not synthesize a cause when encoded failures omit one", () => {
-    const exit = failureExit("1", GrpcStatusError.notFound("missing")).exit;
-    const error = errorFromExit(exit);
-
-    expect(error).toBeInstanceOf(GrpcStatusError.GrpcStatusError);
-    expect(error.cause).toBeUndefined();
   });
 });
 

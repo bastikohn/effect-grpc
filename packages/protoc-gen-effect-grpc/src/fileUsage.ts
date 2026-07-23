@@ -1,6 +1,5 @@
 import { grpcEmptyName, grpcWellKnownName } from "./naming.js";
 import {
-  isRequestStreaming,
   type FieldModel,
   type FieldValueModel,
   type GeneratorFile,
@@ -18,10 +17,6 @@ import { wellKnownJsonSchemaName, wellKnownProtobufName } from "./wellKnown.js";
  */
 export interface FileUsage {
   readonly hasServices: boolean;
-  /** Some method goes through Effect RPC (unary or server-streaming). */
-  readonly hasRpcMethods: boolean;
-  /** Some method uses the direct streaming bridge (client/bidi streaming). */
-  readonly hasStreamingMethods: boolean;
   /** `Stream` appears in generated signatures only for non-unary methods. */
   readonly usesStream: boolean;
   /** Some message has a field, so converters need `readField`/`compact`. */
@@ -143,12 +138,6 @@ export const analyzeFileUsage = (file: GeneratorFile): FileUsage => {
 
   return {
     hasServices: file.services.length > 0,
-    hasRpcMethods: file.services.some((service) =>
-      service.methods.some((method) => !isRequestStreaming(method)),
-    ),
-    hasStreamingMethods: file.services.some((service) =>
-      service.methods.some(isRequestStreaming),
-    ),
     usesStream: file.services.some((service) =>
       service.methods.some((method) => method.kind !== "unary"),
     ),

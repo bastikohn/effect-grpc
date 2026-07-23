@@ -194,12 +194,6 @@ const writeTypecheckProject = (
             effect: [
               "packages/effect-grpc/node_modules/effect/dist/index.d.ts",
             ],
-            "effect/unstable/rpc": [
-              "packages/effect-grpc/node_modules/effect/dist/unstable/rpc/index.d.ts",
-            ],
-            "effect/unstable/rpc/*": [
-              "packages/effect-grpc/node_modules/effect/dist/unstable/rpc/*.d.ts",
-            ],
             "effect/unstable/http/*": [
               "packages/effect-grpc/node_modules/effect/dist/unstable/http/*.d.ts",
             ],

@@ -11,9 +11,8 @@ registries for the runtime package
 [`@effect-grpc/effect-grpc`](https://www.npmjs.com/package/@effect-grpc/effect-grpc).
 
 All four gRPC method kinds are generated. Clients invoke every kind through
-the `GrpcInvoker` seam; on the server, unary and server-streaming handlers run
-as Effect RPCs while client-streaming and bidi-streaming handlers use the
-direct streaming bridge.
+the `GrpcInvoker` seam; server handlers for every kind are published into the
+unified `GrpcServerProtocol.GrpcHandlers` map.
 
 If you don't already use [Buf](https://buf.build) or protoc, consider
 [`@effect-grpc/codegen`](https://www.npmjs.com/package/@effect-grpc/codegen)

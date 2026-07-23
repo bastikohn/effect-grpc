@@ -111,7 +111,7 @@ const demoFile: GeneratorFile = {
 };
 
 describe("generateFile", () => {
-  it("generates schemas, RPCs, registry, client, and server glue", () => {
+  it("generates schemas, registry, client, and server glue", () => {
     const output = generateFile(demoFile);
 
     expect(output).toContain("export const UserSchema = Schema.Struct");
@@ -122,8 +122,6 @@ describe("generateFile", () => {
       'user: readField(message, "user") == null ? undefined : fromUser(readField(message, "user"))',
     );
     expect(output).toContain("export type UserServiceClientError");
-    expect(output).toContain('Rpc.make("demo.v1.UserService/GetUser"');
-    expect(output).toContain("stream: true");
     expect(output).toContain("UserServiceGrpcRegistry");
     expect(output).toContain("export interface UserServiceClientService");
     expect(output).toContain("export interface UserServiceImplementation");
@@ -131,20 +129,23 @@ describe("generateFile", () => {
     expect(output).toMatchSnapshot();
   });
 
-  it("routes request-streaming methods through the direct bridge", () => {
+  it("routes every method through the unified handlers map", () => {
     const output = generateFile(demoFile);
 
-    // No Effect RPC for request-streaming methods: the protocol has no
-    // client-to-server stream.
-    expect(output).not.toContain('Rpc.make("demo.v1.UserService/UploadUsers"');
-    expect(output).not.toContain('Rpc.make("demo.v1.UserService/ChatUsers"');
+    // The server path is fully off Effect RPC: no `Rpc.make`/`RpcGroup`
+    // consts and no `effect/unstable/rpc` import in generated code.
+    expect(output).not.toContain("Rpc.make(");
+    expect(output).not.toContain("RpcGroup");
+    expect(output).not.toContain("effect/unstable/rpc");
     expect(output).toContain(
       'invoker.clientStream("demo.v1.UserService/UploadUsers", requests, options)',
     );
     expect(output).toContain(
       'invoker.bidiStream("demo.v1.UserService/ChatUsers", requests, options)',
     );
-    expect(output).toContain("GrpcServerProtocol.streamingHandlersLayer<R>({");
+    expect(output).toContain("GrpcServerProtocol.handlersLayer<R>({");
+    expect(output).toContain('kind: "unary"');
+    expect(output).toContain('kind: "server-streaming"');
     expect(output).toContain('kind: "client-streaming"');
     expect(output).toContain('kind: "bidi-streaming"');
     expect(output).toContain(
@@ -416,11 +417,10 @@ describe("generateFile", () => {
       ],
     });
 
-    // Every method bypasses Effect RPC, so the unary-path `Rpc` import is not
-    // emitted; the client depends on the `GrpcInvoker` seam alone, so the
-    // client-only `RpcClient`/`RpcClientError` imports are gone too. Only the
-    // `RpcGroup` still emitted for the (empty) server group survives.
-    expect(output).toContain('import { RpcGroup } from "effect/unstable/rpc";');
+    // Generated code no longer touches `effect/unstable/rpc` at all: the
+    // client depends on the `GrpcInvoker` seam and the server publishes its
+    // handlers through `GrpcServerProtocol.handlersLayer`.
+    expect(output).not.toContain("effect/unstable/rpc");
     expect(output).toContain("const invoker = yield* GrpcInvoker.GrpcInvoker;");
     expect(output).not.toContain("RpcClient");
     expect(output).not.toContain("RpcClientError");
@@ -451,7 +451,7 @@ describe("plugin fixture", () => {
       "export const GrpcGoogleProtobufEmptySchema = Schema.Struct({});",
     );
     expect(response.file[0]?.content).toContain(
-      "payload: GrpcGoogleProtobufEmptySchema",
+      "payloadSchema: GrpcGoogleProtobufEmptySchema",
     );
     expect(response.file[0]?.content).toContain(
       "toGrpcRequest: toGrpcGoogleProtobufEmpty",
@@ -478,10 +478,10 @@ describe("plugin fixture", () => {
       "export const GrpcGoogleProtobufBoolValueSchema = Schema.Boolean;",
     );
     expect(response.file[0]?.content).toContain(
-      "payload: GrpcGoogleProtobufBoolValueSchema",
+      "payloadSchema: GrpcGoogleProtobufBoolValueSchema",
     );
     expect(response.file[0]?.content).toContain(
-      "success: GrpcGoogleProtobufDurationSchema",
+      "successSchema: GrpcGoogleProtobufDurationSchema",
     );
     expect(response.file[0]?.content).toContain(
       "toGrpcRequest: toGrpcGoogleProtobufBoolValueMessage",
@@ -713,8 +713,8 @@ describe("streaming methods", () => {
     expect(content).toContain(
       'invoker.bidiStream("demo.v1.UserService/ChatUsers"',
     );
-    expect(content).not.toContain('Rpc.make("demo.v1.UserService/UploadUsers"');
-    expect(content).toContain("GrpcServerProtocol.streamingHandlersLayer");
+    expect(content).not.toContain("effect/unstable/rpc");
+    expect(content).toContain("GrpcServerProtocol.handlersLayer");
   });
 
   it("skips streaming methods when the methods option excludes them", () => {

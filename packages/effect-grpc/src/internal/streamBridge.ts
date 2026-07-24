@@ -225,6 +225,16 @@ export const responsePump = (
  * completes or close() interrupts it — teardown must reach into the stream
  * (its finalizers, its interrupt cleanup), not walk away from it.
  *
+ * Pulls are serialized behind a promise chain: a `next()` arriving before the
+ * previous one settles waits instead of starting its own pull. Overlapping
+ * pulls each forked a fiber while only one slot was retained, so close()
+ * interrupted the last one and left the rest — and their interrupt cleanup —
+ * pending forever; they also raced the shared pull and chunk iterator, which
+ * duplicated and dropped elements. Serializing keeps a single fiber in flight,
+ * which is what makes the slot sufficient. close() deliberately bypasses the
+ * chain: it must interrupt the pull in flight, not queue behind it, or
+ * teardown deadlocks on an idle peer.
+ *
  * A failed pull is delegated to `onFailure`, which must throw; after close(),
  * `next()` reports a clean end.
  */
@@ -244,6 +254,7 @@ const ownedPull = (
   let pull: Pull.Pull<ReadonlyArray<unknown>, unknown> | undefined;
   let closed = false;
   let closing: Promise<void> | undefined;
+  let queued: Promise<unknown> = Promise.resolve();
 
   const run = async <A, E>(
     effect: Effect.Effect<A, E, Scope.Scope>,
@@ -251,7 +262,7 @@ const ownedPull = (
     const fiber = runFork(effect);
     active = fiber;
     const exit = await Effect.runPromise(Fiber.await(fiber));
-    if (active === fiber) active = undefined;
+    active = undefined;
     return exit;
   };
 
@@ -266,28 +277,38 @@ const ownedPull = (
     return closing;
   };
 
+  const pullNext = async (): Promise<IteratorResult<unknown>> => {
+    if (closed) return done;
+    if (current) {
+      const result = current.next();
+      if (!result.done) return result;
+      current = undefined;
+    }
+    if (!pull) {
+      const initialized = await run(Stream.toPull(stream));
+      if (closed) return done;
+      if (Exit.isFailure(initialized)) return onFailure(initialized.cause);
+      pull = initialized.value;
+    }
+    const exit = await run(pull);
+    if (closed) return done;
+    if (Exit.isSuccess(exit)) {
+      current = exit.value[Symbol.iterator]();
+      return current.next();
+    }
+    if (Pull.isDoneCause(exit.cause)) return done;
+    return onFailure(exit.cause);
+  };
+
   return {
-    next: async () => {
-      if (closed) return done;
-      if (current) {
-        const result = current.next();
-        if (!result.done) return result;
-        current = undefined;
-      }
-      if (!pull) {
-        const initialized = await run(Stream.toPull(stream));
-        if (closed) return done;
-        if (Exit.isFailure(initialized)) return onFailure(initialized.cause);
-        pull = initialized.value;
-      }
-      const exit = await run(pull);
-      if (closed) return done;
-      if (Exit.isSuccess(exit)) {
-        current = exit.value[Symbol.iterator]();
-        return current.next();
-      }
-      if (Pull.isDoneCause(exit.cause)) return done;
-      return onFailure(exit.cause);
+    next: () => {
+      const result = queued.then(pullNext);
+      // Chain on the *settled* pull, never on its rejection: a retained
+      // failure would poison every later `next()`, replaying it without ever
+      // running a pull. The failure still reaches its own caller through
+      // `result`.
+      queued = result.then(undefined, () => undefined);
+      return result;
     },
     close,
   };

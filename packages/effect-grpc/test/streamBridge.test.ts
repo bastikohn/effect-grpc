@@ -7,6 +7,15 @@ const noop = () => {};
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 10));
 
+/** Resolves to `"pending"` instead of hanging when `promise` never settles. */
+const settled = <A>(promise: Promise<A>): Promise<A | "pending"> =>
+  Promise.race([
+    promise,
+    new Promise<"pending">((resolve) =>
+      setTimeout(() => resolve("pending"), 100),
+    ),
+  ]);
+
 describe("requestPump", () => {
   it("delivers all values and completes cleanly without aborting", async () => {
     let aborted = 0;
@@ -45,6 +54,30 @@ describe("requestPump", () => {
 
     expect(aborted).toBe(1);
     expect(pump.failure()).toEqual({ error: boom });
+  });
+
+  // Regression pin: the chain that serializes pulls must not carry a rejection
+  // forward. A retained failed link would replay the first failure to every
+  // later `next()` without running a pull — on the plainly sequential path, so
+  // connect would stop re-issuing the cancel that a failed request stream owes
+  // the server.
+  it("re-pulls after a failure instead of replaying it down the chain", async () => {
+    const boom = new Error("source boom");
+    let aborted = 0;
+    const pump = StreamBridge.requestPump(
+      Stream.make(1).pipe(Stream.concat(Stream.fail(boom))),
+      Context.empty(),
+      () => {
+        aborted += 1;
+      },
+    );
+
+    const iterator = pump.iterable[Symbol.asyncIterator]();
+    await expect(iterator.next()).resolves.toEqual({ done: false, value: 1 });
+    await expect(iterator.next()).rejects.toBe(boom);
+    await expect(iterator.next()).rejects.toBe(boom);
+
+    expect(aborted).toBe(2);
   });
 
   it("treats connect's iterator throw as cleanup, not a request failure", async () => {
@@ -107,6 +140,78 @@ describe("requestPump", () => {
 
     expect(interrupted).toBe(1);
     await expect(pending).resolves.toEqual({ done: true, value: undefined });
+  });
+
+  // Regression pin: overlapping `next()` calls used to race the shared chunk
+  // iterator, so callers saw duplicated and dropped elements. Serializing must
+  // deliver the stream intact — a pump that simply answered the overlapping
+  // caller with `done` would pass every teardown assertion below while
+  // truncating the request stream after its first element.
+  it("delivers every element when pulls overlap", async () => {
+    const pump = StreamBridge.requestPump(
+      Stream.fromIterable([1, 2, 3, 4]).pipe(Stream.rechunk(1)),
+      Context.empty(),
+      noop,
+    );
+
+    const iterator = pump.iterable[Symbol.asyncIterator]();
+    const results = await Promise.all([
+      iterator.next(),
+      iterator.next(),
+      iterator.next(),
+      iterator.next(),
+      iterator.next(),
+    ]);
+
+    expect(results).toEqual([
+      { done: false, value: 1 },
+      { done: false, value: 2 },
+      { done: false, value: 3 },
+      { done: false, value: 4 },
+      { done: true, value: undefined },
+    ]);
+  });
+
+  // Regression pin: the pump retains a single pull fiber. A `next()` issued
+  // while another is in flight used to fork a second pull, overwrite that slot
+  // and race the shared iterator — close() then interrupted only the last
+  // fiber, leaving the first pull (and its interrupt cleanup) pending forever.
+  it("serializes overlapping pulls so close() leaves none behind", async () => {
+    let started = 0;
+    let interrupted = 0;
+    const pump = StreamBridge.requestPump(
+      Stream.fromEffect(
+        Effect.sync(() => {
+          started += 1;
+        }).pipe(
+          Effect.andThen(Effect.never),
+          Effect.onInterrupt(() =>
+            Effect.sync(() => {
+              interrupted += 1;
+            }),
+          ),
+        ),
+      ),
+      Context.empty(),
+      noop,
+    );
+
+    const iterator = pump.iterable[Symbol.asyncIterator]();
+    const first = iterator.next();
+    const second = iterator.next();
+    await tick();
+    await pump.close();
+
+    expect(started).toBe(1);
+    expect(interrupted).toBe(1);
+    await expect(settled(first)).resolves.toEqual({
+      done: true,
+      value: undefined,
+    });
+    await expect(settled(second)).resolves.toEqual({
+      done: true,
+      value: undefined,
+    });
   });
 
   it("close resolves even when stream cleanup fails", async () => {

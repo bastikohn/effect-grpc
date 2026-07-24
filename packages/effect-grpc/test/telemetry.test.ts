@@ -389,6 +389,37 @@ describe("client telemetry", () => {
     expect(durations[0]?.count).toBe(1);
   });
 
+  // `URL` normalizes a scheme's default port away, so `baseUrl` alone cannot
+  // be trusted for `server.port` — it must fall back to the scheme.
+  it.each([
+    { address: "https://api.example.com:443", port: 443 },
+    { address: "https://api.example.com", port: 443 },
+    { address: "https://api.example.com:8443", port: 8443 },
+    { address: "http://api.example.com", port: 80 },
+  ])("reports server.port $port for $address", async ({ address, port }) => {
+    const telemetry = makeTestTelemetry();
+    const { transport } = fakeTransport({ unary: () => ({ ok: true }) });
+
+    const metrics = await Effect.runPromise(
+      telemetry.provide(
+        Effect.gen(function* () {
+          yield* callInvokerUnary(unaryEntry.tag);
+          return yield* Metric.snapshot;
+        }).pipe(Effect.provide(clientLayer(transport, new URL(address)))),
+      ),
+    );
+
+    const span = telemetry.expectSpan(unaryEntry.tag);
+    expect(span.attributes.get("server.address")).toBe("api.example.com");
+    expect(span.attributes.get("server.port")).toBe(port);
+
+    const durations = durationMetrics(metrics, "rpc.client.call.duration");
+    expect(durations[0]?.attributes).toMatchObject({
+      "server.address": "api.example.com",
+      "server.port": String(port),
+    });
+  });
+
   it("respects a caller-provided traceparent", async () => {
     const telemetry = makeTestTelemetry();
     const { transport, headers } = fakeTransport({
@@ -1620,7 +1651,10 @@ const fakeTransport = (behavior: {
   return { transport, headers };
 };
 
-const clientLayer = (transport: Transport) =>
+const clientLayer = (
+  transport: Transport,
+  serverAddress = new URL("http://api.example.com:8443"),
+) =>
   GrpcClientProtocol.layerFromTransport({
     registry: new Map([
       [unaryEntry.tag, unaryEntry],
@@ -1629,7 +1663,7 @@ const clientLayer = (transport: Transport) =>
       [bidiStreamingEntry.tag, bidiStreamingEntry],
     ]),
     transport,
-    serverAddress: new URL("http://api.example.com:8443"),
+    serverAddress,
   });
 
 /** Build-time handler dependency for the `handlersLayer` regression test. */

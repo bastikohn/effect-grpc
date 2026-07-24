@@ -239,28 +239,45 @@ const serverSpanAttributes = (
   baseUrl: URL,
 ): Record<string, string | number> => {
   const port = serverPort(baseUrl);
-  return port === undefined
-    ? { "server.address": serverAddress(baseUrl) }
-    : { "server.address": serverAddress(baseUrl), "server.port": port };
+  return {
+    "server.address": serverAddress(baseUrl),
+    ...(port === undefined ? {} : { "server.port": port }),
+  };
 };
 
+/**
+ * The span attributes above, as metric tags. Effect's metric attributes are
+ * string-only, so semconv's integer `server.port` is stringified here.
+ */
 const serverMetricAttributes = (baseUrl: URL): Record<string, string> => {
   const port = serverPort(baseUrl);
-  return port === undefined
-    ? { "server.address": serverAddress(baseUrl) }
-    : {
-        "server.address": serverAddress(baseUrl),
-        "server.port": String(port),
-      };
+  return {
+    "server.address": serverAddress(baseUrl),
+    ...(port === undefined ? {} : { "server.port": String(port) }),
+  };
 };
 
 const serverAddress = (baseUrl: URL): string =>
   baseUrl.hostname || baseUrl.host || normalizeUrl(baseUrl);
 
-const serverPort = (baseUrl: URL): number | undefined => {
-  const port = Number(baseUrl.port);
-  return Number.isInteger(port) && port > 0 ? port : undefined;
-};
+/** Ports WHATWG `URL` normalizes away — see {@link serverPort}. */
+const defaultPorts = new Map([
+  ["https:", 443],
+  ["http:", 80],
+]);
+
+/**
+ * Effective port of the target. `URL` drops a scheme's default port, so
+ * `new URL("https://api.example.com:443").port` is `""` and semconv's
+ * `server.port` would vanish for the most common endpoints; the scheme
+ * supplies it instead. Only the two schemes a gRPC `baseUrl` can use are
+ * mapped, so a `serverAddress` override on any other scheme has no default
+ * here and reports `server.address` alone.
+ */
+const serverPort = (baseUrl: URL): number | undefined =>
+  baseUrl.port === ""
+    ? defaultPorts.get(baseUrl.protocol)
+    : Number(baseUrl.port);
 
 const normalizeUrl = (baseUrl: URL): string =>
   baseUrl.toString().replace(/\/$/, "");

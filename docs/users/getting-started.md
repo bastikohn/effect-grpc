@@ -23,6 +23,16 @@ Generated client methods accept `CodegenSupport.GrpcCallOptions`. User metadata
 keys beginning with `x-effect-grpc-` are reserved for local runtime control and
 are rejected before the native gRPC request is sent.
 
+Metadata follows the gRPC `-bin` convention: a key ending in `-bin` carries a
+`Uint8Array` (base64-encoded on the wire, decoded back to bytes for the
+receiving handler), and every other key carries a printable-ASCII `string`. The
+suffix is the only signal the peer has, so a mismatch — bytes under a plain key,
+a string under a `-bin` key — fails the call with `invalid_argument` rather than
+reaching the server as something it cannot interpret.
+
+A non-positive `timeoutMs` means _no deadline_, not one that has already
+expired.
+
 ## Bearer Authentication
 
 `GrpcAuth` attaches `authorization: Bearer <token>` metadata to every outgoing

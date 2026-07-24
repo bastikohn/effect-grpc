@@ -7,14 +7,14 @@ import type {
   GrpcConnectInvokerOptions,
   GrpcInvokerService,
 } from "../GrpcInvoker.js";
+import * as GrpcMetadata from "../GrpcMetadata.js";
 import * as MethodRegistry from "../GrpcMethodRegistry.js";
 import type { GrpcMethodEntry } from "../GrpcMethodRegistry.js";
 import type { GrpcStatusCode } from "../GrpcStatusCode.js";
 import * as GrpcStatusError from "../GrpcStatusError.js";
 import { TraceState } from "../GrpcTracing.js";
 import { getClient } from "./connect.js";
-import { unknownTag, validateCallMetadata } from "./invoker.js";
-import { headersFromCallOptions } from "./metadata.js";
+import { callTimeoutMs, unknownTag, validateCallMetadata } from "./invoker.js";
 import * as StreamBridge from "./streamBridge.js";
 import * as GrpcTracing from "./tracing.js";
 
@@ -167,9 +167,11 @@ export const makeConnect = (
       return error;
     };
 
-    // Reject reserved metadata up front, so it is a recorded
-    // `invalid_argument` on every shape rather than a header-construction
-    // throw (a defect on streaming shapes, a generic `unknown` on unary).
+    // Reject unsendable metadata up front — a reserved key, a key or value
+    // no header can spell, a value contradicting its key's `-bin` suffix — so
+    // it is a recorded `invalid_argument` on every shape rather than a
+    // header-construction throw (a defect on streaming shapes, a generic
+    // `unknown` on unary).
     const recordMetadata = (
       options: GrpcCallOptions | undefined,
       record: GrpcTracing.StatusRecorder,
@@ -483,10 +485,10 @@ const callOptionsFor = (
   signal: AbortSignal,
   ambientTraceState: string | undefined,
 ): CallOptions => {
-  const headers = new Headers(
-    headersFromCallOptions({ metadata: options?.metadata }).map(
-      ([key, value]) => [key, value] as [string, string],
-    ),
+  // Metadata has already been validated by `recordMetadata`, so the codec
+  // cannot be handed a value its key forbids.
+  const headers = GrpcMetadata.toHeaders(
+    options?.metadata ?? GrpcMetadata.empty,
   );
   if (
     !headers.has("traceparent") &&
@@ -501,11 +503,6 @@ const callOptionsFor = (
       headers.set("tracestate", traceState);
     }
   }
-  return {
-    headers,
-    signal,
-    ...(options?.timeoutMs !== undefined
-      ? { timeoutMs: options.timeoutMs }
-      : {}),
-  };
+  const timeoutMs = callTimeoutMs(options);
+  return { headers, signal, ...(timeoutMs === undefined ? {} : { timeoutMs }) };
 };

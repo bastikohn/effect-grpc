@@ -13,6 +13,15 @@ export class GrpcStatusError extends Schema.TaggedErrorClass<GrpcStatusError>()(
      * The single metadata channel an error has: under the gRPC protocol these
      * entries are written to — and read back from — the response trailers,
      * because a failed call carries its status there.
+     *
+     * Unlike call metadata, it is neither validated nor normalized:
+     * {@link toConnectError} encodes it best-effort, so an entry that
+     * contradicts its key's `-bin` suffix silently changes type in transit — a
+     * `Uint8Array` under an ASCII key arrives as its base64 string, a string
+     * under a `-bin` key arrives as decoded bytes. Validating here would mean
+     * throwing while serializing an error, which would swallow the original
+     * failure. Follow the `-bin` convention (see
+     * {@link GrpcMetadata.isBinaryKey}) and it round-trips.
      */
     metadata: GrpcMetadata.schema,
     details: Schema.Array(Schema.Unknown),

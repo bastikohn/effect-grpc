@@ -6,7 +6,7 @@ import { Effect, Layer } from "effect";
 import * as GrpcInvoker from "./GrpcInvoker.js";
 import * as GrpcMetadata from "./GrpcMetadata.js";
 import type { GrpcMethodRegistry } from "./GrpcMethodRegistry.js";
-import { headersFromCallOptions } from "./internal/metadata.js";
+import { metadataViolation } from "./internal/metadata.js";
 
 export type { GrpcTransportOptions } from "@connectrpc/connect-node";
 
@@ -109,8 +109,9 @@ export const makeTransport = (
  *
  * Resolved metadata is treated as defaults: a header already present on the
  * call — per-call `GrpcCallOptions.metadata`, or the injected `traceparent` —
- * is left untouched. Reserved `x-effect-grpc-*` keys are rejected, as on the
- * per-call path.
+ * is left untouched. Reserved `x-effect-grpc-*` keys, and values contradicting
+ * their key's `-bin` suffix, are rejected as on the per-call path — here as a
+ * throw, since a connect interceptor has no typed error channel.
  *
  * Pass the result via `interceptors` on {@link layer} or {@link makeTransport}.
  */
@@ -122,12 +123,13 @@ export const metadataInterceptor = <R>(
       const run = Effect.runPromiseWith(context);
       return (next) => async (req) => {
         const metadata = await run(resolve);
+        const violation = metadataViolation(metadata);
+        if (violation !== undefined) throw new Error(violation);
         const present = new Set<string>();
         req.header.forEach((_value, key) => present.add(key.toLowerCase()));
-        for (const [key, value] of headersFromCallOptions({ metadata })) {
-          if (present.has(key.toLowerCase())) continue;
-          req.header.append(key, value);
-        }
+        GrpcMetadata.toHeaders(metadata).forEach((value, key) => {
+          if (!present.has(key)) req.header.append(key, value);
+        });
         return next(req);
       };
     }),

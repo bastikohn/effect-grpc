@@ -9,7 +9,7 @@ import type {
 } from "../GrpcInvoker.js";
 import * as GrpcMetadata from "../GrpcMetadata.js";
 import * as GrpcStatusError from "../GrpcStatusError.js";
-import { unknownTag, validateCallMetadata } from "./invoker.js";
+import { callTimeoutMs, unknownTag, validateCallMetadata } from "./invoker.js";
 
 /**
  * Test {@link GrpcInvokerService}: dispatches to in-process handlers with the
@@ -33,19 +33,28 @@ export const makeInMemory = (
   const callContext = (
     tag: string,
     options: GrpcCallOptions | undefined,
-  ): GrpcInMemoryCall => ({
-    tag,
-    metadata: options?.metadata ?? GrpcMetadata.empty,
-    ...(options?.timeoutMs !== undefined
-      ? { timeoutMs: options.timeoutMs }
-      : {}),
-  });
+  ): GrpcInMemoryCall => {
+    const timeoutMs = callTimeoutMs(options);
+    return {
+      tag,
+      // Round-tripped through the wire codec so the handler observes exactly
+      // what a server would: lowercased keys, `-bin` values decoded back to
+      // bytes, repeated keys joined the way `Headers` joins them.
+      metadata: GrpcMetadata.fromHeaders(
+        GrpcMetadata.toHeaders(options?.metadata ?? GrpcMetadata.empty),
+      ),
+      // A non-positive timeout puts no `grpc-timeout` header on the wire, so
+      // the handler must see no deadline rather than a value that is not in
+      // force.
+      ...(timeoutMs === undefined ? {} : { timeoutMs }),
+    };
+  };
 
   const withDeadline = (
     effect: Effect.Effect<unknown, GrpcStatusError.GrpcStatusError>,
     timeoutMs: number | undefined,
   ) =>
-    timeoutMs === undefined || timeoutMs <= 0
+    timeoutMs === undefined
       ? effect
       : Effect.timeoutOrElse(effect, {
           duration: timeoutMs,
@@ -66,7 +75,7 @@ export const makeInMemory = (
         Effect.suspend(() =>
           withDeadline(
             method.handler(request, callContext(tag, options)),
-            options?.timeoutMs,
+            callTimeoutMs(options),
           ),
         ),
       ),
@@ -103,7 +112,7 @@ export const makeInMemory = (
           const replay = sourceReplay<A, E>(requests);
           return withDeadline(
             method.handler(replay.requests, callContext(tag, options)),
-            options?.timeoutMs,
+            callTimeoutMs(options),
           ).pipe(
             Effect.mapError(replay.restore),
             Effect.tap(() => replay.failIfCaptured),

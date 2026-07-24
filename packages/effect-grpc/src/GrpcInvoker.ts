@@ -19,7 +19,9 @@ import { makeInMemory } from "./internal/inMemoryInvoker.js";
  * Two implementations make the seam real: {@link layerConnect} invokes over
  * a connect transport in production, {@link layerInMemory} dispatches to
  * in-process handlers for deterministic tests — no sockets, protobuf
- * descriptors, or HTTP/2.
+ * descriptors, or HTTP/2. Both honour `GrpcCallOptions` identically: the same
+ * metadata reaches the handler in the same shape, unsendable metadata fails
+ * with `invalid_argument`, and a non-positive `timeoutMs` means no deadline.
  */
 export interface GrpcInvokerService {
   /** One request, one response. */
@@ -74,7 +76,9 @@ export const layerConnect = (
  */
 export interface GrpcInMemoryCall {
   readonly tag: string;
+  /** Call metadata as the wire would deliver it: lowercased keys, `-bin` values as bytes. */
   readonly metadata: GrpcMetadata.GrpcMetadata;
+  /** The deadline actually in force — absent when the caller passed a non-positive `timeoutMs`. */
   readonly timeoutMs?: number | undefined;
 }
 
@@ -120,9 +124,11 @@ export type GrpcInMemoryHandlers = Record<string, GrpcInMemoryHandler>;
  * Test adapter: dispatches directly to the given handlers. Enforces the same
  * invocation semantics as the connect adapter — unknown or kind-mismatched
  * tags fail with `unimplemented`, a failed request stream replays the
- * caller's original error, and `timeoutMs` bounds unary and client-streaming
- * calls with `deadline_exceeded`. Stream-shaped calls expose `timeoutMs` on
- * the call context but leave mid-stream deadline enforcement to transports.
+ * caller's original error, call metadata is validated and normalized through
+ * the same wire codec, and a positive `timeoutMs` bounds unary and
+ * client-streaming calls with `deadline_exceeded`. Stream-shaped calls expose
+ * `timeoutMs` on the call context but leave mid-stream deadline enforcement
+ * to transports.
  */
 export const layerInMemory = (
   handlers: GrpcInMemoryHandlers,

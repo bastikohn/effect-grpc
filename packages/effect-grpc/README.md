@@ -107,7 +107,10 @@ schema-backed tagged error, so generated client failures are decoded into real
 (`"GrpcStatusError"`), e.g. with `Effect.catchTag`.
 
 User metadata keys beginning with `x-effect-grpc-` are reserved for runtime
-control and are rejected by generated clients.
+control and are rejected by generated clients. Metadata also follows the gRPC
+`-bin` convention: `-bin` keys carry a `Uint8Array` (base64 on the wire, decoded
+back to bytes for the handler), every other key a printable-ASCII `string`. A
+value that contradicts its key fails the call with `invalid_argument`.
 
 ## Documentation
 

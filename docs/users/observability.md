@@ -32,7 +32,11 @@ Attributes on both client and server spans:
 
 Client spans additionally carry `server.address` (string) and `server.port`
 (number), derived from the client's `baseUrl` (override with `serverAddress`
-on `GrpcClientProtocol.layer`).
+on `GrpcClientProtocol.layer`). A `baseUrl` that omits the port — or spells
+out the scheme's default, which `URL` normalizes away — reports the scheme
+default: `443` for `https://`, `80` for `http://`. Only a `serverAddress`
+override on some other scheme leaves `server.port` off entirely, since there
+is no default to derive.
 
 Error classification follows the semconv's asymmetric rule: **client** spans
 treat every non-`OK` status as an error, while **server** spans treat only

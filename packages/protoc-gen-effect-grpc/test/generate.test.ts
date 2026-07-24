@@ -81,29 +81,29 @@ const demoFile: GeneratorFile = {
           name: "GetUser",
           localName: "getUser",
           kind: "unary",
-          inputType: "GetUserRequest",
-          outputType: "GetUserResponse",
+          inputType: { name: "GetUserRequest" },
+          outputType: { name: "GetUserResponse" },
         },
         {
           name: "WatchUsers",
           localName: "watchUsers",
           kind: "server-streaming",
-          inputType: "WatchUsersRequest",
-          outputType: "UserEvent",
+          inputType: { name: "WatchUsersRequest" },
+          outputType: { name: "UserEvent" },
         },
         {
           name: "UploadUsers",
           localName: "uploadUsers",
           kind: "client-streaming",
-          inputType: "User",
-          outputType: "GetUserResponse",
+          inputType: { name: "User" },
+          outputType: { name: "GetUserResponse" },
         },
         {
           name: "ChatUsers",
           localName: "chatUsers",
           kind: "bidi-streaming",
-          inputType: "UserEvent",
-          outputType: "UserEvent",
+          inputType: { name: "UserEvent" },
+          outputType: { name: "UserEvent" },
         },
       ],
     },
@@ -180,8 +180,8 @@ describe("generateFile", () => {
               name: "Ping",
               localName: "ping",
               kind: "unary",
-              inputType: "PingRequest",
-              outputType: "PingResponse",
+              inputType: { name: "PingRequest" },
+              outputType: { name: "PingResponse" },
             },
           ],
         },
@@ -214,8 +214,8 @@ describe("generateFile", () => {
               name: "Call",
               localName: "call",
               kind: "unary",
-              inputType: "VoidRequest",
-              outputType: "VoidResponse",
+              inputType: { name: "VoidRequest" },
+              outputType: { name: "VoidResponse" },
             },
           ],
         },
@@ -262,8 +262,8 @@ describe("generateFile", () => {
               name: "Echo",
               localName: "echo",
               kind: "unary",
-              inputType: "Node",
-              outputType: "Node",
+              inputType: { name: "Node" },
+              outputType: { name: "Node" },
             },
           ],
         },
@@ -314,8 +314,8 @@ describe("generateFile", () => {
               name: "GetProfile",
               localName: "getProfile",
               kind: "unary",
-              inputType: "Profile",
-              outputType: "Profile",
+              inputType: { name: "Profile" },
+              outputType: { name: "Profile" },
             },
           ],
         },
@@ -359,8 +359,8 @@ describe("generateFile", () => {
               name: "GetUser",
               localName: "getUser",
               kind: "unary",
-              inputType: "CommonUser",
-              outputType: "CommonUser",
+              inputType: { name: "CommonUser" },
+              outputType: { name: "CommonUser" },
             },
           ],
         },
@@ -402,15 +402,15 @@ describe("generateFile", () => {
               name: "Upload",
               localName: "upload",
               kind: "client-streaming",
-              inputType: "UploadRequest",
-              outputType: "UploadResponse",
+              inputType: { name: "UploadRequest" },
+              outputType: { name: "UploadResponse" },
             },
             {
               name: "Chat",
               localName: "chat",
               kind: "bidi-streaming",
-              inputType: "UploadRequest",
-              outputType: "UploadResponse",
+              inputType: { name: "UploadRequest" },
+              outputType: { name: "UploadResponse" },
             },
           ],
         },
@@ -448,10 +448,10 @@ describe("plugin fixture", () => {
     );
 
     expect(response.file[0]?.content).toContain(
-      "export const GrpcGoogleProtobufEmptySchema = Schema.Struct({});",
+      "export const Grpc$GoogleProtobufEmptySchema = Schema.Struct({});",
     );
     expect(response.file[0]?.content).toContain(
-      "payloadSchema: GrpcGoogleProtobufEmptySchema",
+      "payloadSchema: Grpc$GoogleProtobufEmptySchema",
     );
     expect(response.file[0]?.content).toContain(
       "toGrpcRequest: toGrpc$GoogleProtobufEmpty",
@@ -472,16 +472,16 @@ describe("plugin fixture", () => {
     );
 
     expect(response.file[0]?.content).toContain(
-      "export const GrpcGoogleProtobufDurationSchema = Schema.Duration;",
+      "export const Grpc$GoogleProtobufDurationSchema = Schema.Duration;",
     );
     expect(response.file[0]?.content).toContain(
-      "export const GrpcGoogleProtobufBoolValueSchema = Schema.Boolean;",
+      "export const Grpc$GoogleProtobufBoolValueSchema = Schema.Boolean;",
     );
     expect(response.file[0]?.content).toContain(
-      "payloadSchema: GrpcGoogleProtobufBoolValueSchema",
+      "payloadSchema: Grpc$GoogleProtobufBoolValueSchema",
     );
     expect(response.file[0]?.content).toContain(
-      "successSchema: GrpcGoogleProtobufDurationSchema",
+      "successSchema: Grpc$GoogleProtobufDurationSchema",
     );
     expect(response.file[0]?.content).toContain(
       "toGrpcRequest: toGrpc$GoogleProtobufBoolValueMessage",

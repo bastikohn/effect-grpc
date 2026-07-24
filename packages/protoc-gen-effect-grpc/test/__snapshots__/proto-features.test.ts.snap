@@ -619,14 +619,14 @@ import {
   WellKnownTypeFeature,
 } from "./well_known_types_pb.js";
 
-export const GrpcGoogleProtobufTimestampSchema = Schema.Date;
-export type GrpcGoogleProtobufTimestamp = Schema.Schema.Type<typeof GrpcGoogleProtobufTimestampSchema>;
+export const Grpc$GoogleProtobufTimestampSchema = Schema.Date;
+export type Grpc$GoogleProtobufTimestamp = Schema.Schema.Type<typeof Grpc$GoogleProtobufTimestampSchema>;
 
-export const GrpcGoogleProtobufDurationSchema = Schema.Duration;
-export type GrpcGoogleProtobufDuration = Schema.Schema.Type<typeof GrpcGoogleProtobufDurationSchema>;
+export const Grpc$GoogleProtobufDurationSchema = Schema.Duration;
+export type Grpc$GoogleProtobufDuration = Schema.Schema.Type<typeof Grpc$GoogleProtobufDurationSchema>;
 
-export const GrpcGoogleProtobufBoolValueSchema = Schema.Boolean;
-export type GrpcGoogleProtobufBoolValue = Schema.Schema.Type<typeof GrpcGoogleProtobufBoolValueSchema>;
+export const Grpc$GoogleProtobufBoolValueSchema = Schema.Boolean;
+export type Grpc$GoogleProtobufBoolValue = Schema.Schema.Type<typeof Grpc$GoogleProtobufBoolValueSchema>;
 
 export const WellKnownValuesSchema = Schema.Struct({
   createdAt: Schema.optional(Schema.Date),
@@ -732,8 +732,8 @@ export const WellKnownTypeFeatureGrpcRegistry = new Map<string, GrpcMethodRegist
       tag: "features.v1.WellKnownTypeFeature/EchoTimestamp",
       service: WellKnownTypeFeature,
       localName: "echoTimestamp",
-      payloadSchema: GrpcGoogleProtobufTimestampSchema,
-      successSchema: GrpcGoogleProtobufTimestampSchema,
+      payloadSchema: Grpc$GoogleProtobufTimestampSchema,
+      successSchema: Grpc$GoogleProtobufTimestampSchema,
       toGrpcRequest: toGrpc$GoogleProtobufTimestamp,
       fromGrpcRequest: fromGrpc$GoogleProtobufTimestamp,
       toGrpcResponse: toGrpc$GoogleProtobufTimestamp,
@@ -747,8 +747,8 @@ export const WellKnownTypeFeatureGrpcRegistry = new Map<string, GrpcMethodRegist
       tag: "features.v1.WellKnownTypeFeature/EchoDuration",
       service: WellKnownTypeFeature,
       localName: "echoDuration",
-      payloadSchema: GrpcGoogleProtobufDurationSchema,
-      successSchema: GrpcGoogleProtobufDurationSchema,
+      payloadSchema: Grpc$GoogleProtobufDurationSchema,
+      successSchema: Grpc$GoogleProtobufDurationSchema,
       toGrpcRequest: toGrpc$GoogleProtobufDuration,
       fromGrpcRequest: fromGrpc$GoogleProtobufDuration,
       toGrpcResponse: toGrpc$GoogleProtobufDuration,
@@ -762,8 +762,8 @@ export const WellKnownTypeFeatureGrpcRegistry = new Map<string, GrpcMethodRegist
       tag: "features.v1.WellKnownTypeFeature/EchoBoolValue",
       service: WellKnownTypeFeature,
       localName: "echoBoolValue",
-      payloadSchema: GrpcGoogleProtobufBoolValueSchema,
-      successSchema: GrpcGoogleProtobufBoolValueSchema,
+      payloadSchema: Grpc$GoogleProtobufBoolValueSchema,
+      successSchema: Grpc$GoogleProtobufBoolValueSchema,
       toGrpcRequest: toGrpc$GoogleProtobufBoolValueMessage,
       fromGrpcRequest: fromGrpc$GoogleProtobufBoolValue,
       toGrpcResponse: toGrpc$GoogleProtobufBoolValueMessage,
@@ -776,9 +776,9 @@ export type WellKnownTypeFeatureClientError = GrpcStatusError.GrpcStatusError;
 
 export interface WellKnownTypeFeatureClientService {
   readonly echo: (request: WellKnownValues, options?: CodegenSupport.GrpcCallOptions) => Effect.Effect<WellKnownValues, WellKnownTypeFeatureClientError>;
-  readonly echoTimestamp: (request: GrpcGoogleProtobufTimestamp, options?: CodegenSupport.GrpcCallOptions) => Effect.Effect<GrpcGoogleProtobufTimestamp, WellKnownTypeFeatureClientError>;
-  readonly echoDuration: (request: GrpcGoogleProtobufDuration, options?: CodegenSupport.GrpcCallOptions) => Effect.Effect<GrpcGoogleProtobufDuration, WellKnownTypeFeatureClientError>;
-  readonly echoBoolValue: (request: GrpcGoogleProtobufBoolValue, options?: CodegenSupport.GrpcCallOptions) => Effect.Effect<GrpcGoogleProtobufBoolValue, WellKnownTypeFeatureClientError>;
+  readonly echoTimestamp: (request: Grpc$GoogleProtobufTimestamp, options?: CodegenSupport.GrpcCallOptions) => Effect.Effect<Grpc$GoogleProtobufTimestamp, WellKnownTypeFeatureClientError>;
+  readonly echoDuration: (request: Grpc$GoogleProtobufDuration, options?: CodegenSupport.GrpcCallOptions) => Effect.Effect<Grpc$GoogleProtobufDuration, WellKnownTypeFeatureClientError>;
+  readonly echoBoolValue: (request: Grpc$GoogleProtobufBoolValue, options?: CodegenSupport.GrpcCallOptions) => Effect.Effect<Grpc$GoogleProtobufBoolValue, WellKnownTypeFeatureClientError>;
 }
 
 const makeWellKnownTypeFeatureClient = Effect.gen(function* () {
@@ -799,9 +799,9 @@ export const WellKnownTypeFeatureClientLayer = Layer.effect(WellKnownTypeFeature
 
 export interface WellKnownTypeFeatureImplementation<R = never> {
   readonly echo: (request: WellKnownValues, context: CodegenSupport.GrpcServerContext) => Effect.Effect<WellKnownValues, GrpcStatusError.GrpcStatusError, R>;
-  readonly echoTimestamp: (request: GrpcGoogleProtobufTimestamp, context: CodegenSupport.GrpcServerContext) => Effect.Effect<GrpcGoogleProtobufTimestamp, GrpcStatusError.GrpcStatusError, R>;
-  readonly echoDuration: (request: GrpcGoogleProtobufDuration, context: CodegenSupport.GrpcServerContext) => Effect.Effect<GrpcGoogleProtobufDuration, GrpcStatusError.GrpcStatusError, R>;
-  readonly echoBoolValue: (request: GrpcGoogleProtobufBoolValue, context: CodegenSupport.GrpcServerContext) => Effect.Effect<GrpcGoogleProtobufBoolValue, GrpcStatusError.GrpcStatusError, R>;
+  readonly echoTimestamp: (request: Grpc$GoogleProtobufTimestamp, context: CodegenSupport.GrpcServerContext) => Effect.Effect<Grpc$GoogleProtobufTimestamp, GrpcStatusError.GrpcStatusError, R>;
+  readonly echoDuration: (request: Grpc$GoogleProtobufDuration, context: CodegenSupport.GrpcServerContext) => Effect.Effect<Grpc$GoogleProtobufDuration, GrpcStatusError.GrpcStatusError, R>;
+  readonly echoBoolValue: (request: Grpc$GoogleProtobufBoolValue, context: CodegenSupport.GrpcServerContext) => Effect.Effect<Grpc$GoogleProtobufBoolValue, GrpcStatusError.GrpcStatusError, R>;
 }
 
 export const WellKnownTypeFeatureHandlersLayer = <R>(
@@ -814,15 +814,15 @@ export const WellKnownTypeFeatureHandlersLayer = <R>(
     },
     "features.v1.WellKnownTypeFeature/EchoTimestamp": {
       kind: "unary",
-      handler: (request, context) => implementation.echoTimestamp(request as GrpcGoogleProtobufTimestamp, context),
+      handler: (request, context) => implementation.echoTimestamp(request as Grpc$GoogleProtobufTimestamp, context),
     },
     "features.v1.WellKnownTypeFeature/EchoDuration": {
       kind: "unary",
-      handler: (request, context) => implementation.echoDuration(request as GrpcGoogleProtobufDuration, context),
+      handler: (request, context) => implementation.echoDuration(request as Grpc$GoogleProtobufDuration, context),
     },
     "features.v1.WellKnownTypeFeature/EchoBoolValue": {
       kind: "unary",
-      handler: (request, context) => implementation.echoBoolValue(request as GrpcGoogleProtobufBoolValue, context),
+      handler: (request, context) => implementation.echoBoolValue(request as Grpc$GoogleProtobufBoolValue, context),
     },
   });
 
@@ -2052,6 +2052,9 @@ import {
   BytesCollisionFeature,
 } from "./bytes_collision_pb.js";
 
+export const Grpc$GoogleProtobufTimestampSchema = Schema.Date;
+export type Grpc$GoogleProtobufTimestamp = Schema.Schema.Type<typeof Grpc$GoogleProtobufTimestampSchema>;
+
 export const BytesSchema = Schema.Struct({
   data: Schema.Uint8Array,
 });
@@ -2077,6 +2080,16 @@ export const ShadowSchema = Schema.Struct({
 });
 export type Shadow = Schema.Schema.Type<typeof ShadowSchema>;
 
+export const GrpcGoogleProtobufBoolValueSchema = Schema.Struct({
+  enabled: Schema.Boolean,
+});
+export type GrpcGoogleProtobufBoolValue = Schema.Schema.Type<typeof GrpcGoogleProtobufBoolValueSchema>;
+
+export const GrpcGoogleProtobufEmptySchema = Schema.Struct({
+  label: Schema.String,
+});
+export type GrpcGoogleProtobufEmpty = Schema.Schema.Type<typeof GrpcGoogleProtobufEmptySchema>;
+
 const readField = (message: unknown, field: string): unknown =>
   typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
 
@@ -2094,14 +2107,14 @@ const fromGrpc$Bytes = (value: Uint8Array): string =>
 const toGrpc$Bytes = (value: unknown): Uint8Array =>
   Uint8Array.from(Buffer.from(value as string, "base64"));
 
-const fromGrpc$GoogleProtobufTimestamp = (value: unknown): string => {
+export const fromGrpc$GoogleProtobufTimestamp = (value: unknown): string => {
   const message = value as { readonly seconds?: bigint | number; readonly nanos?: number };
   const seconds = Number(message.seconds ?? 0);
   const nanos = message.nanos ?? 0;
   return new Date(seconds * 1000 + Math.trunc(nanos / 1_000_000)).toISOString();
 };
 
-const toGrpc$GoogleProtobufTimestamp = (value: unknown) => {
+export const toGrpc$GoogleProtobufTimestamp = (value: unknown) => {
   const millis = new Date(value as string).getTime();
   const seconds = Math.floor(millis / 1000);
   return {
@@ -2194,6 +2207,28 @@ export const toGrpcGoogleProtobufTimestamp = (value: unknown): Record<string, un
   });
 };
 
+export const fromGrpcGoogleProtobufBoolValue = (message: unknown): unknown => compact({
+  enabled: (readField(message, "enabled")) as boolean,
+});
+
+export const toGrpcGoogleProtobufBoolValue = (value: unknown): Record<string, unknown> => {
+  const message = value as Record<string, unknown>;
+  return compact({
+    enabled: (readField(message, "enabled")) as boolean,
+  });
+};
+
+export const fromGrpcGoogleProtobufEmpty = (message: unknown): unknown => compact({
+  label: (readField(message, "label")) as string,
+});
+
+export const toGrpcGoogleProtobufEmpty = (value: unknown): Record<string, unknown> => {
+  const message = value as Record<string, unknown>;
+  return compact({
+    label: (readField(message, "label")) as string,
+  });
+};
+
 export const BytesCollisionFeatureGrpcRegistry = new Map<string, GrpcMethodRegistry.GrpcMethodEntry>([
   [
     "features.v1.BytesCollisionFeature/Echo",
@@ -2240,6 +2275,66 @@ export const BytesCollisionFeatureGrpcRegistry = new Map<string, GrpcMethodRegis
       fromGrpcResponse: fromShadow,
     },
   ],
+  [
+    "features.v1.BytesCollisionFeature/EchoShadowedTimestamp",
+    {
+      kind: "unary",
+      tag: "features.v1.BytesCollisionFeature/EchoShadowedTimestamp",
+      service: BytesCollisionFeature,
+      localName: "echoShadowedTimestamp",
+      payloadSchema: GrpcGoogleProtobufTimestampSchema,
+      successSchema: GrpcGoogleProtobufTimestampSchema,
+      toGrpcRequest: toGrpcGoogleProtobufTimestamp,
+      fromGrpcRequest: fromGrpcGoogleProtobufTimestamp,
+      toGrpcResponse: toGrpcGoogleProtobufTimestamp,
+      fromGrpcResponse: fromGrpcGoogleProtobufTimestamp,
+    },
+  ],
+  [
+    "features.v1.BytesCollisionFeature/EchoShadowedBoolValue",
+    {
+      kind: "unary",
+      tag: "features.v1.BytesCollisionFeature/EchoShadowedBoolValue",
+      service: BytesCollisionFeature,
+      localName: "echoShadowedBoolValue",
+      payloadSchema: GrpcGoogleProtobufBoolValueSchema,
+      successSchema: GrpcGoogleProtobufBoolValueSchema,
+      toGrpcRequest: toGrpcGoogleProtobufBoolValue,
+      fromGrpcRequest: fromGrpcGoogleProtobufBoolValue,
+      toGrpcResponse: toGrpcGoogleProtobufBoolValue,
+      fromGrpcResponse: fromGrpcGoogleProtobufBoolValue,
+    },
+  ],
+  [
+    "features.v1.BytesCollisionFeature/EchoShadowedEmpty",
+    {
+      kind: "unary",
+      tag: "features.v1.BytesCollisionFeature/EchoShadowedEmpty",
+      service: BytesCollisionFeature,
+      localName: "echoShadowedEmpty",
+      payloadSchema: GrpcGoogleProtobufEmptySchema,
+      successSchema: GrpcGoogleProtobufEmptySchema,
+      toGrpcRequest: toGrpcGoogleProtobufEmpty,
+      fromGrpcRequest: fromGrpcGoogleProtobufEmpty,
+      toGrpcResponse: toGrpcGoogleProtobufEmpty,
+      fromGrpcResponse: fromGrpcGoogleProtobufEmpty,
+    },
+  ],
+  [
+    "features.v1.BytesCollisionFeature/EchoTimestamp",
+    {
+      kind: "unary",
+      tag: "features.v1.BytesCollisionFeature/EchoTimestamp",
+      service: BytesCollisionFeature,
+      localName: "echoTimestamp",
+      payloadSchema: Grpc$GoogleProtobufTimestampSchema,
+      successSchema: Grpc$GoogleProtobufTimestampSchema,
+      toGrpcRequest: toGrpc$GoogleProtobufTimestamp,
+      fromGrpcRequest: fromGrpc$GoogleProtobufTimestamp,
+      toGrpcResponse: toGrpc$GoogleProtobufTimestamp,
+      fromGrpcResponse: fromGrpc$GoogleProtobufTimestamp,
+    },
+  ],
 ]);
 
 export type BytesCollisionFeatureClientError = GrpcStatusError.GrpcStatusError;
@@ -2248,6 +2343,10 @@ export interface BytesCollisionFeatureClientService {
   readonly echo: (request: Bytes, options?: CodegenSupport.GrpcCallOptions) => Effect.Effect<Bytes, BytesCollisionFeatureClientError>;
   readonly echoChoice: (request: Choice, options?: CodegenSupport.GrpcCallOptions) => Effect.Effect<Choice, BytesCollisionFeatureClientError>;
   readonly echoShadow: (request: Shadow, options?: CodegenSupport.GrpcCallOptions) => Effect.Effect<Shadow, BytesCollisionFeatureClientError>;
+  readonly echoShadowedTimestamp: (request: GrpcGoogleProtobufTimestamp, options?: CodegenSupport.GrpcCallOptions) => Effect.Effect<GrpcGoogleProtobufTimestamp, BytesCollisionFeatureClientError>;
+  readonly echoShadowedBoolValue: (request: GrpcGoogleProtobufBoolValue, options?: CodegenSupport.GrpcCallOptions) => Effect.Effect<GrpcGoogleProtobufBoolValue, BytesCollisionFeatureClientError>;
+  readonly echoShadowedEmpty: (request: GrpcGoogleProtobufEmpty, options?: CodegenSupport.GrpcCallOptions) => Effect.Effect<GrpcGoogleProtobufEmpty, BytesCollisionFeatureClientError>;
+  readonly echoTimestamp: (request: Grpc$GoogleProtobufTimestamp, options?: CodegenSupport.GrpcCallOptions) => Effect.Effect<Grpc$GoogleProtobufTimestamp, BytesCollisionFeatureClientError>;
 }
 
 const makeBytesCollisionFeatureClient = Effect.gen(function* () {
@@ -2256,6 +2355,10 @@ const makeBytesCollisionFeatureClient = Effect.gen(function* () {
     echo: ((request, options) => invoker.unary("features.v1.BytesCollisionFeature/Echo", request, options)) as BytesCollisionFeatureClientService["echo"],
     echoChoice: ((request, options) => invoker.unary("features.v1.BytesCollisionFeature/EchoChoice", request, options)) as BytesCollisionFeatureClientService["echoChoice"],
     echoShadow: ((request, options) => invoker.unary("features.v1.BytesCollisionFeature/EchoShadow", request, options)) as BytesCollisionFeatureClientService["echoShadow"],
+    echoShadowedTimestamp: ((request, options) => invoker.unary("features.v1.BytesCollisionFeature/EchoShadowedTimestamp", request, options)) as BytesCollisionFeatureClientService["echoShadowedTimestamp"],
+    echoShadowedBoolValue: ((request, options) => invoker.unary("features.v1.BytesCollisionFeature/EchoShadowedBoolValue", request, options)) as BytesCollisionFeatureClientService["echoShadowedBoolValue"],
+    echoShadowedEmpty: ((request, options) => invoker.unary("features.v1.BytesCollisionFeature/EchoShadowedEmpty", request, options)) as BytesCollisionFeatureClientService["echoShadowedEmpty"],
+    echoTimestamp: ((request, options) => invoker.unary("features.v1.BytesCollisionFeature/EchoTimestamp", request, options)) as BytesCollisionFeatureClientService["echoTimestamp"],
   } satisfies BytesCollisionFeatureClientService;
 });
 
@@ -2269,6 +2372,10 @@ export interface BytesCollisionFeatureImplementation<R = never> {
   readonly echo: (request: Bytes, context: CodegenSupport.GrpcServerContext) => Effect.Effect<Bytes, GrpcStatusError.GrpcStatusError, R>;
   readonly echoChoice: (request: Choice, context: CodegenSupport.GrpcServerContext) => Effect.Effect<Choice, GrpcStatusError.GrpcStatusError, R>;
   readonly echoShadow: (request: Shadow, context: CodegenSupport.GrpcServerContext) => Effect.Effect<Shadow, GrpcStatusError.GrpcStatusError, R>;
+  readonly echoShadowedTimestamp: (request: GrpcGoogleProtobufTimestamp, context: CodegenSupport.GrpcServerContext) => Effect.Effect<GrpcGoogleProtobufTimestamp, GrpcStatusError.GrpcStatusError, R>;
+  readonly echoShadowedBoolValue: (request: GrpcGoogleProtobufBoolValue, context: CodegenSupport.GrpcServerContext) => Effect.Effect<GrpcGoogleProtobufBoolValue, GrpcStatusError.GrpcStatusError, R>;
+  readonly echoShadowedEmpty: (request: GrpcGoogleProtobufEmpty, context: CodegenSupport.GrpcServerContext) => Effect.Effect<GrpcGoogleProtobufEmpty, GrpcStatusError.GrpcStatusError, R>;
+  readonly echoTimestamp: (request: Grpc$GoogleProtobufTimestamp, context: CodegenSupport.GrpcServerContext) => Effect.Effect<Grpc$GoogleProtobufTimestamp, GrpcStatusError.GrpcStatusError, R>;
 }
 
 export const BytesCollisionFeatureHandlersLayer = <R>(
@@ -2286,6 +2393,22 @@ export const BytesCollisionFeatureHandlersLayer = <R>(
     "features.v1.BytesCollisionFeature/EchoShadow": {
       kind: "unary",
       handler: (request, context) => implementation.echoShadow(request as Shadow, context),
+    },
+    "features.v1.BytesCollisionFeature/EchoShadowedTimestamp": {
+      kind: "unary",
+      handler: (request, context) => implementation.echoShadowedTimestamp(request as GrpcGoogleProtobufTimestamp, context),
+    },
+    "features.v1.BytesCollisionFeature/EchoShadowedBoolValue": {
+      kind: "unary",
+      handler: (request, context) => implementation.echoShadowedBoolValue(request as GrpcGoogleProtobufBoolValue, context),
+    },
+    "features.v1.BytesCollisionFeature/EchoShadowedEmpty": {
+      kind: "unary",
+      handler: (request, context) => implementation.echoShadowedEmpty(request as GrpcGoogleProtobufEmpty, context),
+    },
+    "features.v1.BytesCollisionFeature/EchoTimestamp": {
+      kind: "unary",
+      handler: (request, context) => implementation.echoTimestamp(request as Grpc$GoogleProtobufTimestamp, context),
     },
   });
 

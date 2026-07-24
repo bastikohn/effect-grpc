@@ -49,10 +49,16 @@ export const serviceHandlersLayerName = (serviceName: string) =>
 export const serviceRegistryName = (serviceName: string) =>
   `${serviceName}GrpcRegistry`;
 
+/**
+ * Every identifier the generator introduces itself — base64/oneof helpers, the
+ * schemas, types and converters standing in for a well-known method type —
+ * lives under a single `Grpc$` namespace. `$` is legal in TypeScript
+ * identifiers but never in protobuf ones, so no `.proto` declaration can reach
+ * these names, whatever it calls its messages.
+ */
+export const grpcGeneratedName = (name: string) => `Grpc$${name}`;
+
 export const grpcWellKnownName = (protobufName: string) =>
-  `GrpcGoogleProtobuf${protobufName}`;
+  grpcGeneratedName(`GoogleProtobuf${protobufName}`);
 
 export const grpcEmptyName = grpcWellKnownName("Empty");
-export const grpcTimestampName = grpcWellKnownName("Timestamp");
-export const grpcDurationName = grpcWellKnownName("Duration");
-export const grpcBoolValueName = grpcWellKnownName("BoolValue");

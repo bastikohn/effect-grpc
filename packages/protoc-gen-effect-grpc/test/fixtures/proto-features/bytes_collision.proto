@@ -4,14 +4,23 @@ package features.v1;
 
 import "google/protobuf/timestamp.proto";
 
-// `Bytes`, `Choice_pickOneof` and `GrpcGoogleProtobufTimestamp` are legal proto
-// message names that collide with the converters the generator introduces
-// itself unless those are namespaced: the generated file would declare
-// `fromBytes`/`fromChoice_pickOneof`/`fromGrpcGoogleProtobufTimestamp` twice.
+// Every message here is a legal proto name that shadows something the generator
+// introduces itself. `Bytes`, `Choice_pickOneof` and the `GrpcGoogleProtobuf*`
+// messages collide with its converters unless those stay namespaced: the file
+// would declare `fromBytes`/`fromChoice_pickOneof`/`fromGrpcGoogleProtobufTimestamp`
+// twice. As a method input/output the `GrpcGoogleProtobuf*` messages go further:
+// identified by their generated name they were taken for the well-known itself,
+// which declared its schema and type on top of theirs and converted them through
+// the wrapper and Empty converters. The real `google.protobuf.Timestamp` is a
+// method type here too, so one file holds both a shadow and what it shadows.
 service BytesCollisionFeature {
   rpc Echo(Bytes) returns (Bytes);
   rpc EchoChoice(Choice) returns (Choice);
   rpc EchoShadow(Shadow) returns (Shadow);
+  rpc EchoShadowedTimestamp(GrpcGoogleProtobufTimestamp) returns (GrpcGoogleProtobufTimestamp);
+  rpc EchoShadowedBoolValue(GrpcGoogleProtobufBoolValue) returns (GrpcGoogleProtobufBoolValue);
+  rpc EchoShadowedEmpty(GrpcGoogleProtobufEmpty) returns (GrpcGoogleProtobufEmpty);
+  rpc EchoTimestamp(google.protobuf.Timestamp) returns (google.protobuf.Timestamp);
 }
 
 message Bytes {
@@ -37,4 +46,15 @@ message Shadow {
 // `at` field below also needs — so one file converts both.
 message GrpcGoogleProtobufTimestamp {
   google.protobuf.Timestamp at = 1;
+}
+
+// A wrapper's and Empty's generated names. Both keep a field of their own: the
+// wrapper boxing converter would have replaced it with `{ value }`, the Empty
+// converter dropped it.
+message GrpcGoogleProtobufBoolValue {
+  bool enabled = 1;
+}
+
+message GrpcGoogleProtobufEmpty {
+  string label = 1;
 }

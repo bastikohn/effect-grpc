@@ -30,13 +30,13 @@ export const generateServer = (file: GeneratorFile) =>
 const implementationSignature = (method: MethodModel): string => {
   switch (method.kind) {
     case "unary":
-      return `(request: ${method.inputType}, context: CodegenSupport.GrpcServerContext) => Effect.Effect<${method.outputType}, GrpcStatusError.GrpcStatusError, R>`;
+      return `(request: ${method.inputType.name}, context: CodegenSupport.GrpcServerContext) => Effect.Effect<${method.outputType.name}, GrpcStatusError.GrpcStatusError, R>`;
     case "server-streaming":
-      return `(request: ${method.inputType}, context: CodegenSupport.GrpcServerContext) => Stream.Stream<${method.outputType}, GrpcStatusError.GrpcStatusError, R>`;
+      return `(request: ${method.inputType.name}, context: CodegenSupport.GrpcServerContext) => Stream.Stream<${method.outputType.name}, GrpcStatusError.GrpcStatusError, R>`;
     case "client-streaming":
-      return `(requests: Stream.Stream<${method.inputType}, GrpcStatusError.GrpcStatusError>, context: CodegenSupport.GrpcServerContext) => Effect.Effect<${method.outputType}, GrpcStatusError.GrpcStatusError, R>`;
+      return `(requests: Stream.Stream<${method.inputType.name}, GrpcStatusError.GrpcStatusError>, context: CodegenSupport.GrpcServerContext) => Effect.Effect<${method.outputType.name}, GrpcStatusError.GrpcStatusError, R>`;
     case "bidi-streaming":
-      return `(requests: Stream.Stream<${method.inputType}, GrpcStatusError.GrpcStatusError>, context: CodegenSupport.GrpcServerContext) => Stream.Stream<${method.outputType}, GrpcStatusError.GrpcStatusError, R>`;
+      return `(requests: Stream.Stream<${method.inputType.name}, GrpcStatusError.GrpcStatusError>, context: CodegenSupport.GrpcServerContext) => Stream.Stream<${method.outputType.name}, GrpcStatusError.GrpcStatusError, R>`;
   }
 };
 
@@ -46,9 +46,9 @@ const handlerBinding = (method: MethodModel): string => {
   switch (method.kind) {
     case "unary":
     case "server-streaming":
-      return `(request, context) => implementation.${method.localName}(request as ${method.inputType}, context)`;
+      return `(request, context) => implementation.${method.localName}(request as ${method.inputType.name}, context)`;
     case "client-streaming":
     case "bidi-streaming":
-      return `(requests, context) => implementation.${method.localName}(requests as Stream.Stream<${method.inputType}, GrpcStatusError.GrpcStatusError>, context)`;
+      return `(requests, context) => implementation.${method.localName}(requests as Stream.Stream<${method.inputType.name}, GrpcStatusError.GrpcStatusError>, context)`;
   }
 };

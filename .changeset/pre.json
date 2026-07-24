@@ -13,17 +13,31 @@
     "@effect-grpc/protoc-gen-effect-grpc": "0.1.0"
   },
   "changesets": [
+    "binary-metadata-and-zero-deadline",
+    "bytes-converter-name-collision",
     "client-and-bidi-streaming",
     "client-transport-options-and-metadata-interceptor",
+    "codegen-file-usage",
     "effect-v4-one-oh",
     "empty-message-unused-params",
     "first-class-tls-mtls",
     "grpc-auth-bearer-tokens",
     "grpc-health-checking",
+    "grpc-invoker-seam",
     "grpc-server-reflection",
     "grpc-status-error-schema-class",
+    "invoker-only-clients",
+    "method-registry-deepened",
     "otel-semconv-metrics-tracestate",
     "proto-matrix-expansion",
-    "tidy-moons-wonder"
+    "retire-effect-rpc-client-protocol",
+    "retire-effect-rpc-server-protocol",
+    "serialize-owned-pulls",
+    "server-port-default-ports",
+    "status-error-failure-codes-and-single-metadata",
+    "stream-bridge-one-home",
+    "stream-teardown-and-deadline-status",
+    "tidy-moons-wonder",
+    "unused-imported-type-import"
   ]
 }

@@ -1,5 +1,16 @@
 # @effect-grpc/codegen
 
+## 1.0.0-beta.4
+
+### Patch Changes
+
+- Updated dependencies [eb87335]
+- Updated dependencies [7b92908]
+- Updated dependencies [952f396]
+- Updated dependencies [437f0d7]
+- Updated dependencies [a74b509]
+  - @effect-grpc/protoc-gen-effect-grpc@1.0.0-beta.4
+
 ## 1.0.0-beta.3
 
 ### Patch Changes

@@ -15,6 +15,7 @@ import {
   GrpcReflection,
   GrpcServerProtocol,
   GrpcStatusError,
+  type GrpcStatusCode,
 } from "@effect-grpc/effect-grpc";
 import {
   UserServiceClient,
@@ -136,6 +137,34 @@ describe("public API", () => {
     expect(GrpcHealth.make).type.toBeCallableWith({
       initialStatuses: [["", "SERVING"]],
     });
+  });
+
+  it("pins the status error to failure codes and one metadata channel", () => {
+    expect(GrpcStatusError.make).type.toBeCallableWith({
+      code: "unavailable",
+      message: "down",
+      metadata: [["x-demo", "1"]],
+    });
+    // Regression pin: `"ok"` is not a failure. An error carrying it recorded
+    // success telemetry while the peer still saw the call fail as UNKNOWN.
+    expect(GrpcStatusError.make).type.not.toBeCallableWith({
+      code: "ok",
+      message: "not a failure",
+    });
+    // The `"ok"`-free union consumers name in their own signatures.
+    expect<
+      GrpcStatusError.GrpcStatusError["code"]
+    >().type.toBe<GrpcStatusCode.GrpcErrorStatusCode>();
+    // Regression pin: an error has exactly one metadata channel — connect
+    // writes it to the response trailers — so `trailers` is gone.
+    expect(GrpcStatusError.make).type.not.toBeCallableWith({
+      code: "unavailable",
+      message: "down",
+      trailers: [["x-demo", "1"]],
+    });
+    expect<GrpcStatusError.GrpcStatusError>().type.not.toHaveProperty(
+      "trailers",
+    );
   });
 
   it("pins the serveAll handlers seam and the protocol constructor", () => {

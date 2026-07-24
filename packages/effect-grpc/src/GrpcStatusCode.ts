@@ -1,27 +1,11 @@
 import { Code } from "@connectrpc/connect";
 import { Schema } from "effect";
 
-export type GrpcStatusCode =
-  | "ok"
-  | "cancelled"
-  | "unknown"
-  | "invalid_argument"
-  | "deadline_exceeded"
-  | "not_found"
-  | "already_exists"
-  | "permission_denied"
-  | "resource_exhausted"
-  | "failed_precondition"
-  | "aborted"
-  | "out_of_range"
-  | "unimplemented"
-  | "internal"
-  | "unavailable"
-  | "data_loss"
-  | "unauthenticated";
-
-export const schema = Schema.Literals([
-  "ok",
+/**
+ * Source of truth for both unions: the failure codes are the constrained set,
+ * and `"ok"` is added on top for the outcome-reporting union below.
+ */
+const errorCodes = [
   "cancelled",
   "unknown",
   "invalid_argument",
@@ -38,9 +22,25 @@ export const schema = Schema.Literals([
   "unavailable",
   "data_loss",
   "unauthenticated",
-]);
+] as const;
 
-export const fromConnectCode = (code: Code): GrpcStatusCode => {
+/**
+ * A status code that denotes a failure. `GrpcStatusError` carries this rather
+ * than {@link GrpcStatusCode}: a failure reported as `"ok"` would record
+ * success telemetry while the peer still sees the call fail as `UNKNOWN`.
+ */
+export type GrpcErrorStatusCode = (typeof errorCodes)[number];
+
+/**
+ * Any call outcome, success included. Used for telemetry, which legitimately
+ * reports `"ok"`.
+ */
+export type GrpcStatusCode = "ok" | GrpcErrorStatusCode;
+
+export const errorSchema = Schema.Literals(errorCodes);
+
+/** Connect's `Code` has no `OK` member, so this never yields `"ok"`. */
+export const fromConnectCode = (code: Code): GrpcErrorStatusCode => {
   switch (code) {
     case Code.Canceled:
       return "cancelled";

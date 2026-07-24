@@ -72,20 +72,20 @@ const compact = <T extends Record<string, unknown>>(object: T): T => {
   return result as T;
 };
 
-const fromBytes = (value: Uint8Array): string =>
+const fromGrpc$Bytes = (value: Uint8Array): string =>
   Buffer.from(value).toString("base64");
 
-const toBytes = (value: unknown): Uint8Array =>
+const toGrpc$Bytes = (value: unknown): Uint8Array =>
   Uint8Array.from(Buffer.from(value as string, "base64"));
 
-const fromGrpcGoogleProtobufTimestamp = (value: unknown): string => {
+const fromGrpc$GoogleProtobufTimestamp = (value: unknown): string => {
   const message = value as { readonly seconds?: bigint | number; readonly nanos?: number };
   const seconds = Number(message.seconds ?? 0);
   const nanos = message.nanos ?? 0;
   return new Date(seconds * 1000 + Math.trunc(nanos / 1_000_000)).toISOString();
 };
 
-const toGrpcGoogleProtobufTimestamp = (value: unknown) => {
+const toGrpc$GoogleProtobufTimestamp = (value: unknown) => {
   const millis = new Date(value as string).getTime();
   const seconds = Math.floor(millis / 1000);
   return {
@@ -94,13 +94,13 @@ const toGrpcGoogleProtobufTimestamp = (value: unknown) => {
   };
 };
 
-const fromGrpcGoogleProtobufDuration = (value: unknown) => {
+const fromGrpc$GoogleProtobufDuration = (value: unknown) => {
   const message = value as { readonly seconds?: bigint | number; readonly nanos?: number };
   const nanos = BigInt(message.seconds ?? 0) * 1_000_000_000n + BigInt(message.nanos ?? 0);
   return nanos % 1_000_000n === 0n ? { _tag: "Millis", value: Number(nanos / 1_000_000n) } : { _tag: "Nanos", value: String(nanos) };
 };
 
-const toGrpcGoogleProtobufDuration = (value: unknown) => {
+const toGrpc$GoogleProtobufDuration = (value: unknown) => {
   const duration = value as { readonly _tag?: string; readonly value?: unknown };
   const nanos = duration._tag === "Millis"
     ? BigInt(duration.value as number) * 1_000_000n
@@ -113,7 +113,7 @@ const toGrpcGoogleProtobufDuration = (value: unknown) => {
   };
 };
 
-const fromFeatureRequest_contactOneof = (value: unknown): unknown => {
+const fromGrpc$FeatureRequest_contactOneof = (value: unknown): unknown => {
   const oneof = (value ?? { case: undefined }) as { readonly case?: string; readonly value?: unknown };
   switch (oneof.case ?? undefined) {
     case "contactEmail":
@@ -127,7 +127,7 @@ const fromFeatureRequest_contactOneof = (value: unknown): unknown => {
   }
 };
 
-const toFeatureRequest_contactOneof = (value: unknown): unknown => {
+const toGrpc$FeatureRequest_contactOneof = (value: unknown): unknown => {
   const oneof = value ?? { case: undefined };
   const message = oneof as { readonly case?: string; readonly value?: unknown };
   switch (message.case ?? undefined) {
@@ -151,11 +151,11 @@ export const fromFeatureRequest = (message: unknown): unknown => compact({
   labels: Object.fromEntries(Object.entries((readField(message, "labels") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, (value) as string])),
   counts: Object.fromEntries(Object.entries((readField(message, "counts") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, (value) as number])),
   reviewers: Object.fromEntries(Object.entries((readField(message, "reviewers") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, fromLocalUser(value)])),
-  createdAt: readField(message, "createdAt") == null ? undefined : fromGrpcGoogleProtobufTimestamp(readField(message, "createdAt")),
-  ttl: readField(message, "ttl") == null ? undefined : fromGrpcGoogleProtobufDuration(readField(message, "ttl")),
-  payload: fromBytes((readField(message, "payload")) as Uint8Array),
+  createdAt: readField(message, "createdAt") == null ? undefined : fromGrpc$GoogleProtobufTimestamp(readField(message, "createdAt")),
+  ttl: readField(message, "ttl") == null ? undefined : fromGrpc$GoogleProtobufDuration(readField(message, "ttl")),
+  payload: fromGrpc$Bytes((readField(message, "payload")) as Uint8Array),
   sequence: String(readField(message, "sequence")),
-  contact: fromFeatureRequest_contactOneof(readField(message, "contact")),
+  contact: fromGrpc$FeatureRequest_contactOneof(readField(message, "contact")),
 });
 
 export const toFeatureRequest = (value: unknown): Record<string, unknown> => {
@@ -169,11 +169,11 @@ export const toFeatureRequest = (value: unknown): Record<string, unknown> => {
     labels: Object.fromEntries(Object.entries((readField(message, "labels") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, (value) as string])),
     counts: Object.fromEntries(Object.entries((readField(message, "counts") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, (value) as number])),
     reviewers: Object.fromEntries(Object.entries((readField(message, "reviewers") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, toLocalUser(value)])),
-    createdAt: readField(message, "createdAt") == null ? undefined : toGrpcGoogleProtobufTimestamp(readField(message, "createdAt")),
-    ttl: readField(message, "ttl") == null ? undefined : toGrpcGoogleProtobufDuration(readField(message, "ttl")),
-    payload: toBytes(readField(message, "payload")),
+    createdAt: readField(message, "createdAt") == null ? undefined : toGrpc$GoogleProtobufTimestamp(readField(message, "createdAt")),
+    ttl: readField(message, "ttl") == null ? undefined : toGrpc$GoogleProtobufDuration(readField(message, "ttl")),
+    payload: toGrpc$Bytes(readField(message, "payload")),
     sequence: BigInt((readField(message, "sequence")) as string),
-    contact: toFeatureRequest_contactOneof(readField(message, "contact")),
+    contact: toGrpc$FeatureRequest_contactOneof(readField(message, "contact")),
   });
 };
 

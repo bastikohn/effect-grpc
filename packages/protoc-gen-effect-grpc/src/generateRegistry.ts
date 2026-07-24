@@ -1,5 +1,5 @@
 import type { FileUsage } from "./fileUsage.js";
-import { isWrapperWellKnownKind, wrapperWellKnownKinds } from "./fileUsage.js";
+import { isWrapperWellKnownKind, wellKnownKinds } from "./fileUsage.js";
 import {
   grpcEmptyName,
   grpcWellKnownName,
@@ -17,9 +17,9 @@ import { wellKnownProtobufName } from "./wellKnown.js";
 export const generateRegistry = (file: GeneratorFile, usage: FileUsage) => [
   ...(usage.usesGrpcEmpty
     ? [
-        `export const from${grpcEmptyName} = (_message: unknown): ${grpcEmptyName} => ({});`,
+        `export const from${emptyConverterName} = (_message: unknown): ${grpcEmptyName} => ({});`,
         "",
-        `export const to${grpcEmptyName} = (_value: unknown) => ({});`,
+        `export const to${emptyConverterName} = (_value: unknown) => ({});`,
         "",
       ]
     : []),
@@ -37,9 +37,9 @@ export const generateRegistry = (file: GeneratorFile, usage: FileUsage) => [
       `      payloadSchema: ${method.inputType}Schema,`,
       `      successSchema: ${method.outputType}Schema,`,
       `      toGrpcRequest: ${toRegistryConverter(method.inputType)},`,
-      `      fromGrpcRequest: from${method.inputType},`,
+      `      fromGrpcRequest: from${methodConverterName(method.inputType)},`,
       `      toGrpcResponse: ${toRegistryConverter(method.outputType)},`,
-      `      fromGrpcResponse: from${method.outputType},`,
+      `      fromGrpcResponse: from${methodConverterName(method.outputType)},`,
       "    },",
       "  ],",
     ]),
@@ -128,7 +128,7 @@ const fromField = (field: FieldModel): string => {
   if (field.kind === "map") {
     return `Object.fromEntries(Object.entries((readField(message, "${field.name}") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [${fromMapKey("key", field.key.type)}, ${fromValue("value", field.value)}]))`;
   }
-  return `from${field.converterName}Oneof(readField(message, "${field.name}"))`;
+  return `from${oneofConverterName(field)}(readField(message, "${field.name}"))`;
 };
 
 const toField = (field: FieldModel): string => {
@@ -153,7 +153,7 @@ const toField = (field: FieldModel): string => {
   if (field.kind === "map") {
     return `Object.fromEntries(Object.entries((${value} as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [${toMapKey("key", field.key.type)}, ${toValue("value", field.value, "boxed")}]))`;
   }
-  if (field.kind === "oneof") return `to${field.converterName}Oneof(${value})`;
+  if (field.kind === "oneof") return `to${oneofConverterName(field)}(${value})`;
   return value;
 };
 
@@ -228,7 +228,7 @@ const fromScalarValue = (
 ) => {
   switch (field.type) {
     case "bytes":
-      return `fromBytes((${value}) as Uint8Array)`;
+      return `from${bytesConverterName}((${value}) as Uint8Array)`;
     case "bigint":
       return `String(${value})`;
     default:
@@ -242,7 +242,7 @@ const toScalarValue = (
 ) => {
   switch (field.type) {
     case "bytes":
-      return `toBytes(${value})`;
+      return `to${bytesConverterName}(${value})`;
     case "bigint":
       return `BigInt((${value}) as string)`;
     default:
@@ -253,7 +253,7 @@ const toScalarValue = (
 const oneofConverters = (
   field: Extract<FieldModel, { readonly kind: "oneof" }>,
 ) => [
-  `const from${field.converterName}Oneof = (value: unknown): unknown => {`,
+  `const from${oneofConverterName(field)} = (value: unknown): unknown => {`,
   `  const oneof = (value ?? { case: undefined }) as { readonly case?: string; readonly value?: unknown };`,
   // The unset case arrives as `undefined` from protobuf-es but as `null` from
   // the JSON codec; coalesce so both select the `undefined` branch.
@@ -271,7 +271,7 @@ const oneofConverters = (
   "  }",
   "};",
   "",
-  `const to${field.converterName}Oneof = (value: unknown): unknown => {`,
+  `const to${oneofConverterName(field)} = (value: unknown): unknown => {`,
   `  const oneof = value ?? { case: undefined };`,
   `  const message = oneof as { readonly case?: string; readonly value?: unknown };`,
   // See `from*Oneof`: the JSON codec encodes the unset case as `null`.
@@ -289,16 +289,16 @@ const oneofConverters = (
   "",
 ];
 
-// `fromBytes`/`toBytes` (and the `node:buffer` import they need) are required
+// The base64 helpers (and the `node:buffer` import they need) are required
 // whenever base64 bytes conversion is emitted: a bytes scalar field, or a
 // BytesValue/Any well-known used as a field OR as a method input/output.
 const scalarConverters = (usage: FileUsage) =>
   usage.usesBase64Bytes
     ? [
-        "const fromBytes = (value: Uint8Array): string =>",
+        `const from${bytesConverterName} = (value: Uint8Array): string =>`,
         `  Buffer.from(value).toString("base64");`,
         "",
-        "const toBytes = (value: unknown): Uint8Array =>",
+        `const to${bytesConverterName} = (value: unknown): Uint8Array =>`,
         `  Uint8Array.from(Buffer.from(value as string, "base64"));`,
         "",
       ]
@@ -370,7 +370,7 @@ const wellKnownConverters = (usage: FileUsage) => {
           "  const message = value as { readonly typeUrl?: string; readonly value?: Uint8Array };",
           "  return {",
           `    typeUrl: message.typeUrl ?? "",`,
-          "    value: fromBytes(message.value ?? new Uint8Array()),",
+          `    value: from${bytesConverterName}(message.value ?? new Uint8Array()),`,
           "  };",
           "};",
           "",
@@ -378,7 +378,7 @@ const wellKnownConverters = (usage: FileUsage) => {
           "  const message = value as { readonly typeUrl?: string; readonly value?: string };",
           "  return {",
           `    typeUrl: message.typeUrl ?? "",`,
-          `    value: toBytes(message.value ?? ""),`,
+          `    value: to${bytesConverterName}(message.value ?? ""),`,
           "  };",
           "};",
           "",
@@ -391,14 +391,13 @@ const wellKnownConverters = (usage: FileUsage) => {
   ];
 };
 
-const wrapperWellKnownKindByGrpcName = (
-  name: string,
-): WellKnownKind | undefined =>
-  wrapperWellKnownKinds.find((type) => wellKnownConverterName(type) === name);
-
+// A wrapper used as a method type stays the `{ value }` message on the wire, so
+// the registry needs the boxing converter rather than the bare one.
 const toRegistryConverter = (name: string) => {
-  const wrapper = wrapperWellKnownKindByGrpcName(name);
-  return wrapper ? `to${wellKnownConverterName(wrapper)}Message` : `to${name}`;
+  const kind = wellKnownKindByGrpcName(name);
+  return kind && isWrapperWellKnownKind(kind)
+    ? `to${wellKnownConverterName(kind)}Message`
+    : `to${methodConverterName(name)}`;
 };
 
 const wrapperConverter = (
@@ -478,13 +477,40 @@ const wellKnownJsonSchema = (type: WellKnownKind) => {
   }
 };
 
-// Well-known converters share a single namespaced identity (e.g.
-// `GrpcGoogleProtobufValue`) so they never collide with the per-message
-// converters `from<MessageName>`/`to<MessageName>`, and are exported under that
-// same name when the type is used as a method input/output (so the registry can
-// reference them) — no separate alias is needed.
+// Every converter the generator introduces itself — base64, oneof, well-known,
+// Empty — is named under a single `$` namespace. `$` is legal in TypeScript
+// identifiers but never in protobuf ones, so no `from<MessageName>` converter
+// can reach these names, whatever the `.proto` calls its messages. Without it a
+// `message Bytes`, `message Foo_barOneof`, or `message GrpcGoogleProtobufValue`
+// declared its converter twice and the file did not compile. Well-known
+// converters are still *exported* under this name when the type is a method
+// input/output, so the registry can reference them without a separate alias.
+const internalConverterName = (name: string) => `Grpc$${name}`;
+
+const bytesConverterName = internalConverterName("Bytes");
+
+const emptyConverterName = internalConverterName("GoogleProtobufEmpty");
+
+const oneofConverterName = (
+  field: Extract<FieldModel, { readonly kind: "oneof" }>,
+) => internalConverterName(`${field.converterName}Oneof`);
+
 const wellKnownConverterName = (type: WellKnownKind) =>
-  grpcWellKnownName(wellKnownProtobufName(type));
+  internalConverterName(`GoogleProtobuf${wellKnownProtobufName(type)}`);
+
+// Method input/output types carry their schema-layer name (a message name, or
+// `GrpcGoogleProtobufTimestamp` for a generated well-known); only the latter
+// converts under the `$` namespace.
+const methodConverterName = (typeName: string) => {
+  if (typeName === grpcEmptyName) return emptyConverterName;
+  const kind = wellKnownKindByGrpcName(typeName);
+  return kind ? wellKnownConverterName(kind) : typeName;
+};
+
+const wellKnownKindByGrpcName = (name: string) =>
+  wellKnownKinds.find(
+    (type) => grpcWellKnownName(wellKnownProtobufName(type)) === name,
+  );
 
 const wellKnownConverterDecl = (usage: FileUsage, type: WellKnownKind) =>
   usage.wellKnownMethods.has(type) ? "export const" : "const";

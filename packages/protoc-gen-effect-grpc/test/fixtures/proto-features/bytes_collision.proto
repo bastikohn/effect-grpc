@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package features.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// `Bytes`, `Choice_pickOneof` and `GrpcGoogleProtobufTimestamp` are legal proto
+// message names that collide with the converters the generator introduces
+// itself unless those are namespaced: the generated file would declare
+// `fromBytes`/`fromChoice_pickOneof`/`fromGrpcGoogleProtobufTimestamp` twice.
+service BytesCollisionFeature {
+  rpc Echo(Bytes) returns (Bytes);
+  rpc EchoChoice(Choice) returns (Choice);
+  rpc EchoShadow(Shadow) returns (Shadow);
+}
+
+message Bytes {
+  bytes data = 1;
+}
+
+message Choice {
+  oneof pick {
+    string id = 1;
+    Bytes blob = 2;
+  }
+}
+
+message Choice_pickOneof {
+  string label = 1;
+}
+
+message Shadow {
+  GrpcGoogleProtobufTimestamp shadowed = 1;
+}
+
+// Shares its generated name with the well-known Timestamp converter, which the
+// `at` field below also needs — so one file converts both.
+message GrpcGoogleProtobufTimestamp {
+  google.protobuf.Timestamp at = 1;
+}

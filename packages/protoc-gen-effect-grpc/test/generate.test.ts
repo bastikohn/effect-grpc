@@ -454,7 +454,7 @@ describe("plugin fixture", () => {
       "payloadSchema: GrpcGoogleProtobufEmptySchema",
     );
     expect(response.file[0]?.content).toContain(
-      "toGrpcRequest: toGrpcGoogleProtobufEmpty",
+      "toGrpcRequest: toGrpc$GoogleProtobufEmpty",
     );
   });
 
@@ -484,10 +484,10 @@ describe("plugin fixture", () => {
       "successSchema: GrpcGoogleProtobufDurationSchema",
     );
     expect(response.file[0]?.content).toContain(
-      "toGrpcRequest: toGrpcGoogleProtobufBoolValueMessage",
+      "toGrpcRequest: toGrpc$GoogleProtobufBoolValueMessage",
     );
     expect(response.file[0]?.content).toContain(
-      "fromGrpcResponse: fromGrpcGoogleProtobufDuration",
+      "fromGrpcResponse: fromGrpc$GoogleProtobufDuration",
     );
   });
 
@@ -618,7 +618,7 @@ describe("plugin fixture", () => {
       "payload: Schema.optional(Schema.Struct({ typeUrl: Schema.String, value: Schema.String }))",
     );
     expect(response.file[0]?.content).toContain(
-      "const fromGrpcGoogleProtobufAny",
+      "const fromGrpc$GoogleProtobufAny",
     );
   });
 

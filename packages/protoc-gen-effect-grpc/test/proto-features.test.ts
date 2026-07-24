@@ -55,6 +55,7 @@ describe("proto feature fixtures", () => {
     });
     expectSnapshot("optional_scalars");
     expectSnapshot("empty_messages");
+    expectSnapshot("bytes_collision");
   }, 120_000);
 
   it("typechecks generated output", () => {
@@ -305,6 +306,38 @@ describe("proto feature fixtures", () => {
         'if (!entry) throw new Error("missing registry entry");',
         "create(OptionalScalarsPbSchema, entry.toGrpcRequest(value));",
         "create(OptionalScalarsPbSchema, entry.toGrpcRequest(empty));",
+        "",
+      ].join("\n"),
+    );
+    // `Bytes`, `Choice_pickOneof` and `GrpcGoogleProtobufTimestamp` are legal
+    // proto names that shadow the converters the generator introduces itself
+    // unless those stay namespaced; only a typecheck catches the duplicate
+    // declarations this used to emit.
+    typecheckProtoFeature(
+      generateProtoFeature("bytes_collision"),
+      [
+        'import { BytesSchema as BytesPbSchema } from "./bytes_collision_pb.js";',
+        'import { create } from "@bufbuild/protobuf";',
+        "import {",
+        "  BytesCollisionFeatureGrpcRegistry,",
+        "  type Bytes,",
+        "  type Choice,",
+        "  type Shadow,",
+        '} from "./bytes_collision_effect_grpc.js";',
+        "const value: Bytes = { data: new Uint8Array([1, 2]) };",
+        'const choice: Choice = { pick: { case: "blob", value } };',
+        // The message shadowing the well-known name keeps its own converter;
+        // its `at` field routes through the namespaced Timestamp one.
+        "const shadow: Shadow = { shadowed: { at: new Date(0) } };",
+        'const entry = BytesCollisionFeatureGrpcRegistry.get("features.v1.BytesCollisionFeature/Echo");',
+        'if (!entry) throw new Error("missing registry entry");',
+        "create(BytesPbSchema, entry.toGrpcRequest(value));",
+        'const choiceEntry = BytesCollisionFeatureGrpcRegistry.get("features.v1.BytesCollisionFeature/EchoChoice");',
+        'if (!choiceEntry) throw new Error("missing choice registry entry");',
+        "choiceEntry.toGrpcRequest(choice);",
+        'const shadowEntry = BytesCollisionFeatureGrpcRegistry.get("features.v1.BytesCollisionFeature/EchoShadow");',
+        'if (!shadowEntry) throw new Error("missing shadow registry entry");',
+        "shadowEntry.toGrpcRequest(shadow);",
         "",
       ].join("\n"),
     );

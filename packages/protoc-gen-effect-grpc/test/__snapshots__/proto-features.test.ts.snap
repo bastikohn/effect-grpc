@@ -35,16 +35,16 @@ const compact = <T extends Record<string, unknown>>(object: T): T => {
   return result as T;
 };
 
-const fromBytes = (value: Uint8Array): string =>
+const fromGrpc$Bytes = (value: Uint8Array): string =>
   Buffer.from(value).toString("base64");
 
-const toBytes = (value: unknown): Uint8Array =>
+const toGrpc$Bytes = (value: unknown): Uint8Array =>
   Uint8Array.from(Buffer.from(value as string, "base64"));
 
 export const fromRepeatedScalars = (message: unknown): unknown => compact({
   tags: ((readField(message, "tags") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as string),
   flags: ((readField(message, "flags") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as boolean),
-  blobs: ((readField(message, "blobs") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => fromBytes((value) as Uint8Array)),
+  blobs: ((readField(message, "blobs") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => fromGrpc$Bytes((value) as Uint8Array)),
   scores: ((readField(message, "scores") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as number),
   counts: ((readField(message, "counts") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as number),
   ratios: ((readField(message, "ratios") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as number),
@@ -56,7 +56,7 @@ export const toRepeatedScalars = (value: unknown): Record<string, unknown> => {
   return compact({
     tags: ((readField(message, "tags") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as string),
     flags: ((readField(message, "flags") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as boolean),
-    blobs: ((readField(message, "blobs") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => toBytes(value)),
+    blobs: ((readField(message, "blobs") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => toGrpc$Bytes(value)),
     scores: ((readField(message, "scores") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as number),
     counts: ((readField(message, "counts") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as number),
     ratios: ((readField(message, "ratios") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as number),
@@ -646,14 +646,14 @@ const compact = <T extends Record<string, unknown>>(object: T): T => {
   return result as T;
 };
 
-export const fromGrpcGoogleProtobufTimestamp = (value: unknown): string => {
+export const fromGrpc$GoogleProtobufTimestamp = (value: unknown): string => {
   const message = value as { readonly seconds?: bigint | number; readonly nanos?: number };
   const seconds = Number(message.seconds ?? 0);
   const nanos = message.nanos ?? 0;
   return new Date(seconds * 1000 + Math.trunc(nanos / 1_000_000)).toISOString();
 };
 
-export const toGrpcGoogleProtobufTimestamp = (value: unknown) => {
+export const toGrpc$GoogleProtobufTimestamp = (value: unknown) => {
   const millis = new Date(value as string).getTime();
   const seconds = Math.floor(millis / 1000);
   return {
@@ -662,13 +662,13 @@ export const toGrpcGoogleProtobufTimestamp = (value: unknown) => {
   };
 };
 
-export const fromGrpcGoogleProtobufDuration = (value: unknown) => {
+export const fromGrpc$GoogleProtobufDuration = (value: unknown) => {
   const message = value as { readonly seconds?: bigint | number; readonly nanos?: number };
   const nanos = BigInt(message.seconds ?? 0) * 1_000_000_000n + BigInt(message.nanos ?? 0);
   return nanos % 1_000_000n === 0n ? { _tag: "Millis", value: Number(nanos / 1_000_000n) } : { _tag: "Nanos", value: String(nanos) };
 };
 
-export const toGrpcGoogleProtobufDuration = (value: unknown) => {
+export const toGrpc$GoogleProtobufDuration = (value: unknown) => {
   const duration = value as { readonly _tag?: string; readonly value?: unknown };
   const nanos = duration._tag === "Millis"
     ? BigInt(duration.value as number) * 1_000_000n
@@ -681,31 +681,31 @@ export const toGrpcGoogleProtobufDuration = (value: unknown) => {
   };
 };
 
-export const fromGrpcGoogleProtobufBoolValue = (value: unknown) =>
+export const fromGrpc$GoogleProtobufBoolValue = (value: unknown) =>
   (
     typeof value === "boolean"
       ? value
       : ((value as { readonly value?: unknown }).value ?? false)
   ) as boolean;
 
-export const toGrpcGoogleProtobufBoolValue = (value: unknown) => (value) as boolean;
+export const toGrpc$GoogleProtobufBoolValue = (value: unknown) => (value) as boolean;
 
-const toGrpcGoogleProtobufBoolValueMessage = (value: unknown) => ({
+const toGrpc$GoogleProtobufBoolValueMessage = (value: unknown) => ({
   value: (value) as boolean,
 });
 
 export const fromWellKnownValues = (message: unknown): unknown => compact({
-  createdAt: readField(message, "createdAt") == null ? undefined : fromGrpcGoogleProtobufTimestamp(readField(message, "createdAt")),
-  timeout: readField(message, "timeout") == null ? undefined : fromGrpcGoogleProtobufDuration(readField(message, "timeout")),
-  enabled: readField(message, "enabled") == null ? undefined : fromGrpcGoogleProtobufBoolValue(readField(message, "enabled")),
+  createdAt: readField(message, "createdAt") == null ? undefined : fromGrpc$GoogleProtobufTimestamp(readField(message, "createdAt")),
+  timeout: readField(message, "timeout") == null ? undefined : fromGrpc$GoogleProtobufDuration(readField(message, "timeout")),
+  enabled: readField(message, "enabled") == null ? undefined : fromGrpc$GoogleProtobufBoolValue(readField(message, "enabled")),
 });
 
 export const toWellKnownValues = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    createdAt: readField(message, "createdAt") == null ? undefined : toGrpcGoogleProtobufTimestamp(readField(message, "createdAt")),
-    timeout: readField(message, "timeout") == null ? undefined : toGrpcGoogleProtobufDuration(readField(message, "timeout")),
-    enabled: readField(message, "enabled") == null ? undefined : toGrpcGoogleProtobufBoolValue(readField(message, "enabled")),
+    createdAt: readField(message, "createdAt") == null ? undefined : toGrpc$GoogleProtobufTimestamp(readField(message, "createdAt")),
+    timeout: readField(message, "timeout") == null ? undefined : toGrpc$GoogleProtobufDuration(readField(message, "timeout")),
+    enabled: readField(message, "enabled") == null ? undefined : toGrpc$GoogleProtobufBoolValue(readField(message, "enabled")),
   });
 };
 
@@ -734,10 +734,10 @@ export const WellKnownTypeFeatureGrpcRegistry = new Map<string, GrpcMethodRegist
       localName: "echoTimestamp",
       payloadSchema: GrpcGoogleProtobufTimestampSchema,
       successSchema: GrpcGoogleProtobufTimestampSchema,
-      toGrpcRequest: toGrpcGoogleProtobufTimestamp,
-      fromGrpcRequest: fromGrpcGoogleProtobufTimestamp,
-      toGrpcResponse: toGrpcGoogleProtobufTimestamp,
-      fromGrpcResponse: fromGrpcGoogleProtobufTimestamp,
+      toGrpcRequest: toGrpc$GoogleProtobufTimestamp,
+      fromGrpcRequest: fromGrpc$GoogleProtobufTimestamp,
+      toGrpcResponse: toGrpc$GoogleProtobufTimestamp,
+      fromGrpcResponse: fromGrpc$GoogleProtobufTimestamp,
     },
   ],
   [
@@ -749,10 +749,10 @@ export const WellKnownTypeFeatureGrpcRegistry = new Map<string, GrpcMethodRegist
       localName: "echoDuration",
       payloadSchema: GrpcGoogleProtobufDurationSchema,
       successSchema: GrpcGoogleProtobufDurationSchema,
-      toGrpcRequest: toGrpcGoogleProtobufDuration,
-      fromGrpcRequest: fromGrpcGoogleProtobufDuration,
-      toGrpcResponse: toGrpcGoogleProtobufDuration,
-      fromGrpcResponse: fromGrpcGoogleProtobufDuration,
+      toGrpcRequest: toGrpc$GoogleProtobufDuration,
+      fromGrpcRequest: fromGrpc$GoogleProtobufDuration,
+      toGrpcResponse: toGrpc$GoogleProtobufDuration,
+      fromGrpcResponse: fromGrpc$GoogleProtobufDuration,
     },
   ],
   [
@@ -764,10 +764,10 @@ export const WellKnownTypeFeatureGrpcRegistry = new Map<string, GrpcMethodRegist
       localName: "echoBoolValue",
       payloadSchema: GrpcGoogleProtobufBoolValueSchema,
       successSchema: GrpcGoogleProtobufBoolValueSchema,
-      toGrpcRequest: toGrpcGoogleProtobufBoolValueMessage,
-      fromGrpcRequest: fromGrpcGoogleProtobufBoolValue,
-      toGrpcResponse: toGrpcGoogleProtobufBoolValueMessage,
-      fromGrpcResponse: fromGrpcGoogleProtobufBoolValue,
+      toGrpcRequest: toGrpc$GoogleProtobufBoolValueMessage,
+      fromGrpcRequest: fromGrpc$GoogleProtobufBoolValue,
+      toGrpcResponse: toGrpc$GoogleProtobufBoolValueMessage,
+      fromGrpcResponse: fromGrpc$GoogleProtobufBoolValue,
     },
   ],
 ]);
@@ -892,20 +892,20 @@ const compact = <T extends Record<string, unknown>>(object: T): T => {
   return result as T;
 };
 
-const fromBytes = (value: Uint8Array): string =>
+const fromGrpc$Bytes = (value: Uint8Array): string =>
   Buffer.from(value).toString("base64");
 
-const toBytes = (value: unknown): Uint8Array =>
+const toGrpc$Bytes = (value: unknown): Uint8Array =>
   Uint8Array.from(Buffer.from(value as string, "base64"));
 
-const fromGrpcGoogleProtobufTimestamp = (value: unknown): string => {
+const fromGrpc$GoogleProtobufTimestamp = (value: unknown): string => {
   const message = value as { readonly seconds?: bigint | number; readonly nanos?: number };
   const seconds = Number(message.seconds ?? 0);
   const nanos = message.nanos ?? 0;
   return new Date(seconds * 1000 + Math.trunc(nanos / 1_000_000)).toISOString();
 };
 
-const toGrpcGoogleProtobufTimestamp = (value: unknown) => {
+const toGrpc$GoogleProtobufTimestamp = (value: unknown) => {
   const millis = new Date(value as string).getTime();
   const seconds = Math.floor(millis / 1000);
   return {
@@ -914,13 +914,13 @@ const toGrpcGoogleProtobufTimestamp = (value: unknown) => {
   };
 };
 
-const fromGrpcGoogleProtobufDuration = (value: unknown) => {
+const fromGrpc$GoogleProtobufDuration = (value: unknown) => {
   const message = value as { readonly seconds?: bigint | number; readonly nanos?: number };
   const nanos = BigInt(message.seconds ?? 0) * 1_000_000_000n + BigInt(message.nanos ?? 0);
   return nanos % 1_000_000n === 0n ? { _tag: "Millis", value: Number(nanos / 1_000_000n) } : { _tag: "Nanos", value: String(nanos) };
 };
 
-const toGrpcGoogleProtobufDuration = (value: unknown) => {
+const toGrpc$GoogleProtobufDuration = (value: unknown) => {
   const duration = value as { readonly _tag?: string; readonly value?: unknown };
   const nanos = duration._tag === "Millis"
     ? BigInt(duration.value as number) * 1_000_000n
@@ -933,131 +933,131 @@ const toGrpcGoogleProtobufDuration = (value: unknown) => {
   };
 };
 
-const fromGrpcGoogleProtobufDoubleValue = (value: unknown) =>
+const fromGrpc$GoogleProtobufDoubleValue = (value: unknown) =>
   (
     typeof value === "number"
       ? value
       : ((value as { readonly value?: unknown }).value ?? 0)
   ) as number;
 
-const toGrpcGoogleProtobufDoubleValue = (value: unknown) => (value) as number;
+const toGrpc$GoogleProtobufDoubleValue = (value: unknown) => (value) as number;
 
-const fromGrpcGoogleProtobufFloatValue = (value: unknown) =>
+const fromGrpc$GoogleProtobufFloatValue = (value: unknown) =>
   (
     typeof value === "number"
       ? value
       : ((value as { readonly value?: unknown }).value ?? 0)
   ) as number;
 
-const toGrpcGoogleProtobufFloatValue = (value: unknown) => (value) as number;
+const toGrpc$GoogleProtobufFloatValue = (value: unknown) => (value) as number;
 
-const fromGrpcGoogleProtobufInt32Value = (value: unknown) =>
+const fromGrpc$GoogleProtobufInt32Value = (value: unknown) =>
   (
     typeof value === "number"
       ? value
       : ((value as { readonly value?: unknown }).value ?? 0)
   ) as number;
 
-const toGrpcGoogleProtobufInt32Value = (value: unknown) => (value) as number;
+const toGrpc$GoogleProtobufInt32Value = (value: unknown) => (value) as number;
 
-const fromGrpcGoogleProtobufUInt32Value = (value: unknown) =>
+const fromGrpc$GoogleProtobufUInt32Value = (value: unknown) =>
   (
     typeof value === "number"
       ? value
       : ((value as { readonly value?: unknown }).value ?? 0)
   ) as number;
 
-const toGrpcGoogleProtobufUInt32Value = (value: unknown) => (value) as number;
+const toGrpc$GoogleProtobufUInt32Value = (value: unknown) => (value) as number;
 
-const fromGrpcGoogleProtobufInt64Value = (value: unknown) =>
+const fromGrpc$GoogleProtobufInt64Value = (value: unknown) =>
   String(
     typeof value === "bigint"
       ? value
       : ((value as { readonly value?: unknown }).value ?? 0n)
   );
 
-const toGrpcGoogleProtobufInt64Value = (value: unknown) => BigInt((value) as string);
+const toGrpc$GoogleProtobufInt64Value = (value: unknown) => BigInt((value) as string);
 
-const fromGrpcGoogleProtobufUInt64Value = (value: unknown) =>
+const fromGrpc$GoogleProtobufUInt64Value = (value: unknown) =>
   String(
     typeof value === "bigint"
       ? value
       : ((value as { readonly value?: unknown }).value ?? 0n)
   );
 
-const toGrpcGoogleProtobufUInt64Value = (value: unknown) => BigInt((value) as string);
+const toGrpc$GoogleProtobufUInt64Value = (value: unknown) => BigInt((value) as string);
 
-const fromGrpcGoogleProtobufStringValue = (value: unknown) =>
+const fromGrpc$GoogleProtobufStringValue = (value: unknown) =>
   (
     typeof value === "string"
       ? value
       : ((value as { readonly value?: unknown }).value ?? "")
   ) as string;
 
-const toGrpcGoogleProtobufStringValue = (value: unknown) => (value) as string;
+const toGrpc$GoogleProtobufStringValue = (value: unknown) => (value) as string;
 
-const toGrpcGoogleProtobufStringValueMessage = (value: unknown) => ({
+const toGrpc$GoogleProtobufStringValueMessage = (value: unknown) => ({
   value: (value) as string,
 });
 
-const fromGrpcGoogleProtobufBytesValue = (value: unknown) =>
-  fromBytes((
+const fromGrpc$GoogleProtobufBytesValue = (value: unknown) =>
+  fromGrpc$Bytes((
     value instanceof Uint8Array
       ? value
       : ((value as { readonly value?: unknown }).value ?? new Uint8Array())
   ) as Uint8Array);
 
-const toGrpcGoogleProtobufBytesValue = (value: unknown) => toBytes(value);
+const toGrpc$GoogleProtobufBytesValue = (value: unknown) => toGrpc$Bytes(value);
 
-const fromGrpcGoogleProtobufAny = (value: unknown) => {
+const fromGrpc$GoogleProtobufAny = (value: unknown) => {
   const message = value as { readonly typeUrl?: string; readonly value?: Uint8Array };
   return {
     typeUrl: message.typeUrl ?? "",
-    value: fromBytes(message.value ?? new Uint8Array()),
+    value: fromGrpc$Bytes(message.value ?? new Uint8Array()),
   };
 };
 
-const toGrpcGoogleProtobufAny = (value: unknown) => {
+const toGrpc$GoogleProtobufAny = (value: unknown) => {
   const message = value as { readonly typeUrl?: string; readonly value?: string };
   return {
     typeUrl: message.typeUrl ?? "",
-    value: toBytes(message.value ?? ""),
+    value: toGrpc$Bytes(message.value ?? ""),
   };
 };
 
-const fromGrpcGoogleProtobufStruct = (value: unknown) =>
+const fromGrpc$GoogleProtobufStruct = (value: unknown) =>
   protobufToJson(ProtobufStructSchema, value as never);
 
-const toGrpcGoogleProtobufStruct = (value: unknown) =>
+const toGrpc$GoogleProtobufStruct = (value: unknown) =>
   protobufFromJson(ProtobufStructSchema, value as never);
 
-const fromGrpcGoogleProtobufValue = (value: unknown) =>
+const fromGrpc$GoogleProtobufValue = (value: unknown) =>
   protobufToJson(ProtobufValueSchema, value as never);
 
-const toGrpcGoogleProtobufValue = (value: unknown) =>
+const toGrpc$GoogleProtobufValue = (value: unknown) =>
   protobufFromJson(ProtobufValueSchema, value as never);
 
-const fromGrpcGoogleProtobufListValue = (value: unknown) =>
+const fromGrpc$GoogleProtobufListValue = (value: unknown) =>
   protobufToJson(ProtobufListValueSchema, value as never);
 
-const toGrpcGoogleProtobufListValue = (value: unknown) =>
+const toGrpc$GoogleProtobufListValue = (value: unknown) =>
   protobufFromJson(ProtobufListValueSchema, value as never);
 
-const fromGrpcGoogleProtobufFieldMask = (value: unknown) =>
+const fromGrpc$GoogleProtobufFieldMask = (value: unknown) =>
   protobufToJson(ProtobufFieldMaskSchema, value as never);
 
-const toGrpcGoogleProtobufFieldMask = (value: unknown) =>
+const toGrpc$GoogleProtobufFieldMask = (value: unknown) =>
   protobufFromJson(ProtobufFieldMaskSchema, value as never);
 
-const fromFieldShapeValues_choiceOneof = (value: unknown): unknown => {
+const fromGrpc$FieldShapeValues_choiceOneof = (value: unknown): unknown => {
   const oneof = (value ?? { case: undefined }) as { readonly case?: string; readonly value?: unknown };
   switch (oneof.case ?? undefined) {
     case "timeout":
-      return { case: "timeout", value: fromGrpcGoogleProtobufDuration(oneof.value) };
+      return { case: "timeout", value: fromGrpc$GoogleProtobufDuration(oneof.value) };
     case "createdAt":
-      return { case: "createdAt", value: fromGrpcGoogleProtobufTimestamp(oneof.value) };
+      return { case: "createdAt", value: fromGrpc$GoogleProtobufTimestamp(oneof.value) };
     case "note":
-      return { case: "note", value: fromGrpcGoogleProtobufStringValue(oneof.value) };
+      return { case: "note", value: fromGrpc$GoogleProtobufStringValue(oneof.value) };
     case "state":
       return { case: "state", value: oneof.value as FieldShapeValues_State };
     case undefined:
@@ -1067,16 +1067,16 @@ const fromFieldShapeValues_choiceOneof = (value: unknown): unknown => {
   }
 };
 
-const toFieldShapeValues_choiceOneof = (value: unknown): unknown => {
+const toGrpc$FieldShapeValues_choiceOneof = (value: unknown): unknown => {
   const oneof = value ?? { case: undefined };
   const message = oneof as { readonly case?: string; readonly value?: unknown };
   switch (message.case ?? undefined) {
     case "timeout":
-      return { case: "timeout", value: toGrpcGoogleProtobufDuration(message.value) };
+      return { case: "timeout", value: toGrpc$GoogleProtobufDuration(message.value) };
     case "createdAt":
-      return { case: "createdAt", value: toGrpcGoogleProtobufTimestamp(message.value) };
+      return { case: "createdAt", value: toGrpc$GoogleProtobufTimestamp(message.value) };
     case "note":
-      return { case: "note", value: toGrpcGoogleProtobufStringValueMessage(message.value) };
+      return { case: "note", value: toGrpc$GoogleProtobufStringValueMessage(message.value) };
     case "state":
       return { case: "state", value: message.value as number };
     case undefined:
@@ -1087,20 +1087,20 @@ const toFieldShapeValues_choiceOneof = (value: unknown): unknown => {
 };
 
 export const fromFieldShapeValues = (message: unknown): unknown => compact({
-  ratio: readField(message, "ratio") == null ? undefined : fromGrpcGoogleProtobufDoubleValue(readField(message, "ratio")),
-  score: readField(message, "score") == null ? undefined : fromGrpcGoogleProtobufFloatValue(readField(message, "score")),
-  count: readField(message, "count") == null ? undefined : fromGrpcGoogleProtobufInt32Value(readField(message, "count")),
-  total: readField(message, "total") == null ? undefined : fromGrpcGoogleProtobufInt64Value(readField(message, "total")),
-  size: readField(message, "size") == null ? undefined : fromGrpcGoogleProtobufUInt32Value(readField(message, "size")),
-  serial: readField(message, "serial") == null ? undefined : fromGrpcGoogleProtobufUInt64Value(readField(message, "serial")),
-  label: readField(message, "label") == null ? undefined : fromGrpcGoogleProtobufStringValue(readField(message, "label")),
-  blob: readField(message, "blob") == null ? undefined : fromGrpcGoogleProtobufBytesValue(readField(message, "blob")),
-  payload: readField(message, "payload") == null ? undefined : fromGrpcGoogleProtobufAny(readField(message, "payload")),
-  metadata: readField(message, "metadata") == null ? undefined : fromGrpcGoogleProtobufStruct(readField(message, "metadata")),
-  dynamicValue: readField(message, "dynamicValue") == null ? undefined : fromGrpcGoogleProtobufValue(readField(message, "dynamicValue")),
-  listValue: readField(message, "listValue") == null ? undefined : fromGrpcGoogleProtobufListValue(readField(message, "listValue")),
-  updateMask: readField(message, "updateMask") == null ? undefined : fromGrpcGoogleProtobufFieldMask(readField(message, "updateMask")),
-  choice: fromFieldShapeValues_choiceOneof(readField(message, "choice")),
+  ratio: readField(message, "ratio") == null ? undefined : fromGrpc$GoogleProtobufDoubleValue(readField(message, "ratio")),
+  score: readField(message, "score") == null ? undefined : fromGrpc$GoogleProtobufFloatValue(readField(message, "score")),
+  count: readField(message, "count") == null ? undefined : fromGrpc$GoogleProtobufInt32Value(readField(message, "count")),
+  total: readField(message, "total") == null ? undefined : fromGrpc$GoogleProtobufInt64Value(readField(message, "total")),
+  size: readField(message, "size") == null ? undefined : fromGrpc$GoogleProtobufUInt32Value(readField(message, "size")),
+  serial: readField(message, "serial") == null ? undefined : fromGrpc$GoogleProtobufUInt64Value(readField(message, "serial")),
+  label: readField(message, "label") == null ? undefined : fromGrpc$GoogleProtobufStringValue(readField(message, "label")),
+  blob: readField(message, "blob") == null ? undefined : fromGrpc$GoogleProtobufBytesValue(readField(message, "blob")),
+  payload: readField(message, "payload") == null ? undefined : fromGrpc$GoogleProtobufAny(readField(message, "payload")),
+  metadata: readField(message, "metadata") == null ? undefined : fromGrpc$GoogleProtobufStruct(readField(message, "metadata")),
+  dynamicValue: readField(message, "dynamicValue") == null ? undefined : fromGrpc$GoogleProtobufValue(readField(message, "dynamicValue")),
+  listValue: readField(message, "listValue") == null ? undefined : fromGrpc$GoogleProtobufListValue(readField(message, "listValue")),
+  updateMask: readField(message, "updateMask") == null ? undefined : fromGrpc$GoogleProtobufFieldMask(readField(message, "updateMask")),
+  choice: fromGrpc$FieldShapeValues_choiceOneof(readField(message, "choice")),
   labelsByNumber: Object.fromEntries(Object.entries((readField(message, "labelsByNumber") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [Number(key), (value) as string])),
   statesByNumber: Object.fromEntries(Object.entries((readField(message, "statesByNumber") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [Number(key), value as FieldShapeValues_State])),
   statesByName: Object.fromEntries(Object.entries((readField(message, "statesByName") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, value as FieldShapeValues_State])),
@@ -1110,20 +1110,20 @@ export const fromFieldShapeValues = (message: unknown): unknown => compact({
 export const toFieldShapeValues = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    ratio: readField(message, "ratio") == null ? undefined : toGrpcGoogleProtobufDoubleValue(readField(message, "ratio")),
-    score: readField(message, "score") == null ? undefined : toGrpcGoogleProtobufFloatValue(readField(message, "score")),
-    count: readField(message, "count") == null ? undefined : toGrpcGoogleProtobufInt32Value(readField(message, "count")),
-    total: readField(message, "total") == null ? undefined : toGrpcGoogleProtobufInt64Value(readField(message, "total")),
-    size: readField(message, "size") == null ? undefined : toGrpcGoogleProtobufUInt32Value(readField(message, "size")),
-    serial: readField(message, "serial") == null ? undefined : toGrpcGoogleProtobufUInt64Value(readField(message, "serial")),
-    label: readField(message, "label") == null ? undefined : toGrpcGoogleProtobufStringValue(readField(message, "label")),
-    blob: readField(message, "blob") == null ? undefined : toGrpcGoogleProtobufBytesValue(readField(message, "blob")),
-    payload: readField(message, "payload") == null ? undefined : toGrpcGoogleProtobufAny(readField(message, "payload")),
-    metadata: readField(message, "metadata") == null ? undefined : toGrpcGoogleProtobufStruct(readField(message, "metadata")),
-    dynamicValue: readField(message, "dynamicValue") == null ? undefined : toGrpcGoogleProtobufValue(readField(message, "dynamicValue")),
-    listValue: readField(message, "listValue") == null ? undefined : toGrpcGoogleProtobufListValue(readField(message, "listValue")),
-    updateMask: readField(message, "updateMask") == null ? undefined : toGrpcGoogleProtobufFieldMask(readField(message, "updateMask")),
-    choice: toFieldShapeValues_choiceOneof(readField(message, "choice")),
+    ratio: readField(message, "ratio") == null ? undefined : toGrpc$GoogleProtobufDoubleValue(readField(message, "ratio")),
+    score: readField(message, "score") == null ? undefined : toGrpc$GoogleProtobufFloatValue(readField(message, "score")),
+    count: readField(message, "count") == null ? undefined : toGrpc$GoogleProtobufInt32Value(readField(message, "count")),
+    total: readField(message, "total") == null ? undefined : toGrpc$GoogleProtobufInt64Value(readField(message, "total")),
+    size: readField(message, "size") == null ? undefined : toGrpc$GoogleProtobufUInt32Value(readField(message, "size")),
+    serial: readField(message, "serial") == null ? undefined : toGrpc$GoogleProtobufUInt64Value(readField(message, "serial")),
+    label: readField(message, "label") == null ? undefined : toGrpc$GoogleProtobufStringValue(readField(message, "label")),
+    blob: readField(message, "blob") == null ? undefined : toGrpc$GoogleProtobufBytesValue(readField(message, "blob")),
+    payload: readField(message, "payload") == null ? undefined : toGrpc$GoogleProtobufAny(readField(message, "payload")),
+    metadata: readField(message, "metadata") == null ? undefined : toGrpc$GoogleProtobufStruct(readField(message, "metadata")),
+    dynamicValue: readField(message, "dynamicValue") == null ? undefined : toGrpc$GoogleProtobufValue(readField(message, "dynamicValue")),
+    listValue: readField(message, "listValue") == null ? undefined : toGrpc$GoogleProtobufListValue(readField(message, "listValue")),
+    updateMask: readField(message, "updateMask") == null ? undefined : toGrpc$GoogleProtobufFieldMask(readField(message, "updateMask")),
+    choice: toGrpc$FieldShapeValues_choiceOneof(readField(message, "choice")),
     labelsByNumber: Object.fromEntries(Object.entries((readField(message, "labelsByNumber") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [Number(key), (value) as string])),
     statesByNumber: Object.fromEntries(Object.entries((readField(message, "statesByNumber") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [Number(key), value as number])),
     statesByName: Object.fromEntries(Object.entries((readField(message, "statesByName") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, value as number])),
@@ -1348,7 +1348,7 @@ const compact = <T extends Record<string, unknown>>(object: T): T => {
   return result as T;
 };
 
-const fromSearchRequest_queryOneof = (value: unknown): unknown => {
+const fromGrpc$SearchRequest_queryOneof = (value: unknown): unknown => {
   const oneof = (value ?? { case: undefined }) as { readonly case?: string; readonly value?: unknown };
   switch (oneof.case ?? undefined) {
     case "id":
@@ -1364,7 +1364,7 @@ const fromSearchRequest_queryOneof = (value: unknown): unknown => {
   }
 };
 
-const toSearchRequest_queryOneof = (value: unknown): unknown => {
+const toGrpc$SearchRequest_queryOneof = (value: unknown): unknown => {
   const oneof = value ?? { case: undefined };
   const message = oneof as { readonly case?: string; readonly value?: unknown };
   switch (message.case ?? undefined) {
@@ -1382,13 +1382,13 @@ const toSearchRequest_queryOneof = (value: unknown): unknown => {
 };
 
 export const fromSearchRequest = (message: unknown): unknown => compact({
-  query: fromSearchRequest_queryOneof(readField(message, "query")),
+  query: fromGrpc$SearchRequest_queryOneof(readField(message, "query")),
 });
 
 export const toSearchRequest = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    query: toSearchRequest_queryOneof(readField(message, "query")),
+    query: toGrpc$SearchRequest_queryOneof(readField(message, "query")),
   });
 };
 
@@ -1499,7 +1499,7 @@ const compact = <T extends Record<string, unknown>>(object: T): T => {
   return result as T;
 };
 
-const fromNestedOuter_choiceOneof = (value: unknown): unknown => {
+const fromGrpc$NestedOuter_choiceOneof = (value: unknown): unknown => {
   const oneof = (value ?? { case: undefined }) as { readonly case?: string; readonly value?: unknown };
   switch (oneof.case ?? undefined) {
     case "picked":
@@ -1511,7 +1511,7 @@ const fromNestedOuter_choiceOneof = (value: unknown): unknown => {
   }
 };
 
-const toNestedOuter_choiceOneof = (value: unknown): unknown => {
+const toGrpc$NestedOuter_choiceOneof = (value: unknown): unknown => {
   const oneof = value ?? { case: undefined };
   const message = oneof as { readonly case?: string; readonly value?: unknown };
   switch (message.case ?? undefined) {
@@ -1528,7 +1528,7 @@ export const fromNestedOuter = (message: unknown): unknown => compact({
   inner: readField(message, "inner") == null ? undefined : fromNestedOuter_Inner(readField(message, "inner")),
   items: ((readField(message, "items") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => fromNestedOuter_Inner(value)),
   byId: Object.fromEntries(Object.entries((readField(message, "byId") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, fromNestedOuter_Inner(value)])),
-  choice: fromNestedOuter_choiceOneof(readField(message, "choice")),
+  choice: fromGrpc$NestedOuter_choiceOneof(readField(message, "choice")),
 });
 
 export const toNestedOuter = (value: unknown): Record<string, unknown> => {
@@ -1537,7 +1537,7 @@ export const toNestedOuter = (value: unknown): Record<string, unknown> => {
     inner: readField(message, "inner") == null ? undefined : toNestedOuter_Inner(readField(message, "inner")),
     items: ((readField(message, "items") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => toNestedOuter_Inner(value)),
     byId: Object.fromEntries(Object.entries((readField(message, "byId") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, toNestedOuter_Inner(value)])),
-    choice: toNestedOuter_choiceOneof(readField(message, "choice")),
+    choice: toGrpc$NestedOuter_choiceOneof(readField(message, "choice")),
   });
 };
 
@@ -1692,7 +1692,7 @@ const compact = <T extends Record<string, unknown>>(object: T): T => {
   return result as T;
 };
 
-const fromCrossPackageRequest_choiceOneof = (value: unknown): unknown => {
+const fromGrpc$CrossPackageRequest_choiceOneof = (value: unknown): unknown => {
   const oneof = (value ?? { case: undefined }) as { readonly case?: string; readonly value?: unknown };
   switch (oneof.case ?? undefined) {
     case "picked":
@@ -1704,7 +1704,7 @@ const fromCrossPackageRequest_choiceOneof = (value: unknown): unknown => {
   }
 };
 
-const toCrossPackageRequest_choiceOneof = (value: unknown): unknown => {
+const toGrpc$CrossPackageRequest_choiceOneof = (value: unknown): unknown => {
   const oneof = value ?? { case: undefined };
   const message = oneof as { readonly case?: string; readonly value?: unknown };
   switch (message.case ?? undefined) {
@@ -1723,7 +1723,7 @@ export const fromCrossPackageRequest = (message: unknown): unknown => compact({
   byId: Object.fromEntries(Object.entries((readField(message, "byId") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, fromCommonUser(value)])),
   state: readField(message, "state") as CommonState,
   states: ((readField(message, "states") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => value as CommonState),
-  choice: fromCrossPackageRequest_choiceOneof(readField(message, "choice")),
+  choice: fromGrpc$CrossPackageRequest_choiceOneof(readField(message, "choice")),
 });
 
 export const toCrossPackageRequest = (value: unknown): Record<string, unknown> => {
@@ -1734,7 +1734,7 @@ export const toCrossPackageRequest = (value: unknown): Record<string, unknown> =
     byId: Object.fromEntries(Object.entries((readField(message, "byId") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, toCommonUser(value)])),
     state: readField(message, "state") as number,
     states: ((readField(message, "states") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => value as number),
-    choice: toCrossPackageRequest_choiceOneof(readField(message, "choice")),
+    choice: toGrpc$CrossPackageRequest_choiceOneof(readField(message, "choice")),
   });
 };
 
@@ -1853,16 +1853,16 @@ const compact = <T extends Record<string, unknown>>(object: T): T => {
   return result as T;
 };
 
-const fromBytes = (value: Uint8Array): string =>
+const fromGrpc$Bytes = (value: Uint8Array): string =>
   Buffer.from(value).toString("base64");
 
-const toBytes = (value: unknown): Uint8Array =>
+const toGrpc$Bytes = (value: unknown): Uint8Array =>
   Uint8Array.from(Buffer.from(value as string, "base64"));
 
 export const fromOptionalScalars = (message: unknown): unknown => compact({
   name: readField(message, "name") == null ? undefined : (readField(message, "name")) as string,
   enabled: readField(message, "enabled") == null ? undefined : (readField(message, "enabled")) as boolean,
-  blob: readField(message, "blob") == null ? undefined : fromBytes((readField(message, "blob")) as Uint8Array),
+  blob: readField(message, "blob") == null ? undefined : fromGrpc$Bytes((readField(message, "blob")) as Uint8Array),
   score: readField(message, "score") == null ? undefined : (readField(message, "score")) as number,
   total: readField(message, "total") == null ? undefined : String(readField(message, "total")),
   state: readField(message, "state") as OptionalState | undefined,
@@ -1873,7 +1873,7 @@ export const toOptionalScalars = (value: unknown): Record<string, unknown> => {
   return compact({
     name: readField(message, "name") == null ? undefined : (readField(message, "name")) as string,
     enabled: readField(message, "enabled") == null ? undefined : (readField(message, "enabled")) as boolean,
-    blob: readField(message, "blob") == null ? undefined : toBytes(readField(message, "blob")),
+    blob: readField(message, "blob") == null ? undefined : toGrpc$Bytes(readField(message, "blob")),
     score: readField(message, "score") == null ? undefined : (readField(message, "score")) as number,
     total: readField(message, "total") == null ? undefined : BigInt((readField(message, "total")) as string),
     state: readField(message, "state") as number | undefined,
@@ -2031,6 +2031,261 @@ export const EmptyMessageFeatureHandlersLayer = <R>(
     "features.v1.EmptyMessageFeature/GetStatus": {
       kind: "unary",
       handler: (request, context) => implementation.getStatus(request as GetStatusRequest, context),
+    },
+  });
+
+",
+  ],
+]
+`;
+
+exports[`proto feature fixtures > snapshots generated output 14`] = `
+[
+  [
+    "bytes_collision_effect_grpc.ts",
+    "// @generated by protoc-gen-effect-grpc. DO NOT EDIT.
+
+import { Buffer } from "node:buffer";
+import { Context, Effect, Layer, Schema } from "effect";
+import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc";
+import {
+  BytesCollisionFeature,
+} from "./bytes_collision_pb.js";
+
+export const BytesSchema = Schema.Struct({
+  data: Schema.Uint8Array,
+});
+export type Bytes = Schema.Schema.Type<typeof BytesSchema>;
+
+export const ChoiceSchema = Schema.Struct({
+  pick: Schema.Union([Schema.Struct({ case: Schema.Literal("id"), value: Schema.String }), Schema.Struct({ case: Schema.Literal("blob"), value: Schema.suspend((): typeof BytesSchema => BytesSchema) }), Schema.Struct({ case: Schema.Undefined, value: Schema.optional(Schema.Undefined) })]),
+});
+export type Choice = Schema.Schema.Type<typeof ChoiceSchema>;
+
+export const Choice_pickOneofSchema = Schema.Struct({
+  label: Schema.String,
+});
+export type Choice_pickOneof = Schema.Schema.Type<typeof Choice_pickOneofSchema>;
+
+export const GrpcGoogleProtobufTimestampSchema = Schema.Struct({
+  at: Schema.optional(Schema.Date),
+});
+export type GrpcGoogleProtobufTimestamp = Schema.Schema.Type<typeof GrpcGoogleProtobufTimestampSchema>;
+
+export const ShadowSchema = Schema.Struct({
+  shadowed: Schema.optional(Schema.suspend((): typeof GrpcGoogleProtobufTimestampSchema => GrpcGoogleProtobufTimestampSchema)),
+});
+export type Shadow = Schema.Schema.Type<typeof ShadowSchema>;
+
+const readField = (message: unknown, field: string): unknown =>
+  typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
+
+const compact = <T extends Record<string, unknown>>(object: T): T => {
+  const result: Record<string, unknown> = {};
+  for (const key of Object.keys(object)) {
+    if (object[key] !== undefined) result[key] = object[key];
+  }
+  return result as T;
+};
+
+const fromGrpc$Bytes = (value: Uint8Array): string =>
+  Buffer.from(value).toString("base64");
+
+const toGrpc$Bytes = (value: unknown): Uint8Array =>
+  Uint8Array.from(Buffer.from(value as string, "base64"));
+
+const fromGrpc$GoogleProtobufTimestamp = (value: unknown): string => {
+  const message = value as { readonly seconds?: bigint | number; readonly nanos?: number };
+  const seconds = Number(message.seconds ?? 0);
+  const nanos = message.nanos ?? 0;
+  return new Date(seconds * 1000 + Math.trunc(nanos / 1_000_000)).toISOString();
+};
+
+const toGrpc$GoogleProtobufTimestamp = (value: unknown) => {
+  const millis = new Date(value as string).getTime();
+  const seconds = Math.floor(millis / 1000);
+  return {
+    seconds: BigInt(seconds),
+    nanos: Math.trunc((millis - seconds * 1000) * 1_000_000),
+  };
+};
+
+export const fromBytes = (message: unknown): unknown => compact({
+  data: fromGrpc$Bytes((readField(message, "data")) as Uint8Array),
+});
+
+export const toBytes = (value: unknown): Record<string, unknown> => {
+  const message = value as Record<string, unknown>;
+  return compact({
+    data: toGrpc$Bytes(readField(message, "data")),
+  });
+};
+
+const fromGrpc$Choice_pickOneof = (value: unknown): unknown => {
+  const oneof = (value ?? { case: undefined }) as { readonly case?: string; readonly value?: unknown };
+  switch (oneof.case ?? undefined) {
+    case "id":
+      return { case: "id", value: (oneof.value) as string };
+    case "blob":
+      return { case: "blob", value: fromBytes(oneof.value) };
+    case undefined:
+      return { case: null };
+    default:
+      throw new Error(\`Unknown oneof case pick: \${oneof.case}\`);
+  }
+};
+
+const toGrpc$Choice_pickOneof = (value: unknown): unknown => {
+  const oneof = value ?? { case: undefined };
+  const message = oneof as { readonly case?: string; readonly value?: unknown };
+  switch (message.case ?? undefined) {
+    case "id":
+      return { case: "id", value: (message.value) as string };
+    case "blob":
+      return { case: "blob", value: toBytes(message.value) };
+    case undefined:
+      return { case: undefined };
+    default:
+      throw new Error(\`Unknown oneof case pick: \${message.case}\`);
+  }
+};
+
+export const fromChoice = (message: unknown): unknown => compact({
+  pick: fromGrpc$Choice_pickOneof(readField(message, "pick")),
+});
+
+export const toChoice = (value: unknown): Record<string, unknown> => {
+  const message = value as Record<string, unknown>;
+  return compact({
+    pick: toGrpc$Choice_pickOneof(readField(message, "pick")),
+  });
+};
+
+export const fromChoice_pickOneof = (message: unknown): unknown => compact({
+  label: (readField(message, "label")) as string,
+});
+
+export const toChoice_pickOneof = (value: unknown): Record<string, unknown> => {
+  const message = value as Record<string, unknown>;
+  return compact({
+    label: (readField(message, "label")) as string,
+  });
+};
+
+export const fromShadow = (message: unknown): unknown => compact({
+  shadowed: readField(message, "shadowed") == null ? undefined : fromGrpcGoogleProtobufTimestamp(readField(message, "shadowed")),
+});
+
+export const toShadow = (value: unknown): Record<string, unknown> => {
+  const message = value as Record<string, unknown>;
+  return compact({
+    shadowed: readField(message, "shadowed") == null ? undefined : toGrpcGoogleProtobufTimestamp(readField(message, "shadowed")),
+  });
+};
+
+export const fromGrpcGoogleProtobufTimestamp = (message: unknown): unknown => compact({
+  at: readField(message, "at") == null ? undefined : fromGrpc$GoogleProtobufTimestamp(readField(message, "at")),
+});
+
+export const toGrpcGoogleProtobufTimestamp = (value: unknown): Record<string, unknown> => {
+  const message = value as Record<string, unknown>;
+  return compact({
+    at: readField(message, "at") == null ? undefined : toGrpc$GoogleProtobufTimestamp(readField(message, "at")),
+  });
+};
+
+export const BytesCollisionFeatureGrpcRegistry = new Map<string, GrpcMethodRegistry.GrpcMethodEntry>([
+  [
+    "features.v1.BytesCollisionFeature/Echo",
+    {
+      kind: "unary",
+      tag: "features.v1.BytesCollisionFeature/Echo",
+      service: BytesCollisionFeature,
+      localName: "echo",
+      payloadSchema: BytesSchema,
+      successSchema: BytesSchema,
+      toGrpcRequest: toBytes,
+      fromGrpcRequest: fromBytes,
+      toGrpcResponse: toBytes,
+      fromGrpcResponse: fromBytes,
+    },
+  ],
+  [
+    "features.v1.BytesCollisionFeature/EchoChoice",
+    {
+      kind: "unary",
+      tag: "features.v1.BytesCollisionFeature/EchoChoice",
+      service: BytesCollisionFeature,
+      localName: "echoChoice",
+      payloadSchema: ChoiceSchema,
+      successSchema: ChoiceSchema,
+      toGrpcRequest: toChoice,
+      fromGrpcRequest: fromChoice,
+      toGrpcResponse: toChoice,
+      fromGrpcResponse: fromChoice,
+    },
+  ],
+  [
+    "features.v1.BytesCollisionFeature/EchoShadow",
+    {
+      kind: "unary",
+      tag: "features.v1.BytesCollisionFeature/EchoShadow",
+      service: BytesCollisionFeature,
+      localName: "echoShadow",
+      payloadSchema: ShadowSchema,
+      successSchema: ShadowSchema,
+      toGrpcRequest: toShadow,
+      fromGrpcRequest: fromShadow,
+      toGrpcResponse: toShadow,
+      fromGrpcResponse: fromShadow,
+    },
+  ],
+]);
+
+export type BytesCollisionFeatureClientError = GrpcStatusError.GrpcStatusError;
+
+export interface BytesCollisionFeatureClientService {
+  readonly echo: (request: Bytes, options?: CodegenSupport.GrpcCallOptions) => Effect.Effect<Bytes, BytesCollisionFeatureClientError>;
+  readonly echoChoice: (request: Choice, options?: CodegenSupport.GrpcCallOptions) => Effect.Effect<Choice, BytesCollisionFeatureClientError>;
+  readonly echoShadow: (request: Shadow, options?: CodegenSupport.GrpcCallOptions) => Effect.Effect<Shadow, BytesCollisionFeatureClientError>;
+}
+
+const makeBytesCollisionFeatureClient = Effect.gen(function* () {
+  const invoker = yield* GrpcInvoker.GrpcInvoker;
+  return {
+    echo: ((request, options) => invoker.unary("features.v1.BytesCollisionFeature/Echo", request, options)) as BytesCollisionFeatureClientService["echo"],
+    echoChoice: ((request, options) => invoker.unary("features.v1.BytesCollisionFeature/EchoChoice", request, options)) as BytesCollisionFeatureClientService["echoChoice"],
+    echoShadow: ((request, options) => invoker.unary("features.v1.BytesCollisionFeature/EchoShadow", request, options)) as BytesCollisionFeatureClientService["echoShadow"],
+  } satisfies BytesCollisionFeatureClientService;
+});
+
+export class BytesCollisionFeatureClient extends Context.Service<BytesCollisionFeatureClient, BytesCollisionFeatureClientService>()("features.v1.BytesCollisionFeature/BytesCollisionFeatureClient", {
+  make: makeBytesCollisionFeatureClient,
+}) {}
+
+export const BytesCollisionFeatureClientLayer = Layer.effect(BytesCollisionFeatureClient, BytesCollisionFeatureClient.make);
+
+export interface BytesCollisionFeatureImplementation<R = never> {
+  readonly echo: (request: Bytes, context: CodegenSupport.GrpcServerContext) => Effect.Effect<Bytes, GrpcStatusError.GrpcStatusError, R>;
+  readonly echoChoice: (request: Choice, context: CodegenSupport.GrpcServerContext) => Effect.Effect<Choice, GrpcStatusError.GrpcStatusError, R>;
+  readonly echoShadow: (request: Shadow, context: CodegenSupport.GrpcServerContext) => Effect.Effect<Shadow, GrpcStatusError.GrpcStatusError, R>;
+}
+
+export const BytesCollisionFeatureHandlersLayer = <R>(
+  implementation: BytesCollisionFeatureImplementation<R>,
+): Layer.Layer<GrpcServerProtocol.GrpcHandlers, never, R> =>
+  GrpcServerProtocol.handlersLayer<R>({
+    "features.v1.BytesCollisionFeature/Echo": {
+      kind: "unary",
+      handler: (request, context) => implementation.echo(request as Bytes, context),
+    },
+    "features.v1.BytesCollisionFeature/EchoChoice": {
+      kind: "unary",
+      handler: (request, context) => implementation.echoChoice(request as Choice, context),
+    },
+    "features.v1.BytesCollisionFeature/EchoShadow": {
+      kind: "unary",
+      handler: (request, context) => implementation.echoShadow(request as Shadow, context),
     },
   });
 

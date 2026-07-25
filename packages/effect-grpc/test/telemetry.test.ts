@@ -1,8 +1,4 @@
-import type {
-  ConnectRouter,
-  HandlerContext,
-  Transport,
-} from "@connectrpc/connect";
+import type { HandlerContext, Transport } from "@connectrpc/connect";
 import { Code, ConnectError } from "@connectrpc/connect";
 import {
   Cause,
@@ -14,7 +10,6 @@ import {
   Layer,
   Metric,
   Option,
-  Schema,
   Stream,
 } from "effect";
 import * as Tracer from "effect/Tracer";
@@ -30,6 +25,12 @@ import {
   externalSpanFromHeaders,
   traceStateFromHeaders,
 } from "../src/internal/tracing.js";
+import type { ServiceImplementation } from "./support/serverHarness.js";
+import {
+  captureImplementation,
+  handlerContext,
+  methodEntries,
+} from "./support/serverHarness.js";
 
 const TRACEPARENT_PATTERN = /^00-[0-9a-f]{32}-[0-9a-f]{16}-0[01]$/;
 
@@ -79,17 +80,11 @@ describe("client telemetry", () => {
     expect(span.kind).toBe("client");
     expect(span.attributes.get("rpc.response.status_code")).toBe("OK");
 
-    const durations = durationMetrics(
-      result.metrics,
-      "rpc.client.call.duration",
-    );
-    expect(durations).toHaveLength(1);
-    expect(durations[0]?.attributes).toMatchObject({
+    expectDuration(result.metrics, "rpc.client.call.duration", {
       "rpc.system.name": "grpc",
       "rpc.method": "demo.v1.TelemetryService/Upload",
       "rpc.response.status_code": "OK",
     });
-    expect(durations[0]?.count).toBe(1);
   });
 
   it("falls back to the ambient TraceState reference when the span ancestry has none", async () => {
@@ -172,12 +167,7 @@ describe("client telemetry", () => {
     );
     expect(span.attributes.get("error.type")).toBe("PERMISSION_DENIED");
 
-    const durations = durationMetrics(
-      result.metrics,
-      "rpc.client.call.duration",
-    );
-    expect(durations).toHaveLength(1);
-    expect(durations[0]?.attributes).toMatchObject({
+    expectDuration(result.metrics, "rpc.client.call.duration", {
       "rpc.method": "demo.v1.TelemetryService/Upload",
       "rpc.response.status_code": "PERMISSION_DENIED",
       "error.type": "PERMISSION_DENIED",
@@ -214,16 +204,10 @@ describe("client telemetry", () => {
     const span = telemetry.expectSpan(bidiStreamingEntry.tag);
     expect(span.attributes.get("rpc.response.status_code")).toBe("OK");
 
-    const durations = durationMetrics(
-      result.metrics,
-      "rpc.client.call.duration",
-    );
-    expect(durations).toHaveLength(1);
-    expect(durations[0]?.attributes).toMatchObject({
+    expectDuration(result.metrics, "rpc.client.call.duration", {
       "rpc.method": "demo.v1.TelemetryService/Chat",
       "rpc.response.status_code": "OK",
     });
-    expect(durations[0]?.count).toBe(1);
   });
 
   it("ends the client span as an error when a unary call is interrupted", async () => {
@@ -303,17 +287,11 @@ describe("client telemetry", () => {
     // per semconv the CANCELLED client span must still end as an error.
     expect(spanEndExit(span)._tag).toBe("Failure");
 
-    const durations = durationMetrics(
-      result.metrics,
-      "rpc.client.call.duration",
-    );
-    expect(durations).toHaveLength(1);
-    expect(durations[0]?.attributes).toMatchObject({
+    expectDuration(result.metrics, "rpc.client.call.duration", {
       "rpc.method": "demo.v1.TelemetryService/Chat",
       "rpc.response.status_code": "CANCELLED",
       "error.type": "CANCELLED",
     });
-    expect(durations[0]?.count).toBe(1);
   });
 
   // Generated clients resolve every call shape through the `GrpcInvoker` seam
@@ -373,20 +351,19 @@ describe("client telemetry", () => {
     expect(span.traceId).toBe(parent.traceId);
     expect(headers[0]?.get("tracestate")).toBe("vendor=abc");
 
-    const durations = durationMetrics(
+    expectDuration(
       result.metrics,
       "rpc.client.call.duration",
+      {
+        unit: "s",
+        "rpc.system.name": "grpc",
+        "rpc.method": "demo.v1.TelemetryService/Get",
+        "server.address": "api.example.com",
+        "server.port": "8443",
+        "rpc.response.status_code": "OK",
+      },
+      true,
     );
-    expect(durations).toHaveLength(1);
-    expect(durations[0]?.attributes).toEqual({
-      unit: "s",
-      "rpc.system.name": "grpc",
-      "rpc.method": "demo.v1.TelemetryService/Get",
-      "server.address": "api.example.com",
-      "server.port": "8443",
-      "rpc.response.status_code": "OK",
-    });
-    expect(durations[0]?.count).toBe(1);
   });
 
   // `URL` normalizes a scheme's default port away, so `baseUrl` alone cannot
@@ -413,8 +390,7 @@ describe("client telemetry", () => {
     expect(span.attributes.get("server.address")).toBe("api.example.com");
     expect(span.attributes.get("server.port")).toBe(port);
 
-    const durations = durationMetrics(metrics, "rpc.client.call.duration");
-    expect(durations[0]?.attributes).toMatchObject({
+    expectDuration(metrics, "rpc.client.call.duration", {
       "server.address": "api.example.com",
       "server.port": String(port),
     });
@@ -484,17 +460,11 @@ describe("client telemetry", () => {
     expect(span.attributes.get("error.type")).toBe("NOT_FOUND");
     expect(spanEndExit(span)._tag).toBe("Failure");
 
-    const durations = durationMetrics(
-      result.metrics,
-      "rpc.client.call.duration",
-    );
-    expect(durations).toHaveLength(1);
-    expect(durations[0]?.attributes).toMatchObject({
+    expectDuration(result.metrics, "rpc.client.call.duration", {
       "rpc.method": "demo.v1.TelemetryService/Get",
       "rpc.response.status_code": "NOT_FOUND",
       "error.type": "NOT_FOUND",
     });
-    expect(durations[0]?.count).toBe(1);
   });
 
   it("forwards trace headers and records duration for server-streaming calls", async () => {
@@ -539,16 +509,10 @@ describe("client telemetry", () => {
     );
     expect(span.attributes.get("rpc.response.status_code")).toBe("OK");
 
-    const durations = durationMetrics(
-      result.metrics,
-      "rpc.client.call.duration",
-    );
-    expect(durations).toHaveLength(1);
-    expect(durations[0]?.attributes).toMatchObject({
+    expectDuration(result.metrics, "rpc.client.call.duration", {
       "rpc.method": "demo.v1.TelemetryService/Watch",
       "rpc.response.status_code": "OK",
     });
-    expect(durations[0]?.count).toBe(1);
   });
 });
 
@@ -566,24 +530,13 @@ describe("server telemetry", () => {
     const result = await Effect.runPromise(
       telemetry.provide(
         Effect.gen(function* () {
-          const { routes } = yield* GrpcServerProtocol.make({
-            registry: new Map([[unaryEntry.tag, unaryEntry]]),
-            handlers: new Map<string, GrpcServerProtocol.GrpcHandler>([
-              [
-                unaryEntry.tag,
-                { kind: "unary", handler: () => Effect.succeed({ ok: true }) },
-              ],
-            ]),
+          const call = yield* serverCall(unaryEntry, {
+            kind: "unary",
+            handler: () => Effect.succeed({ ok: true }),
           });
-          const implementation = captureImplementation(routes);
 
           const response = yield* Effect.promise(() =>
-            (
-              implementation.get as (
-                request: unknown,
-                context: HandlerContext,
-              ) => Promise<unknown>
-            )({}, handlerContext(incomingHeaders)),
+            call({}, handlerContext({ headers: incomingHeaders })),
           );
           const metrics = yield* Metric.snapshot;
           return { response, metrics };
@@ -607,18 +560,17 @@ describe("server telemetry", () => {
     expect(parent.spanId).toBe(parentSpanId);
     expect(Context.get(parent.annotations, TraceState)).toBe("vendor=abc");
 
-    const durations = durationMetrics(
+    expectDuration(
       result.metrics,
       "rpc.server.call.duration",
+      {
+        unit: "s",
+        "rpc.system.name": "grpc",
+        "rpc.method": "demo.v1.TelemetryService/Get",
+        "rpc.response.status_code": "OK",
+      },
+      true,
     );
-    expect(durations).toHaveLength(1);
-    expect(durations[0]?.attributes).toEqual({
-      unit: "s",
-      "rpc.system.name": "grpc",
-      "rpc.method": "demo.v1.TelemetryService/Get",
-      "rpc.response.status_code": "OK",
-    });
-    expect(durations[0]?.count).toBe(1);
   });
 
   it("forwards incoming tracestate to downstream client calls made from a unary handler", async () => {
@@ -637,27 +589,13 @@ describe("server telemetry", () => {
           // The handler runs inside the request fiber with the incoming
           // `tracestate` provided from the headers, so downstream client
           // calls pick it up for header injection.
-          const { routes } = yield* GrpcServerProtocol.make({
-            registry: new Map([[unaryEntry.tag, unaryEntry]]),
-            handlers: new Map<string, GrpcServerProtocol.GrpcHandler>([
-              [
-                unaryEntry.tag,
-                {
-                  kind: "unary",
-                  handler: () =>
-                    downstream.unary(unaryEntry.tag, {}).pipe(Effect.orDie),
-                },
-              ],
-            ]),
+          const call = yield* serverCall(unaryEntry, {
+            kind: "unary",
+            handler: () =>
+              downstream.unary(unaryEntry.tag, {}).pipe(Effect.orDie),
           });
-          const implementation = captureImplementation(routes);
           return yield* Effect.promise(() =>
-            (
-              implementation.get as (
-                request: unknown,
-                context: HandlerContext,
-              ) => Promise<unknown>
-            )({}, handlerContext(incomingHeaders)),
+            call({}, handlerContext({ headers: incomingHeaders })),
           );
         }),
       ),
@@ -684,32 +622,19 @@ describe("server telemetry", () => {
           // The handler fiber is spawned by the response pump; this pins the
           // pump context rehydration: the scoped server span parents the
           // downstream span and the incoming `tracestate` is injected.
-          const { routes } = yield* GrpcServerProtocol.make({
-            registry: new Map([
-              [serverStreamingEntry.tag, serverStreamingEntry],
-            ]),
-            handlers: new Map<string, GrpcServerProtocol.GrpcHandler>([
-              [
-                serverStreamingEntry.tag,
-                {
-                  kind: "server-streaming",
-                  handler: () =>
-                    Stream.fromEffect(
-                      downstream.unary(unaryEntry.tag, {}).pipe(Effect.orDie),
-                    ),
-                },
-              ],
-            ]),
+          const call = yield* serverCall(serverStreamingEntry, {
+            kind: "server-streaming",
+            handler: () =>
+              Stream.fromEffect(
+                downstream.unary(unaryEntry.tag, {}).pipe(Effect.orDie),
+              ),
           });
-          const implementation = captureImplementation(routes);
           return yield* Effect.promise(async () => {
             const responses: Array<unknown> = [];
-            for await (const value of (
-              implementation.watch as (
-                request: unknown,
-                context: HandlerContext,
-              ) => AsyncIterable<unknown>
-            )({}, handlerContext(incomingHeaders))) {
+            for await (const value of call(
+              {},
+              handlerContext({ headers: incomingHeaders }),
+            )) {
               responses.push(value);
             }
             return responses;
@@ -731,121 +656,64 @@ describe("server telemetry", () => {
     expect(clientSpan.traceId).toBe(traceId);
   });
 
-  it("records NOT_FOUND without error.type on unary failure (not a server fault)", async () => {
-    const telemetry = makeTestTelemetry();
+  // Per semconv, server spans mark only server-fault codes as errors, so the
+  // failure status alone decides whether `error.type` is recorded.
+  it.each([
+    {
+      status: "NOT_FOUND",
+      errorType: undefined,
+      message: "missing",
+      failure: () => GrpcStatusError.notFound("missing"),
+    },
+    {
+      status: "INTERNAL",
+      errorType: "INTERNAL",
+      message: "boom",
+      failure: () => GrpcStatusError.internal("boom"),
+    },
+  ])(
+    "records $status with error.type $errorType on unary failure",
+    async ({ status, errorType, message, failure }) => {
+      const telemetry = makeTestTelemetry();
 
-    const result = await Effect.runPromise(
-      telemetry.provide(
-        Effect.gen(function* () {
-          const { routes } = yield* GrpcServerProtocol.make({
-            registry: new Map([[unaryEntry.tag, unaryEntry]]),
-            handlers: new Map<string, GrpcServerProtocol.GrpcHandler>([
-              [
-                unaryEntry.tag,
-                {
-                  kind: "unary",
-                  handler: () =>
-                    Effect.fail(GrpcStatusError.notFound("missing")),
-                },
-              ],
-            ]),
-          });
-          const implementation = captureImplementation(routes);
+      const result = await Effect.runPromise(
+        telemetry.provide(
+          Effect.gen(function* () {
+            const call = yield* serverCall(unaryEntry, {
+              kind: "unary",
+              handler: () => Effect.fail(failure()),
+            });
 
-          const error = yield* Effect.promise(async () => {
-            try {
-              await (
-                implementation.get as (
-                  request: unknown,
-                  context: HandlerContext,
-                ) => Promise<unknown>
-              )({}, handlerContext());
-            } catch (cause) {
-              return cause;
-            }
-            throw new Error("Expected unary handler to fail");
-          });
-          const metrics = yield* Metric.snapshot;
-          return { error, metrics };
-        }),
-      ),
-    );
+            const error = yield* Effect.promise(async () => {
+              try {
+                await call({}, handlerContext());
+              } catch (cause) {
+                return cause;
+              }
+              throw new Error("Expected unary handler to fail");
+            });
+            const metrics = yield* Metric.snapshot;
+            return { error, metrics };
+          }),
+        ),
+      );
 
-    expect(result.error).toMatchObject({ rawMessage: "missing" });
-    const span = telemetry.expectSpan(unaryEntry.tag);
-    expect(span.attributes.get("rpc.response.status_code")).toBe("NOT_FOUND");
-    // Per semconv, server spans mark only server-fault codes as errors.
-    expect(span.attributes.get("error.type")).toBeUndefined();
+      expect(result.error).toMatchObject({ rawMessage: message });
+      const span = telemetry.expectSpan(unaryEntry.tag);
+      expect(span.attributes.get("rpc.response.status_code")).toBe(status);
+      expect(span.attributes.get("error.type")).toBe(errorType);
 
-    const durations = durationMetrics(
-      result.metrics,
-      "rpc.server.call.duration",
-    );
-    expect(durations).toHaveLength(1);
-    expect(durations[0]?.attributes).toMatchObject({
-      "rpc.method": "demo.v1.TelemetryService/Get",
-      "rpc.response.status_code": "NOT_FOUND",
-    });
-    expect(durations[0]?.attributes?.["error.type"]).toBeUndefined();
-    expect(durations[0]?.count).toBe(1);
-  });
-
-  it("records error.type on unary failure with a server-fault code", async () => {
-    const telemetry = makeTestTelemetry();
-
-    const result = await Effect.runPromise(
-      telemetry.provide(
-        Effect.gen(function* () {
-          const { routes } = yield* GrpcServerProtocol.make({
-            registry: new Map([[unaryEntry.tag, unaryEntry]]),
-            handlers: new Map<string, GrpcServerProtocol.GrpcHandler>([
-              [
-                unaryEntry.tag,
-                {
-                  kind: "unary",
-                  handler: () => Effect.fail(GrpcStatusError.internal("boom")),
-                },
-              ],
-            ]),
-          });
-          const implementation = captureImplementation(routes);
-
-          const error = yield* Effect.promise(async () => {
-            try {
-              await (
-                implementation.get as (
-                  request: unknown,
-                  context: HandlerContext,
-                ) => Promise<unknown>
-              )({}, handlerContext());
-            } catch (cause) {
-              return cause;
-            }
-            throw new Error("Expected unary handler to fail");
-          });
-          const metrics = yield* Metric.snapshot;
-          return { error, metrics };
-        }),
-      ),
-    );
-
-    expect(result.error).toMatchObject({ rawMessage: "boom" });
-    const span = telemetry.expectSpan(unaryEntry.tag);
-    expect(span.attributes.get("rpc.response.status_code")).toBe("INTERNAL");
-    expect(span.attributes.get("error.type")).toBe("INTERNAL");
-
-    const durations = durationMetrics(
-      result.metrics,
-      "rpc.server.call.duration",
-    );
-    expect(durations).toHaveLength(1);
-    expect(durations[0]?.attributes).toMatchObject({
-      "rpc.method": "demo.v1.TelemetryService/Get",
-      "rpc.response.status_code": "INTERNAL",
-      "error.type": "INTERNAL",
-    });
-    expect(durations[0]?.count).toBe(1);
-  });
+      const duration = expectDuration(
+        result.metrics,
+        "rpc.server.call.duration",
+        {
+          "rpc.method": "demo.v1.TelemetryService/Get",
+          "rpc.response.status_code": status,
+        },
+      );
+      expect(duration.attributes?.["error.type"]).toBe(errorType);
+    },
+  );
 
   // Regression pin for the client-abort span path: on abort, the connect
   // signal must interrupt only the handler body — the spanned effect has to
@@ -857,26 +725,17 @@ describe("server telemetry", () => {
     handler: (
       interrupted: Deferred.Deferred<boolean>,
     ) => GrpcServerProtocol.GrpcHandler,
-    call: (
-      implementation: Record<string, unknown>,
-      context: HandlerContext,
-    ) => Promise<unknown>,
+    request: () => unknown,
   ) =>
     Effect.gen(function* () {
       const interrupted = yield* Deferred.make<boolean>();
-      const { routes } = yield* GrpcServerProtocol.make({
-        registry: new Map([[entry.tag, entry]]),
-        handlers: new Map<string, GrpcServerProtocol.GrpcHandler>([
-          [entry.tag, handler(interrupted)],
-        ]),
-      });
-      const implementation = captureImplementation(routes);
+      const call = yield* serverCall(entry, handler(interrupted));
       const abort = new AbortController();
 
       const error = yield* Effect.promise(async () => {
         const pending = call(
-          implementation,
-          handlerContext(undefined, abort.signal),
+          request(),
+          handlerContext({ signal: abort.signal }),
         );
         await new Promise((resolve) => setTimeout(resolve, 10));
         abort.abort();
@@ -928,13 +787,7 @@ describe("server telemetry", () => {
                 ),
               ),
           }),
-          (implementation, context) =>
-            (
-              implementation.get as (
-                request: unknown,
-                context: HandlerContext,
-              ) => Promise<unknown>
-            )({}, context),
+          () => ({}),
         ),
       ),
     );
@@ -943,16 +796,15 @@ describe("server telemetry", () => {
     expect(result.handlerInterrupted).toBe(true);
     expectCancelledSpanEnd(telemetry, unaryEntry.tag);
 
-    const durations = durationMetrics(
+    const duration = expectDuration(
       result.metrics,
       "rpc.server.call.duration",
+      {
+        "rpc.method": "demo.v1.TelemetryService/Get",
+        "rpc.response.status_code": "CANCELLED",
+      },
     );
-    expect(durations).toHaveLength(1);
-    expect(durations[0]?.attributes).toMatchObject({
-      "rpc.method": "demo.v1.TelemetryService/Get",
-      "rpc.response.status_code": "CANCELLED",
-    });
-    expect(durations[0]?.attributes?.["error.type"]).toBeUndefined();
+    expect(duration.attributes?.["error.type"]).toBeUndefined();
   });
 
   it("records CANCELLED while the span is open when the client aborts a client-streaming call", async () => {
@@ -971,18 +823,10 @@ describe("server telemetry", () => {
                 ),
               ),
           }),
-          (implementation, context) =>
-            (
-              implementation.upload as (
-                requests: AsyncIterable<unknown>,
-                context: HandlerContext,
-              ) => Promise<unknown>
-            )(
-              (async function* () {
-                yield { id: "1" };
-              })(),
-              context,
-            ),
+          () =>
+            (async function* () {
+              yield { id: "1" };
+            })(),
         ),
       ),
     );
@@ -991,12 +835,7 @@ describe("server telemetry", () => {
     expect(result.handlerInterrupted).toBe(true);
     expectCancelledSpanEnd(telemetry, clientStreamingEntry.tag);
 
-    const durations = durationMetrics(
-      result.metrics,
-      "rpc.server.call.duration",
-    );
-    expect(durations).toHaveLength(1);
-    expect(durations[0]?.attributes).toMatchObject({
+    expectDuration(result.metrics, "rpc.server.call.duration", {
       "rpc.method": "demo.v1.TelemetryService/Upload",
       "rpc.response.status_code": "CANCELLED",
     });
@@ -1013,34 +852,18 @@ describe("server telemetry", () => {
     const result = await Effect.runPromise(
       telemetry.provide(
         Effect.gen(function* () {
-          const { routes } = yield* GrpcServerProtocol.make({
-            registry: new Map([
-              [serverStreamingEntry.tag, serverStreamingEntry],
-            ]),
-            handlers: new Map<string, GrpcServerProtocol.GrpcHandler>([
-              [
-                serverStreamingEntry.tag,
-                {
-                  kind: "server-streaming",
-                  handler: () =>
-                    Stream.make({ sequence: 1 }).pipe(
-                      Stream.concat(Stream.fromEffect(Effect.interrupt)),
-                    ),
-                },
-              ],
-            ]),
+          const call = yield* serverCall(serverStreamingEntry, {
+            kind: "server-streaming",
+            handler: () =>
+              Stream.make({ sequence: 1 }).pipe(
+                Stream.concat(Stream.fromEffect(Effect.interrupt)),
+              ),
           });
-          const implementation = captureImplementation(routes);
 
           const outcome = yield* Effect.promise(async () => {
             const received: Array<unknown> = [];
             try {
-              for await (const value of (
-                implementation.watch as (
-                  request: unknown,
-                  context: HandlerContext,
-                ) => AsyncIterable<unknown>
-              )({}, handlerContext())) {
+              for await (const value of call({}, handlerContext())) {
                 received.push(value);
               }
             } catch (cause) {
@@ -1061,16 +884,15 @@ describe("server telemetry", () => {
     expect(result.outcome.error).toMatchObject({ code: "cancelled" });
     expectCancelledSpanEnd(telemetry, serverStreamingEntry.tag);
 
-    const durations = durationMetrics(
+    const duration = expectDuration(
       result.metrics,
       "rpc.server.call.duration",
+      {
+        "rpc.method": "demo.v1.TelemetryService/Watch",
+        "rpc.response.status_code": "CANCELLED",
+      },
     );
-    expect(durations).toHaveLength(1);
-    expect(durations[0]?.attributes).toMatchObject({
-      "rpc.method": "demo.v1.TelemetryService/Watch",
-      "rpc.response.status_code": "CANCELLED",
-    });
-    expect(durations[0]?.attributes?.["error.type"]).toBeUndefined();
+    expect(duration.attributes?.["error.type"]).toBeUndefined();
   });
 
   it("records mid-stream bidi failures with the failure status", async () => {
@@ -1079,38 +901,24 @@ describe("server telemetry", () => {
     const result = await Effect.runPromise(
       telemetry.provide(
         Effect.gen(function* () {
-          const { routes } = yield* GrpcServerProtocol.make({
-            registry: new Map([[bidiStreamingEntry.tag, bidiStreamingEntry]]),
-            handlers: new Map<string, GrpcServerProtocol.GrpcHandler>([
-              [
-                bidiStreamingEntry.tag,
-                {
-                  kind: "bidi-streaming",
-                  handler: (requests) =>
-                    Stream.mapEffect(requests, (request) =>
-                      (request as { readonly id: string }).id === "boom"
-                        ? Effect.fail(GrpcStatusError.notFound("boom"))
-                        : Effect.succeed(request),
-                    ),
-                },
-              ],
-            ]),
+          const call = yield* serverCall(bidiStreamingEntry, {
+            kind: "bidi-streaming",
+            handler: (requests) =>
+              Stream.mapEffect(requests, (request) =>
+                (request as { readonly id: string }).id === "boom"
+                  ? Effect.fail(GrpcStatusError.notFound("boom"))
+                  : Effect.succeed(request),
+              ),
           });
-          const implementation = captureImplementation(routes);
 
           const error = yield* Effect.promise(async () => {
             try {
-              for await (const value of (
-                implementation.chat as (
-                  request: AsyncIterable<unknown>,
-                  context: HandlerContext,
-                ) => AsyncIterable<unknown>
-              )(
+              for await (const value of call(
                 (async function* () {
                   yield { id: "1" };
                   yield { id: "boom" };
                 })(),
-                handlerContext(incomingHeaders),
+                handlerContext({ headers: incomingHeaders }),
               )) {
                 void value;
               }
@@ -1134,17 +942,15 @@ describe("server telemetry", () => {
     const parent = Option.getOrThrow(span.parent);
     expect(parent.traceId).toBe(traceId);
 
-    const durations = durationMetrics(
+    const duration = expectDuration(
       result.metrics,
       "rpc.server.call.duration",
+      {
+        "rpc.method": "demo.v1.TelemetryService/Chat",
+        "rpc.response.status_code": "NOT_FOUND",
+      },
     );
-    expect(durations).toHaveLength(1);
-    expect(durations[0]?.attributes).toMatchObject({
-      "rpc.method": "demo.v1.TelemetryService/Chat",
-      "rpc.response.status_code": "NOT_FOUND",
-    });
-    expect(durations[0]?.attributes?.["error.type"]).toBeUndefined();
-    expect(durations[0]?.count).toBe(1);
+    expect(duration.attributes?.["error.type"]).toBeUndefined();
   });
 
   // Regression pin for `handlersLayer`: the layer captures the whole
@@ -1190,33 +996,21 @@ describe("server telemetry", () => {
             Effect.provideService(BuildDep, { origin: "build" }),
           );
 
-          const { routes } = yield* GrpcServerProtocol.make({
-            registry: new Map([
-              [unaryEntry.tag, unaryEntry],
-              [serverStreamingEntry.tag, serverStreamingEntry],
-            ]),
-            handlers: Context.get(
-              handlersContext,
-              GrpcServerProtocol.GrpcHandlers,
-            ),
-          });
-          const implementation = captureImplementation(routes);
+          const implementation = yield* serverImplementation(
+            [unaryEntry, serverStreamingEntry],
+            Context.get(handlersContext, GrpcServerProtocol.GrpcHandlers),
+          );
 
           const unaryResponse = yield* Effect.promise(() =>
-            (
-              implementation.get as (
-                request: unknown,
-                context: HandlerContext,
-              ) => Promise<unknown>
-            )({}, handlerContext(incomingHeaders)),
+            (implementation[unaryEntry.localName] as ServerCall)(
+              {},
+              handlerContext({ headers: incomingHeaders }),
+            ),
           );
           yield* Effect.promise(async () => {
             for await (const value of (
-              implementation.watch as (
-                request: unknown,
-                context: HandlerContext,
-              ) => AsyncIterable<unknown>
-            )({}, handlerContext(incomingHeaders))) {
+              implementation[serverStreamingEntry.localName] as ServerCall
+            )({}, handlerContext({ headers: incomingHeaders }))) {
               void value;
             }
           });
@@ -1254,30 +1048,16 @@ describe("server telemetry", () => {
     const result = await Effect.runPromise(
       telemetry.provide(
         Effect.gen(function* () {
-          const { routes } = yield* GrpcServerProtocol.make({
-            registry: new Map([[bidiStreamingEntry.tag, bidiStreamingEntry]]),
-            handlers: new Map<string, GrpcServerProtocol.GrpcHandler>([
-              [
-                bidiStreamingEntry.tag,
-                {
-                  kind: "bidi-streaming",
-                  handler: () => {
-                    throw new Error("sync defect");
-                  },
-                },
-              ],
-            ]),
+          const call = yield* serverCall(bidiStreamingEntry, {
+            kind: "bidi-streaming",
+            handler: () => {
+              throw new Error("sync defect");
+            },
           });
-          const implementation = captureImplementation(routes);
 
           const error = yield* Effect.promise(async () => {
             try {
-              for await (const value of (
-                implementation.chat as (
-                  requests: AsyncIterable<unknown>,
-                  context: HandlerContext,
-                ) => AsyncIterable<unknown>
-              )(
+              for await (const value of call(
                 (async function* () {
                   yield { id: "1" };
                 })(),
@@ -1308,12 +1088,7 @@ describe("server telemetry", () => {
     // A server-fault code ends the span in an error state.
     expect(spanEndExit(span)._tag).toBe("Failure");
 
-    const durations = durationMetrics(
-      result.metrics,
-      "rpc.server.call.duration",
-    );
-    expect(durations).toHaveLength(1);
-    expect(durations[0]?.attributes).toMatchObject({
+    expectDuration(result.metrics, "rpc.server.call.duration", {
       "rpc.method": "demo.v1.TelemetryService/Chat",
       "rpc.response.status_code": "INTERNAL",
       "error.type": "INTERNAL",
@@ -1334,129 +1109,89 @@ describe("server telemetry", () => {
     return { signal: controller.signal, expire };
   };
 
-  it("records DEADLINE_EXCEEDED when connect's deadline aborts a unary call", async () => {
-    const telemetry = makeTestTelemetry();
+  it.each([
+    {
+      shape: "unary call",
+      entry: unaryEntry,
+      handler: {
+        kind: "unary",
+        handler: () => Effect.never,
+      } satisfies GrpcServerProtocol.GrpcHandler,
+      // The call rejects with the deadline status connect wrote.
+      drive: async (
+        call: ServerCall,
+        context: HandlerContext,
+      ): Promise<unknown> => {
+        try {
+          await call({}, context);
+        } catch (cause) {
+          return GrpcStatusError.fromConnectError(cause);
+        }
+        throw new Error("Expected the deadline expiry to fail the call");
+      },
+      expectOutcome: (outcome: unknown) =>
+        expect(outcome).toMatchObject({ code: "deadline_exceeded" }),
+    },
+    {
+      shape: "server stream",
+      entry: serverStreamingEntry,
+      handler: {
+        kind: "server-streaming",
+        handler: () => Stream.never,
+      } satisfies GrpcServerProtocol.GrpcHandler,
+      // On expiry the pump closes the handler and the generator ends
+      // cleanly — connect itself writes the deadline trailer.
+      drive: async (
+        call: ServerCall,
+        context: HandlerContext,
+      ): Promise<unknown> => {
+        const values: Array<unknown> = [];
+        for await (const value of call({}, context)) {
+          values.push(value);
+        }
+        return values;
+      },
+      expectOutcome: (outcome: unknown) => expect(outcome).toEqual([]),
+    },
+  ])(
+    "records DEADLINE_EXCEEDED when connect's deadline aborts a $shape",
+    async ({ entry, handler, drive, expectOutcome }) => {
+      const telemetry = makeTestTelemetry();
 
-    const result = await Effect.runPromise(
-      telemetry.provide(
-        Effect.gen(function* () {
-          const { routes } = yield* GrpcServerProtocol.make({
-            registry: new Map([[unaryEntry.tag, unaryEntry]]),
-            handlers: new Map<string, GrpcServerProtocol.GrpcHandler>([
-              [unaryEntry.tag, { kind: "unary", handler: () => Effect.never }],
-            ]),
-          });
-          const implementation = captureImplementation(routes);
-          const { signal, expire } = deadlineAbort();
+      const result = await Effect.runPromise(
+        telemetry.provide(
+          Effect.gen(function* () {
+            const call = yield* serverCall(entry, handler);
+            const { signal, expire } = deadlineAbort();
+            setTimeout(expire, 10);
 
-          const error = yield* Effect.promise(async () => {
-            const pending = (
-              implementation.get as (
-                request: unknown,
-                context: HandlerContext,
-              ) => Promise<unknown>
-            )({}, handlerContext(undefined, signal));
-            await new Promise((resolve) => setTimeout(resolve, 10));
-            expire();
-            try {
-              await pending;
-            } catch (cause) {
-              return GrpcStatusError.fromConnectError(cause);
-            }
-            throw new Error("Expected the deadline expiry to fail the call");
-          });
-          const metrics = yield* Metric.snapshot;
-          return { error, metrics };
-        }),
-      ),
-    );
+            const outcome = yield* Effect.promise(() =>
+              drive(call, handlerContext({ signal })),
+            );
+            const metrics = yield* Metric.snapshot;
+            return { outcome, metrics };
+          }),
+        ),
+      );
 
-    expect(result.error).toMatchObject({ code: "deadline_exceeded" });
-    const span = telemetry.expectSpan(unaryEntry.tag);
-    const end = telemetry.endState(span);
-    expect(end.attributesAtEnd.get("rpc.response.status_code")).toBe(
-      "DEADLINE_EXCEEDED",
-    );
-    expect(end.attributesAtEnd.get("error.type")).toBe("DEADLINE_EXCEEDED");
-    expect(end.attributesAfterEnd).toEqual([]);
-    // deadline_exceeded is a server fault: the span ends in an error state.
-    expect(spanEndExit(span)._tag).toBe("Failure");
+      expectOutcome(result.outcome);
+      const span = telemetry.expectSpan(entry.tag);
+      const end = telemetry.endState(span);
+      expect(end.attributesAtEnd.get("rpc.response.status_code")).toBe(
+        "DEADLINE_EXCEEDED",
+      );
+      expect(end.attributesAtEnd.get("error.type")).toBe("DEADLINE_EXCEEDED");
+      expect(end.attributesAfterEnd).toEqual([]);
+      // deadline_exceeded is a server fault: the span ends in an error state.
+      expect(spanEndExit(span)._tag).toBe("Failure");
 
-    const durations = durationMetrics(
-      result.metrics,
-      "rpc.server.call.duration",
-    );
-    expect(durations).toHaveLength(1);
-    expect(durations[0]?.attributes).toMatchObject({
-      "rpc.method": "demo.v1.TelemetryService/Get",
-      "rpc.response.status_code": "DEADLINE_EXCEEDED",
-      "error.type": "DEADLINE_EXCEEDED",
-    });
-  });
-
-  it("records DEADLINE_EXCEEDED when connect's deadline aborts a server stream", async () => {
-    const telemetry = makeTestTelemetry();
-
-    const result = await Effect.runPromise(
-      telemetry.provide(
-        Effect.gen(function* () {
-          const { routes } = yield* GrpcServerProtocol.make({
-            registry: new Map([
-              [serverStreamingEntry.tag, serverStreamingEntry],
-            ]),
-            handlers: new Map<string, GrpcServerProtocol.GrpcHandler>([
-              [
-                serverStreamingEntry.tag,
-                { kind: "server-streaming", handler: () => Stream.never },
-              ],
-            ]),
-          });
-          const implementation = captureImplementation(routes);
-          const { signal, expire } = deadlineAbort();
-          setTimeout(expire, 10);
-
-          // On expiry the pump closes the handler and the generator ends
-          // cleanly — connect itself writes the deadline trailer.
-          const received = yield* Effect.promise(async () => {
-            const values: Array<unknown> = [];
-            for await (const value of (
-              implementation.watch as (
-                request: unknown,
-                context: HandlerContext,
-              ) => AsyncIterable<unknown>
-            )({}, handlerContext(undefined, signal))) {
-              values.push(value);
-            }
-            return values;
-          });
-          const metrics = yield* Metric.snapshot;
-          return { received, metrics };
-        }),
-      ),
-    );
-
-    expect(result.received).toEqual([]);
-    const span = telemetry.expectSpan(serverStreamingEntry.tag);
-    const end = telemetry.endState(span);
-    expect(end.attributesAtEnd.get("rpc.response.status_code")).toBe(
-      "DEADLINE_EXCEEDED",
-    );
-    expect(end.attributesAtEnd.get("error.type")).toBe("DEADLINE_EXCEEDED");
-    expect(end.attributesAfterEnd).toEqual([]);
-    // deadline_exceeded is a server fault: the span ends in an error state.
-    expect(spanEndExit(span)._tag).toBe("Failure");
-
-    const durations = durationMetrics(
-      result.metrics,
-      "rpc.server.call.duration",
-    );
-    expect(durations).toHaveLength(1);
-    expect(durations[0]?.attributes).toMatchObject({
-      "rpc.method": "demo.v1.TelemetryService/Watch",
-      "rpc.response.status_code": "DEADLINE_EXCEEDED",
-      "error.type": "DEADLINE_EXCEEDED",
-    });
-  });
+      expectDuration(result.metrics, "rpc.server.call.duration", {
+        "rpc.method": entry.tag,
+        "rpc.response.status_code": "DEADLINE_EXCEEDED",
+        "error.type": "DEADLINE_EXCEEDED",
+      });
+    },
+  );
 });
 
 describe("tracestate decoding", () => {
@@ -1565,7 +1300,7 @@ const makeTestTelemetry = () => {
     }
     return state as SpanEndState;
   };
-  return { spans, provide, expectSpan, endState };
+  return { provide, expectSpan, endState };
 };
 
 /** The exit a span was ended with; throws when the span is still open. */
@@ -1586,23 +1321,35 @@ const spanEndExit = (span: Tracer.Span): Exit.Exit<unknown, unknown> => {
   return status.exit;
 };
 
-const durationMetrics = (
-  metrics: ReadonlyArray<{
-    readonly id: string;
-    readonly attributes: Readonly<Record<string, string>> | undefined;
-    readonly state: unknown;
-  }>,
-  id: string,
-): Array<{
+type MetricSnapshot = ReadonlyArray<{
+  readonly id: string;
   readonly attributes: Readonly<Record<string, string>> | undefined;
-  readonly count: number;
-}> =>
-  metrics
-    .filter((metric) => metric.id === id)
-    .map((metric) => ({
-      attributes: metric.attributes,
-      count: (metric.state as { readonly count: number }).count,
-    }));
+  readonly state: unknown;
+}>;
+
+/**
+ * Asserts the single call-duration observation recorded under `id`: its
+ * attributes contain `attributes` (or equal them when `exact`) and exactly one
+ * call was counted. Returns the observation for the few call-shape-specific
+ * assertions on top.
+ */
+const expectDuration = (
+  metrics: MetricSnapshot,
+  id: string,
+  attributes: Readonly<Record<string, string>>,
+  exact = false,
+) => {
+  const durations = metrics.filter((metric) => metric.id === id);
+  expect(durations).toHaveLength(1);
+  const duration = durations[0]!;
+  if (exact) {
+    expect(duration.attributes).toEqual(attributes);
+  } else {
+    expect(duration.attributes).toMatchObject(attributes);
+  }
+  expect((duration.state as { readonly count: number }).count).toBe(1);
+  return duration;
+};
 
 const fakeTransport = (behavior: {
   readonly unary?: (header: Headers, signal?: AbortSignal) => unknown;
@@ -1671,74 +1418,40 @@ const BuildDep = Context.Service<{ readonly origin: string }>(
   "effect-grpc-test/BuildDep",
 );
 
-const testService = {
-  typeName: "demo.v1.TelemetryService",
-  methods: [
-    { methodKind: "unary", localName: "get" },
-    { methodKind: "server_streaming", localName: "watch" },
-    { methodKind: "client_streaming", localName: "upload" },
-    { methodKind: "bidi_streaming", localName: "chat" },
-  ],
-} as unknown as GrpcMethodEntry["service"];
+const {
+  unary: unaryEntry,
+  serverStreaming: serverStreamingEntry,
+  clientStreaming: clientStreamingEntry,
+  bidiStreaming: bidiStreamingEntry,
+} = methodEntries("demo.v1.TelemetryService");
 
-const unaryEntry: GrpcMethodEntry = {
-  kind: "unary",
-  tag: "demo.v1.TelemetryService/Get",
-  service: testService,
-  localName: "get",
-  payloadSchema: Schema.Unknown,
-  successSchema: Schema.Unknown,
-  toGrpcRequest: (value) => value as never,
-  fromGrpcRequest: (message) => message,
-  toGrpcResponse: (value) => value as never,
-  fromGrpcResponse: (message) => message,
-};
+/**
+ * A connect method implementation captured from the server protocol. The
+ * intersection lets one type cover every call shape: effect-shaped calls are
+ * awaited, stream-shaped calls are iterated.
+ */
+type ServerCall = (
+  request: unknown,
+  context: HandlerContext,
+) => Promise<unknown> & AsyncIterable<unknown>;
 
-const serverStreamingEntry: GrpcMethodEntry = {
-  ...unaryEntry,
-  kind: "server-streaming",
-  tag: "demo.v1.TelemetryService/Watch",
-  localName: "watch",
-};
+/** Builds the connect implementations of `entries` behind `handlers`. */
+const serverImplementation = (
+  entries: ReadonlyArray<GrpcMethodEntry>,
+  handlers: GrpcServerProtocol.GrpcHandlers,
+): Effect.Effect<ServiceImplementation> =>
+  GrpcServerProtocol.make({
+    registry: new Map(entries.map((entry) => [entry.tag, entry])),
+    handlers,
+  }).pipe(Effect.map(({ routes }) => captureImplementation(routes)));
 
-const clientStreamingEntry: GrpcMethodEntry = {
-  ...unaryEntry,
-  kind: "client-streaming",
-  tag: "demo.v1.TelemetryService/Upload",
-  localName: "upload",
-};
-
-const bidiStreamingEntry: GrpcMethodEntry = {
-  ...unaryEntry,
-  kind: "bidi-streaming",
-  tag: "demo.v1.TelemetryService/Chat",
-  localName: "chat",
-};
-
-const captureImplementation = (
-  routes: (router: ConnectRouter) => ConnectRouter,
-) => {
-  let implementation: Record<string, unknown> | undefined;
-  const router = {
-    service(_service: unknown, serviceImplementation: unknown) {
-      implementation = serviceImplementation as typeof implementation;
-      return router;
-    },
-  };
-
-  routes(router as unknown as ConnectRouter);
-
-  if (!implementation) {
-    throw new Error("Expected routes to register a service implementation");
-  }
-  return implementation;
-};
-
-const handlerContext = (
-  headers?: HeadersImport,
-  signal?: AbortSignal,
-): HandlerContext =>
-  ({
-    requestHeader: new Headers(headers),
-    signal: signal ?? new AbortController().signal,
-  }) as HandlerContext;
+/** The connect implementation of a single method served by `handler`. */
+const serverCall = (
+  entry: GrpcMethodEntry,
+  handler: GrpcServerProtocol.GrpcHandler,
+): Effect.Effect<ServerCall> =>
+  serverImplementation([entry], new Map([[entry.tag, handler]])).pipe(
+    Effect.map(
+      (implementation) => implementation[entry.localName] as ServerCall,
+    ),
+  );

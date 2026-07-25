@@ -114,11 +114,61 @@ export const generateProtoFeature = (
   return result;
 };
 
-export const typecheckProtoFeature = (
+/** How many features {@link writeTypecheckSource} is expected to stage. */
+const typecheckFeatureCount = 13;
+
+const staged: Array<string> = [];
+
+/** Stages one feature's typecheck source; {@link runTypecheck} compiles them. */
+export const writeTypecheckSource = (
   feature: GeneratedProtoFeature,
   source: string,
 ) => {
-  const tsconfig = writeTypecheckProject(feature, source);
+  writeFileSync(join(feature.outputDir, "typecheck.ts"), source);
+  staged.push(feature.name);
+};
+
+/**
+ * Typechecks the staged features in a single `tsc` program. The include list is
+ * exactly what was staged rather than a glob: `test/.generated` is gitignored
+ * and never cleaned, so a glob would drag stale feature directories — and
+ * features without a typecheck source — into the program. The count check keeps
+ * the inverse honest: a feature that fails to stage must fail, not vanish.
+ */
+export const runTypecheck = () => {
+  if (staged.length !== typecheckFeatureCount) {
+    throw new Error(
+      `Expected ${typecheckFeatureCount} staged typecheck sources, got ${staged.length}: ${staged.join(", ")}`,
+    );
+  }
+
+  const tsconfig = join(generatedRoot, "tsconfig.typecheck.json");
+  writeFileSync(
+    tsconfig,
+    JSON.stringify(
+      {
+        extends: "../../../tsconfig.json",
+        compilerOptions: {
+          // Generated output must never emit unused locals (e.g. dead
+          // imported `type` aliases) — consumers compile with this flag.
+          noUnusedLocals: true,
+          paths: {
+            "@effect-grpc/effect-grpc": ["packages/effect-grpc/src/index.ts"],
+            "@effect-grpc/effect-grpc/*": ["packages/effect-grpc/src/*"],
+            effect: [
+              "packages/effect-grpc/node_modules/effect/dist/index.d.ts",
+            ],
+            "effect/unstable/http/*": [
+              "packages/effect-grpc/node_modules/effect/dist/unstable/http/*.d.ts",
+            ],
+          },
+        },
+        include: staged.map((feature) => `${feature}/**/*.ts`),
+      },
+      null,
+      2,
+    ),
+  );
   try {
     execFileSync("pnpm", ["exec", "tsc", "--project", tsconfig], {
       cwd: repoRoot,
@@ -170,40 +220,4 @@ const generateProtobufEs = (
     ],
     { cwd: repoRoot, stdio: "pipe" },
   );
-};
-
-const writeTypecheckProject = (
-  feature: GeneratedProtoFeature,
-  source: string,
-) => {
-  writeFileSync(join(feature.outputDir, "typecheck.ts"), source);
-
-  const tsconfig = join(generatedRoot, `tsconfig.${feature.name}.json`);
-  writeFileSync(
-    tsconfig,
-    JSON.stringify(
-      {
-        extends: "../../../tsconfig.json",
-        compilerOptions: {
-          // Generated output must never emit unused locals (e.g. dead
-          // imported `type` aliases) — consumers compile with this flag.
-          noUnusedLocals: true,
-          paths: {
-            "@effect-grpc/effect-grpc": ["packages/effect-grpc/src/index.ts"],
-            "@effect-grpc/effect-grpc/*": ["packages/effect-grpc/src/*"],
-            effect: [
-              "packages/effect-grpc/node_modules/effect/dist/index.d.ts",
-            ],
-            "effect/unstable/http/*": [
-              "packages/effect-grpc/node_modules/effect/dist/unstable/http/*.d.ts",
-            ],
-          },
-        },
-        include: [`${feature.name}/**/*.ts`],
-      },
-      null,
-      2,
-    ),
-  );
-  return tsconfig;
 };

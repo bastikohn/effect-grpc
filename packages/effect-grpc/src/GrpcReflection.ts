@@ -30,81 +30,89 @@ import * as ReflectionPb from "./internal/reflectionPb.js";
  *   services: [...services, GrpcReflection.service(services)],
  * })
  * ```
- *
- * The handler is registered under both the `v1` and the legacy `v1alpha`
- * service names; the two protocols are wire-identical.
  */
 
-/** Payload of a `file_containing_extension` request. */
-export const ExtensionRequestSchema = Schema.Struct({
-  containingType: Schema.String,
-  extensionNumber: Schema.Number,
-});
-export type ExtensionRequest = Schema.Schema.Type<
-  typeof ExtensionRequestSchema
->;
-
 /**
- * `grpc.reflection.v1.ServerReflectionRequest`. The proto `message_request`
- * oneof is flattened into optional fields; at most one may be set.
+ * `grpc.reflection.v1.ServerReflectionRequest`. The `message_request` oneof
+ * uses the `{case, value}` representation the generator emits.
  */
 export const ServerReflectionRequestSchema = Schema.Struct({
   host: Schema.String,
-  fileByFilename: Schema.optional(Schema.String),
-  fileContainingSymbol: Schema.optional(Schema.String),
-  fileContainingExtension: Schema.optional(ExtensionRequestSchema),
-  allExtensionNumbersOfType: Schema.optional(Schema.String),
-  listServices: Schema.optional(Schema.String),
+  messageRequest: Schema.Union([
+    Schema.Struct({
+      case: Schema.Literal("fileByFilename"),
+      value: Schema.String,
+    }),
+    Schema.Struct({
+      case: Schema.Literal("fileContainingSymbol"),
+      value: Schema.String,
+    }),
+    Schema.Struct({
+      case: Schema.Literal("fileContainingExtension"),
+      value: Schema.Struct({
+        containingType: Schema.String,
+        extensionNumber: Schema.Number,
+      }),
+    }),
+    Schema.Struct({
+      case: Schema.Literal("allExtensionNumbersOfType"),
+      value: Schema.String,
+    }),
+    Schema.Struct({
+      case: Schema.Literal("listServices"),
+      value: Schema.String,
+    }),
+    Schema.Struct({
+      case: Schema.Undefined,
+      value: Schema.optional(Schema.Undefined),
+    }),
+  ]),
 });
 export type ServerReflectionRequest = Schema.Schema.Type<
   typeof ServerReflectionRequestSchema
 >;
 
 /**
- * Answer to file queries. Each element is a base64-encoded serialized
- * `google.protobuf.FileDescriptorProto`; the requested file comes first,
- * followed by its transitive imports.
- */
-export const FileDescriptorResponseSchema = Schema.Struct({
-  fileDescriptorProto: Schema.Array(Schema.String),
-});
-export type FileDescriptorResponse = Schema.Schema.Type<
-  typeof FileDescriptorResponseSchema
->;
-
-export const ExtensionNumberResponseSchema = Schema.Struct({
-  baseTypeName: Schema.String,
-  extensionNumber: Schema.Array(Schema.Number),
-});
-export type ExtensionNumberResponse = Schema.Schema.Type<
-  typeof ExtensionNumberResponseSchema
->;
-
-export const ListServiceResponseSchema = Schema.Struct({
-  service: Schema.Array(Schema.Struct({ name: Schema.String })),
-});
-export type ListServiceResponse = Schema.Schema.Type<
-  typeof ListServiceResponseSchema
->;
-
-/** In-band error, carrying `grpc::StatusCode` values (e.g. 5 = NOT_FOUND). */
-export const ErrorResponseSchema = Schema.Struct({
-  errorCode: Schema.Number,
-  errorMessage: Schema.String,
-});
-export type ErrorResponse = Schema.Schema.Type<typeof ErrorResponseSchema>;
-
-/**
- * `grpc.reflection.v1.ServerReflectionResponse`. The proto `message_response`
- * oneof is flattened into optional fields; exactly one is set.
+ * `grpc.reflection.v1.ServerReflectionResponse`. Each `fileDescriptorProto`
+ * is a serialized `google.protobuf.FileDescriptorProto`: the requested file
+ * first, followed by its transitive imports.
  */
 export const ServerReflectionResponseSchema = Schema.Struct({
   validHost: Schema.String,
   originalRequest: Schema.optional(ServerReflectionRequestSchema),
-  fileDescriptorResponse: Schema.optional(FileDescriptorResponseSchema),
-  allExtensionNumbersResponse: Schema.optional(ExtensionNumberResponseSchema),
-  listServicesResponse: Schema.optional(ListServiceResponseSchema),
-  errorResponse: Schema.optional(ErrorResponseSchema),
+  messageResponse: Schema.Union([
+    Schema.Struct({
+      case: Schema.Literal("fileDescriptorResponse"),
+      value: Schema.Struct({
+        fileDescriptorProto: Schema.Array(Schema.Uint8Array),
+      }),
+    }),
+    Schema.Struct({
+      case: Schema.Literal("allExtensionNumbersResponse"),
+      value: Schema.Struct({
+        baseTypeName: Schema.String,
+        extensionNumber: Schema.Array(Schema.Number),
+      }),
+    }),
+    Schema.Struct({
+      case: Schema.Literal("listServicesResponse"),
+      value: Schema.Struct({
+        service: Schema.Array(Schema.Struct({ name: Schema.String })),
+      }),
+    }),
+    /** In-band error carrying `grpc::StatusCode` values (e.g. 5 = NOT_FOUND). */
+    Schema.Struct({
+      case: Schema.Literal("errorResponse"),
+      value: Schema.Struct({
+        errorCode: Schema.Number,
+        errorMessage: Schema.String,
+      }),
+    }),
+    Schema.Struct({
+      case: Schema.Undefined,
+      value: Schema.optional(Schema.Undefined),
+    }),
+  ]),
 });
 export type ServerReflectionResponse = Schema.Schema.Type<
   typeof ServerReflectionResponseSchema
@@ -112,197 +120,86 @@ export type ServerReflectionResponse = Schema.Schema.Type<
 
 export const ReflectionV1Tag =
   "grpc.reflection.v1.ServerReflection/ServerReflectionInfo";
-export const ReflectionV1AlphaTag =
-  "grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo";
 
 const readField = (message: unknown, field: string): unknown =>
   typeof message === "object" && message !== null
     ? (message as Record<string, unknown>)[field]
     : undefined;
 
-const readString = (message: unknown, field: string): string =>
-  (readField(message, field) ?? "") as string;
+type OneofField = { readonly case?: string | null; readonly value?: unknown };
 
-const readNumber = (message: unknown, field: string): number =>
-  (readField(message, field) ?? 0) as number;
-
-type OneofField = { readonly case?: string; readonly value?: unknown };
-
-const fromReflectionRequest = (message: unknown): unknown => {
-  const request: Record<string, unknown> = {
-    host: readString(message, "host"),
-  };
-  const oneof = readField(message, "messageRequest") as OneofField | undefined;
-  switch (oneof?.case) {
-    case "fileByFilename":
-      request.fileByFilename = oneof.value ?? "";
-      break;
-    case "fileContainingSymbol":
-      request.fileContainingSymbol = oneof.value ?? "";
-      break;
-    case "fileContainingExtension":
-      request.fileContainingExtension = {
-        containingType: readString(oneof.value, "containingType"),
-        extensionNumber: readNumber(oneof.value, "extensionNumber"),
-      };
-      break;
-    case "allExtensionNumbersOfType":
-      request.allExtensionNumbersOfType = oneof.value ?? "";
-      break;
-    case "listServices":
-      request.listServices = oneof.value ?? "";
-      break;
-  }
-  return request;
+/*
+ * The domain shape is protobuf-es' own `{case, value}`, so the converters only
+ * reconcile two spellings: protobuf-es leaves an unset oneof as
+ * `{case: undefined}` while the JSON codec spells `Schema.Undefined` as
+ * `null`, and `bytes` is a `Uint8Array` on the wire but base64 in JSON.
+ */
+const fromOneof = (oneof: unknown): unknown => {
+  const { case: kind, value } = (oneof ?? {}) as OneofField;
+  return kind == null ? { case: null } : { case: kind, value };
 };
 
-const toReflectionRequest = (value: unknown): Record<string, unknown> => {
-  const extension = readField(value, "fileContainingExtension");
-  const messageRequest: OneofField =
-    readField(value, "fileByFilename") !== undefined
-      ? { case: "fileByFilename", value: readField(value, "fileByFilename") }
-      : readField(value, "fileContainingSymbol") !== undefined
+const toOneof = (oneof: unknown): unknown => {
+  const { case: kind, value } = (oneof ?? {}) as OneofField;
+  return kind == null ? { case: undefined } : { case: kind, value };
+};
+
+const descriptorsOf = <A>(value: unknown): ReadonlyArray<A> =>
+  (readField(value, "fileDescriptorProto") ?? []) as ReadonlyArray<A>;
+
+const fromReflectionRequest = (message: unknown): unknown => ({
+  host: (readField(message, "host") ?? "") as string,
+  messageRequest: fromOneof(readField(message, "messageRequest")),
+});
+
+const toReflectionRequest = (value: unknown): Record<string, unknown> => ({
+  host: (readField(value, "host") ?? "") as string,
+  messageRequest: toOneof(readField(value, "messageRequest")),
+});
+
+const fromReflectionResponse = (message: unknown): unknown => {
+  const original = readField(message, "originalRequest");
+  const oneof = readField(message, "messageResponse") as OneofField | undefined;
+  return {
+    validHost: (readField(message, "validHost") ?? "") as string,
+    ...(original == null
+      ? {}
+      : { originalRequest: fromReflectionRequest(original) }),
+    messageResponse:
+      oneof?.case === "fileDescriptorResponse"
         ? {
-            case: "fileContainingSymbol",
-            value: readField(value, "fileContainingSymbol"),
+            case: oneof.case,
+            value: {
+              fileDescriptorProto: descriptorsOf<Uint8Array>(oneof.value).map(
+                (bytes) => base64Encode(bytes),
+              ),
+            },
           }
-        : extension !== undefined
-          ? {
-              case: "fileContainingExtension",
-              value: {
-                containingType: readString(extension, "containingType"),
-                extensionNumber: readNumber(extension, "extensionNumber"),
-              },
-            }
-          : readField(value, "allExtensionNumbersOfType") !== undefined
-            ? {
-                case: "allExtensionNumbersOfType",
-                value: readField(value, "allExtensionNumbersOfType"),
-              }
-            : readField(value, "listServices") !== undefined
-              ? {
-                  case: "listServices",
-                  value: readField(value, "listServices"),
-                }
-              : { case: undefined };
-  return { host: readString(value, "host"), messageRequest };
+        : fromOneof(oneof),
+  };
 };
 
 const toReflectionResponse = (value: unknown): Record<string, unknown> => {
-  const originalRequest = readField(value, "originalRequest");
-  const files = readField(value, "fileDescriptorResponse");
-  const extensionNumbers = readField(value, "allExtensionNumbersResponse");
-  const listServices = readField(value, "listServicesResponse");
-  const error = readField(value, "errorResponse");
-  const messageResponse: OneofField =
-    files !== undefined
-      ? {
-          case: "fileDescriptorResponse",
-          value: {
-            fileDescriptorProto: (
-              (readField(files, "fileDescriptorProto") ??
-                []) as ReadonlyArray<string>
-            ).map(base64Decode),
-          },
-        }
-      : extensionNumbers !== undefined
+  const original = readField(value, "originalRequest");
+  const oneof = readField(value, "messageResponse") as OneofField | undefined;
+  return {
+    validHost: (readField(value, "validHost") ?? "") as string,
+    ...(original == null
+      ? {}
+      : { originalRequest: toReflectionRequest(original) }),
+    messageResponse:
+      oneof?.case === "fileDescriptorResponse"
         ? {
-            case: "allExtensionNumbersResponse",
+            case: oneof.case,
             value: {
-              baseTypeName: readString(extensionNumbers, "baseTypeName"),
-              extensionNumber: [
-                ...((readField(extensionNumbers, "extensionNumber") ??
-                  []) as ReadonlyArray<number>),
-              ],
+              fileDescriptorProto: descriptorsOf<string>(oneof.value).map(
+                (value) => base64Decode(value),
+              ),
             },
           }
-        : listServices !== undefined
-          ? {
-              case: "listServicesResponse",
-              value: {
-                service: (
-                  (readField(listServices, "service") ??
-                    []) as ReadonlyArray<unknown>
-                ).map((entry) => ({ name: readString(entry, "name") })),
-              },
-            }
-          : error !== undefined
-            ? {
-                case: "errorResponse",
-                value: {
-                  errorCode: readNumber(error, "errorCode"),
-                  errorMessage: readString(error, "errorMessage"),
-                },
-              }
-            : { case: undefined };
-  return {
-    validHost: readString(value, "validHost"),
-    ...(originalRequest !== undefined
-      ? { originalRequest: toReflectionRequest(originalRequest) }
-      : {}),
-    messageResponse,
+        : toOneof(oneof),
   };
 };
-
-const fromReflectionResponse = (message: unknown): unknown => {
-  const response: Record<string, unknown> = {
-    validHost: readString(message, "validHost"),
-  };
-  const original = readField(message, "originalRequest");
-  if (original !== undefined) {
-    response.originalRequest = fromReflectionRequest(original);
-  }
-  const oneof = readField(message, "messageResponse") as OneofField | undefined;
-  switch (oneof?.case) {
-    case "fileDescriptorResponse":
-      response.fileDescriptorResponse = {
-        fileDescriptorProto: (
-          (readField(oneof.value, "fileDescriptorProto") ??
-            []) as ReadonlyArray<Uint8Array>
-        ).map((bytes) => base64Encode(bytes)),
-      };
-      break;
-    case "allExtensionNumbersResponse":
-      response.allExtensionNumbersResponse = {
-        baseTypeName: readString(oneof.value, "baseTypeName"),
-        extensionNumber: [
-          ...((readField(oneof.value, "extensionNumber") ??
-            []) as ReadonlyArray<number>),
-        ],
-      };
-      break;
-    case "listServicesResponse":
-      response.listServicesResponse = {
-        service: (
-          (readField(oneof.value, "service") ?? []) as ReadonlyArray<unknown>
-        ).map((entry) => ({ name: readString(entry, "name") })),
-      };
-      break;
-    case "errorResponse":
-      response.errorResponse = {
-        errorCode: readNumber(oneof.value, "errorCode"),
-        errorMessage: readString(oneof.value, "errorMessage"),
-      };
-      break;
-  }
-  return response;
-};
-
-const reflectionEntry = (
-  tag: string,
-  service: GrpcMethodRegistry.GrpcMethodEntry["service"],
-): GrpcMethodRegistry.GrpcMethodEntry => ({
-  kind: "bidi-streaming",
-  tag,
-  service,
-  localName: "serverReflectionInfo",
-  payloadSchema: ServerReflectionRequestSchema,
-  successSchema: ServerReflectionResponseSchema,
-  toGrpcRequest: toReflectionRequest,
-  fromGrpcRequest: fromReflectionRequest,
-  toGrpcResponse: toReflectionResponse,
-  fromGrpcResponse: fromReflectionResponse,
-});
 
 export const ReflectionGrpcRegistry = new Map<
   string,
@@ -310,20 +207,27 @@ export const ReflectionGrpcRegistry = new Map<
 >([
   [
     ReflectionV1Tag,
-    reflectionEntry(ReflectionV1Tag, ReflectionPb.ServerReflectionV1),
-  ],
-  [
-    ReflectionV1AlphaTag,
-    reflectionEntry(ReflectionV1AlphaTag, ReflectionPb.ServerReflectionV1Alpha),
+    {
+      kind: "bidi-streaming",
+      tag: ReflectionV1Tag,
+      service: ReflectionPb.ServerReflectionV1,
+      localName: "serverReflectionInfo",
+      payloadSchema: ServerReflectionRequestSchema,
+      successSchema: ServerReflectionResponseSchema,
+      toGrpcRequest: toReflectionRequest,
+      fromGrpcRequest: fromReflectionRequest,
+      toGrpcResponse: toReflectionResponse,
+      fromGrpcResponse: fromReflectionResponse,
+    },
   ],
 ]);
 
 interface IndexedFile {
   /**
-   * Base64-encoded serialized `FileDescriptorProto`s: the file itself first,
-   * followed by its transitive imports.
+   * Serialized `FileDescriptorProto`s: the file itself first, followed by its
+   * transitive imports.
    */
-  readonly closure: ReadonlyArray<string>;
+  readonly closure: ReadonlyArray<Uint8Array>;
 }
 
 /**
@@ -367,20 +271,17 @@ export const makeIndex = (
     }
   }
 
-  const serialized = new Map<string, string>();
+  const serialized = new Map<string, Uint8Array>();
   for (const [name, file] of files) {
-    serialized.set(
-      name,
-      base64Encode(toBinary(FileDescriptorProtoSchema, file.proto)),
-    );
+    serialized.set(name, toBinary(FileDescriptorProtoSchema, file.proto));
   }
-  const closureOf = (file: DescFile): ReadonlyArray<string> => {
+  const closureOf = (file: DescFile): ReadonlyArray<Uint8Array> => {
     const seen = new Set<string>();
-    const closure: string[] = [];
+    const closure: Uint8Array[] = [];
     const visit = (current: DescFile) => {
       if (seen.has(fileName(current))) return;
       seen.add(fileName(current));
-      closure.push(serialized.get(fileName(current)) as string);
+      closure.push(serialized.get(fileName(current)) as Uint8Array);
       for (const dependency of current.dependencies) visit(dependency);
     };
     visit(file);
@@ -459,7 +360,10 @@ export const respond = (
   const base = { validHost: request.host, originalRequest: request };
   const notFound = (message: string): ServerReflectionResponse => ({
     ...base,
-    errorResponse: { errorCode: NOT_FOUND, errorMessage: message },
+    messageResponse: {
+      case: "errorResponse",
+      value: { errorCode: NOT_FOUND, errorMessage: message },
+    },
   });
   const found = (
     file: IndexedFile | undefined,
@@ -469,66 +373,78 @@ export const respond = (
       ? notFound(message)
       : {
           ...base,
-          fileDescriptorResponse: { fileDescriptorProto: file.closure },
+          messageResponse: {
+            case: "fileDescriptorResponse",
+            value: { fileDescriptorProto: file.closure },
+          },
         };
 
-  if (request.listServices !== undefined) {
-    return {
-      ...base,
-      listServicesResponse: {
-        service: index.serviceNames.map((name) => ({ name })),
-      },
-    };
-  }
-  if (request.fileByFilename !== undefined) {
-    return found(
-      index.filesByName.get(request.fileByFilename),
-      `file not found: ${request.fileByFilename}`,
-    );
-  }
-  if (request.fileContainingSymbol !== undefined) {
-    const symbol = stripLeadingDot(request.fileContainingSymbol);
-    return found(
-      index.filesBySymbol.get(symbol),
-      `symbol not found: ${symbol}`,
-    );
-  }
-  if (request.fileContainingExtension !== undefined) {
-    const { containingType, extensionNumber } = request.fileContainingExtension;
-    const extendee = stripLeadingDot(containingType);
-    return found(
-      index.filesByExtension.get(`${extendee}:${extensionNumber}`),
-      `extension not found: ${extendee} (${extensionNumber})`,
-    );
-  }
-  if (request.allExtensionNumbersOfType !== undefined) {
-    const baseTypeName = stripLeadingDot(request.allExtensionNumbersOfType);
-    if (!index.messageTypes.has(baseTypeName)) {
-      return notFound(`type not found: ${baseTypeName}`);
+  const query = request.messageRequest;
+  switch (query.case) {
+    case "listServices":
+      return {
+        ...base,
+        messageResponse: {
+          case: "listServicesResponse",
+          value: { service: index.serviceNames.map((name) => ({ name })) },
+        },
+      };
+    case "fileByFilename":
+      return found(
+        index.filesByName.get(query.value),
+        `file not found: ${query.value}`,
+      );
+    case "fileContainingSymbol": {
+      const symbol = stripLeadingDot(query.value);
+      return found(
+        index.filesBySymbol.get(symbol),
+        `symbol not found: ${symbol}`,
+      );
     }
-    return {
-      ...base,
-      allExtensionNumbersResponse: {
-        baseTypeName,
-        extensionNumber: index.extensionNumbers.get(baseTypeName) ?? [],
-      },
-    };
+    case "fileContainingExtension": {
+      const extendee = stripLeadingDot(query.value.containingType);
+      return found(
+        index.filesByExtension.get(
+          `${extendee}:${query.value.extensionNumber}`,
+        ),
+        `extension not found: ${extendee} (${query.value.extensionNumber})`,
+      );
+    }
+    case "allExtensionNumbersOfType": {
+      const baseTypeName = stripLeadingDot(query.value);
+      if (!index.messageTypes.has(baseTypeName)) {
+        return notFound(`type not found: ${baseTypeName}`);
+      }
+      return {
+        ...base,
+        messageResponse: {
+          case: "allExtensionNumbersResponse",
+          value: {
+            baseTypeName,
+            extensionNumber: index.extensionNumbers.get(baseTypeName) ?? [],
+          },
+        },
+      };
+    }
+    default:
+      return {
+        ...base,
+        messageResponse: {
+          case: "errorResponse",
+          value: {
+            errorCode: INVALID_ARGUMENT,
+            errorMessage: "no message_request set",
+          },
+        },
+      };
   }
-  return {
-    ...base,
-    errorResponse: {
-      errorCode: INVALID_ARGUMENT,
-      errorMessage: "no message_request set",
-    },
-  };
 };
 
 /**
  * Ready-made entry for `GrpcNodeServer.serveAll`: registers the
- * `grpc.reflection.v1.ServerReflection` service (and its `v1alpha` alias)
- * answering from the descriptors of `services` — pass the same array you pass
- * to `serveAll`. The reflection service describes itself, so it does not need
- * to appear in its own input.
+ * `grpc.reflection.v1.ServerReflection` service answering from the descriptors
+ * of `services` — pass the same array you pass to `serveAll`. The reflection
+ * service describes itself, so it does not need to appear in its own input.
  */
 export const service = (
   services: ReadonlyArray<ServeAllService<any>>,
@@ -547,7 +463,6 @@ export const service = (
     registry: ReflectionGrpcRegistry,
     handlers: GrpcServerProtocol.handlersLayer({
       [ReflectionV1Tag]: { kind: "bidi-streaming", handler },
-      [ReflectionV1AlphaTag]: { kind: "bidi-streaming", handler },
     }),
   };
 };

@@ -41,7 +41,6 @@ plugins:
     opt:
       - target=ts
       - import_extension=js
-      - errors=grpc-status
 ```
 
 Buf resolves the `local:` plugins from `node_modules`, so no global install is
@@ -53,15 +52,12 @@ pnpm exec buf generate
 
 ## Options
 
-Pass these under `opt:` in `buf.gen.yaml` (or as `--effect-grpc_opt` flags when
+Pass this under `opt:` in `buf.gen.yaml` (or as an `--effect-grpc_opt` flag when
 invoking `protoc` directly):
 
-| Option             | Values                                                                          | Default       | Description                                    |
-| ------------------ | ------------------------------------------------------------------------------- | ------------- | ---------------------------------------------- |
-| `import_extension` | `js`, `ts`                                                                      | `js`          | Extension used in generated import paths.      |
-| `errors`           | `grpc-status`                                                                   | `grpc-status` | Error model for generated RPCs.                |
-| `methods`          | comma list of `unary`, `server-streaming`, `client-streaming`, `bidi-streaming` | all kinds     | Method kinds to emit.                          |
-| `int64`            | `bigint`                                                                        | `bigint`      | TypeScript representation for 64-bit integers. |
+| Option             | Values     | Default | Description                               |
+| ------------------ | ---------- | ------- | ----------------------------------------- |
+| `import_extension` | `js`, `ts` | `js`    | Extension used in generated import paths. |
 
 Unknown options and unsupported values fail codegen with a clear error.
 

@@ -6,7 +6,6 @@ import * as HttpTraceContext from "effect/unstable/http/HttpTraceContext";
 import type { GrpcMethodEntry } from "../GrpcMethodRegistry.js";
 import type { GrpcStatusCode } from "../GrpcStatusCode.js";
 import * as GrpcStatusError from "../GrpcStatusError.js";
-import { TraceState } from "../GrpcTracing.js";
 import * as GrpcMetrics from "./metrics.js";
 
 export interface TraceContextFields {
@@ -47,65 +46,13 @@ export const traceFields = (span: TraceContextFields): TraceContextFields => ({
 export const traceparent = (span: TraceContextFields): string =>
   `00-${span.traceId}-${span.spanId}-${span.sampled ? "01" : "00"}`;
 
-/**
- * Decodes incoming propagation headers into the parent `ExternalSpan`.
- * A W3C `tracestate` header is attached to the span's annotations under
- * {@link TraceState} so it can be forwarded on downstream calls.
- */
+/** Decodes incoming propagation headers into the parent `ExternalSpan`. */
 export const externalSpanFromHeaders = (
   headers: ReadonlyArray<readonly [string, string]>,
-): Tracer.ExternalSpan | undefined => {
-  const decoded = Headers.fromInput(headers);
-  const parent = Option.getOrUndefined(HttpTraceContext.fromHeaders(decoded));
-  if (parent === undefined) return undefined;
-  const state = traceStateFromDecoded(decoded);
-  return state === undefined
-    ? parent
-    : Tracer.externalSpan({
-        traceId: parent.traceId,
-        spanId: parent.spanId,
-        sampled: parent.sampled,
-        annotations: Context.add(parent.annotations, TraceState, state),
-      });
-};
-
-/**
- * Extracts the W3C `tracestate` value from incoming propagation headers.
- * Per W3C trace context, `tracestate` is only meaningful alongside a valid
- * W3C `traceparent`, so it is discarded when that header fails to decode —
- * including requests that carry only B3 propagation headers.
- */
-export const traceStateFromHeaders = (
-  headers: ReadonlyArray<readonly [string, string]>,
-): string | undefined => traceStateFromDecoded(Headers.fromInput(headers));
-
-const traceStateFromDecoded = (
-  decoded: Headers.Headers,
-): string | undefined => {
-  // Deliberately W3C-only (not the W3C -> B3 fallback used for parenting).
-  if (Option.isNone(HttpTraceContext.w3c(decoded))) return undefined;
-  const state = decoded["tracestate"];
-  return state === undefined || state === "" ? undefined : state;
-};
-
-/**
- * Finds the nearest `tracestate` value carried in the span ancestry (see
- * {@link TraceState}). Effect spans do not model `tracestate` natively, so
- * only values attached by {@link externalSpanFromHeaders} (or by the app via
- * span annotations) are visible.
- */
-export const findTraceState = (span: Tracer.AnySpan): string | undefined => {
-  let current: Tracer.AnySpan | undefined = span;
-  while (current !== undefined) {
-    const state = Context.get(current.annotations, TraceState);
-    if (state !== undefined) return state;
-    current =
-      current._tag === "Span"
-        ? Option.getOrUndefined(current.parent)
-        : undefined;
-  }
-  return undefined;
-};
+): Tracer.ExternalSpan | undefined =>
+  Option.getOrUndefined(
+    HttpTraceContext.fromHeaders(Headers.fromInput(headers)),
+  );
 
 /**
  * Records the final status of a call exactly once: annotates the span with

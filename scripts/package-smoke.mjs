@@ -138,7 +138,6 @@ plugins:
     opt:
       - target=ts
       - import_extension=js
-      - errors=grpc-status
 `,
   );
   writeFileSync(

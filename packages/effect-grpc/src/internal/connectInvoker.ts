@@ -12,7 +12,6 @@ import * as MethodRegistry from "../GrpcMethodRegistry.js";
 import type { GrpcMethodEntry } from "../GrpcMethodRegistry.js";
 import type { GrpcStatusCode } from "../GrpcStatusCode.js";
 import * as GrpcStatusError from "../GrpcStatusError.js";
-import { TraceState } from "../GrpcTracing.js";
 import { getClient } from "./connect.js";
 import { callTimeoutMs, unknownTag, validateCallMetadata } from "./invoker.js";
 import * as StreamBridge from "./streamBridge.js";
@@ -201,7 +200,6 @@ export const makeConnect = (
       if (!entry) return Effect.fail(unknownTag(tag));
       return withCallSpanEffect(entry, ({ span, record }) =>
         Effect.gen(function* () {
-          const ambientTraceState = yield* Effect.service(TraceState);
           yield* recordMetadata(callOptions, record);
           const method = resolveMethod(entry);
           if (!method) {
@@ -221,7 +219,7 @@ export const makeConnect = (
               try {
                 const call = method(
                   grpcRequest,
-                  callOptionsFor(callOptions, span, signal, ambientTraceState),
+                  callOptionsFor(callOptions, span, signal),
                 ) as Promise<unknown>;
                 return { ok: true, value: await call };
               } catch (cause) {
@@ -264,7 +262,6 @@ export const makeConnect = (
         entry,
         ({ span, record }) =>
           Effect.gen(function* () {
-            const ambientTraceState = yield* Effect.service(TraceState);
             yield* recordMetadata(callOptions, record);
             const method = resolveMethod(entry);
             if (!method) {
@@ -293,12 +290,7 @@ export const makeConnect = (
               () =>
                 method(
                   grpcRequest,
-                  callOptionsFor(
-                    callOptions,
-                    span,
-                    controller.signal,
-                    ambientTraceState,
-                  ),
+                  callOptionsFor(callOptions, span, controller.signal),
                 ) as AsyncIterable<unknown>,
               record,
             );
@@ -333,7 +325,6 @@ export const makeConnect = (
         entry,
         ({ span, record }) =>
           Effect.gen(function* () {
-            const ambientTraceState = yield* Effect.service(TraceState);
             yield* recordMetadata(callOptions, record);
             const method = resolveMethod(entry);
             if (!method) {
@@ -352,12 +343,7 @@ export const makeConnect = (
                 try {
                   const call = method(
                     pump.iterable,
-                    callOptionsFor(
-                      callOptions,
-                      span,
-                      controller.signal,
-                      ambientTraceState,
-                    ),
+                    callOptionsFor(callOptions, span, controller.signal),
                   ) as Promise<unknown>;
                   return { ok: true, value: await call };
                 } catch (cause) {
@@ -408,7 +394,6 @@ export const makeConnect = (
         entry,
         ({ span, record }) =>
           Effect.gen(function* () {
-            const ambientTraceState = yield* Effect.service(TraceState);
             yield* recordMetadata(callOptions, record);
             const method = resolveMethod(entry);
             if (!method) {
@@ -436,12 +421,7 @@ export const makeConnect = (
               () =>
                 method(
                   pump.iterable,
-                  callOptionsFor(
-                    callOptions,
-                    span,
-                    controller.signal,
-                    ambientTraceState,
-                  ),
+                  callOptionsFor(callOptions, span, controller.signal),
                 ) as AsyncIterable<unknown>,
               record,
             );
@@ -483,7 +463,6 @@ const callOptionsFor = (
   options: GrpcCallOptions | undefined,
   span: Tracer.Span,
   signal: AbortSignal,
-  ambientTraceState: string | undefined,
 ): CallOptions => {
   // Metadata has already been validated by `recordMetadata`, so the codec
   // cannot be handed a value its key forbids.
@@ -496,12 +475,6 @@ const callOptionsFor = (
     span.spanId !== "noop"
   ) {
     headers.set("traceparent", GrpcTracing.traceparent(span));
-    // Span-annotation values win over the ambient `TraceState` reference
-    // rehydrated from the incoming request by the server protocol.
-    const traceState = GrpcTracing.findTraceState(span) ?? ambientTraceState;
-    if (traceState !== undefined && !headers.has("tracestate")) {
-      headers.set("tracestate", traceState);
-    }
   }
   const timeoutMs = callTimeoutMs(options);
   return { headers, signal, ...(timeoutMs === undefined ? {} : { timeoutMs }) };

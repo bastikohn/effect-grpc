@@ -117,7 +117,7 @@ server certificate verification for development against self-signed servers.
 [gRPC Health Checking Protocol](https://github.com/grpc/grpc/blob/master/doc/health-checking.md)
 (`grpc.health.v1.Health`), so load balancers, Kubernetes probes, and
 `grpc_health_probe` work out of the box. `GrpcHealth.service` plugs the
-`Check` and `Watch` RPCs into `serveAll`; `GrpcHealth.layer()` provides the
+`Check` and `Watch` RPCs into `serveAll`; `GrpcHealth.layer` provides the
 status map that backs them and marks the overall server — the empty-string
 service name — as `SERVING`:
 
@@ -126,7 +126,7 @@ GrpcNodeServer.serveAll({
   host: "0.0.0.0",
   port: 50051,
   services: [userService, GrpcHealth.service],
-}).pipe(Effect.provide(GrpcHealth.layer()));
+}).pipe(Effect.provide(GrpcHealth.layer));
 ```
 
 Applications register and flip per-service statuses through the
@@ -161,8 +161,8 @@ Effect.gen(function* () {
 
 `GrpcReflection` implements the standard
 [gRPC Server Reflection Protocol](https://github.com/grpc/grpc/blob/master/doc/server-reflection.md)
-(`grpc.reflection.v1.ServerReflection`, plus the legacy `v1alpha` alias for
-older tooling), so `grpcurl`, `grpcui`, Postman, and similar tools work
+(`grpc.reflection.v1.ServerReflection`), so `grpcurl`, `grpcui`, Postman, and
+similar tools work
 against the server without local `.proto` files. The generated registries
 already carry the full descriptors, so no extra codegen is needed — pass
 `GrpcReflection.service` the same services you pass to `serveAll`:
@@ -174,7 +174,7 @@ GrpcNodeServer.serveAll({
   host: "0.0.0.0",
   port: 50051,
   services: [...services, GrpcReflection.service(services)],
-}).pipe(Effect.provide(GrpcHealth.layer()));
+}).pipe(Effect.provide(GrpcHealth.layer));
 ```
 
 The reflection service describes itself (and everything else in `services`),
@@ -200,7 +200,10 @@ To query another server's reflection service,
 Effect.gen(function* () {
   const reflection = yield* GrpcReflection.ReflectionClient;
   const responses = reflection.serverReflectionInfo(
-    Stream.make({ host: "", listServices: "*" }),
+    Stream.make({
+      host: "",
+      messageRequest: { case: "listServices", value: "*" },
+    }),
   );
 });
 ```

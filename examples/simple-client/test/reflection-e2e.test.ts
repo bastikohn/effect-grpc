@@ -1,6 +1,5 @@
 import * as net from "node:net";
 import { fromBinary } from "@bufbuild/protobuf";
-import { base64Decode } from "@bufbuild/protobuf/wire";
 import { FileDescriptorProtoSchema } from "@bufbuild/protobuf/wkt";
 import { Effect, Layer, Stream } from "effect";
 import { describe, expect, it } from "vitest";
@@ -27,8 +26,8 @@ const implementation: UserServiceImplementation = {
   watchUsers: () => Stream.empty,
 };
 
-const decodeFileName = (base64: string): string =>
-  fromBinary(FileDescriptorProtoSchema, base64Decode(base64)).name;
+const decodeFileName = (bytes: Uint8Array): string =>
+  fromBinary(FileDescriptorProtoSchema, bytes).name;
 
 describe("grpc.reflection.v1 e2e", () => {
   it("lists every served service over the wire", async () => {
@@ -38,7 +37,10 @@ describe("grpc.reflection.v1 e2e", () => {
           const client = yield* GrpcReflection.ReflectionClient;
           return yield* firstResponse(
             client.serverReflectionInfo(
-              Stream.make({ host: "localhost", listServices: "*" }),
+              Stream.make({
+                host: "localhost",
+                messageRequest: { case: "listServices", value: "*" },
+              }),
             ),
           );
         }),
@@ -46,13 +48,10 @@ describe("grpc.reflection.v1 e2e", () => {
     );
 
     expect(response.validHost).toBe("localhost");
-    expect(
-      response.listServicesResponse?.service.map((entry) => entry.name),
-    ).toEqual([
+    expect(listedServices(response)).toEqual([
       "demo.v1.UserService",
       "grpc.health.v1.Health",
       "grpc.reflection.v1.ServerReflection",
-      "grpc.reflection.v1alpha.ServerReflection",
     ]);
   });
 
@@ -65,7 +64,10 @@ describe("grpc.reflection.v1 e2e", () => {
             client.serverReflectionInfo(
               Stream.make({
                 host: "",
-                fileContainingSymbol: "demo.v1.UserService",
+                messageRequest: {
+                  case: "fileContainingSymbol",
+                  value: "demo.v1.UserService",
+                },
               }),
             ),
           );
@@ -73,8 +75,7 @@ describe("grpc.reflection.v1 e2e", () => {
       ),
     );
 
-    const files = response.fileDescriptorResponse?.fileDescriptorProto ?? [];
-    expect(files.map(decodeFileName)).toEqual(["demo/v1/user_service.proto"]);
+    expect(descriptorNames(response)).toEqual(["demo/v1/user_service.proto"]);
   });
 
   it("answers unknown symbols in-band and keeps the stream alive", async () => {
@@ -85,8 +86,20 @@ describe("grpc.reflection.v1 e2e", () => {
           return yield* client
             .serverReflectionInfo(
               Stream.make(
-                { host: "", fileContainingSymbol: "demo.v1.Missing" },
-                { host: "", fileByFilename: "demo/v1/user_service.proto" },
+                {
+                  host: "",
+                  messageRequest: {
+                    case: "fileContainingSymbol",
+                    value: "demo.v1.Missing",
+                  },
+                },
+                {
+                  host: "",
+                  messageRequest: {
+                    case: "fileByFilename",
+                    value: "demo/v1/user_service.proto",
+                  },
+                },
               ),
             )
             .pipe(Stream.take(2), Stream.runCollect);
@@ -95,38 +108,33 @@ describe("grpc.reflection.v1 e2e", () => {
     );
 
     expect(responses).toHaveLength(2);
-    expect(responses[0]?.errorResponse).toMatchObject({ errorCode: 5 });
-    expect(responses[0]?.originalRequest).toMatchObject({
-      fileContainingSymbol: "demo.v1.Missing",
+    expect(responses[0]?.messageResponse).toMatchObject({
+      case: "errorResponse",
+      value: { errorCode: 5 },
     });
-    expect(
-      responses[1]?.fileDescriptorResponse?.fileDescriptorProto.map(
-        decodeFileName,
-      ),
-    ).toEqual(["demo/v1/user_service.proto"]);
-  });
-
-  it("serves the identical protocol under the v1alpha alias", async () => {
-    const response = await Effect.runPromise(
-      withReflectionServer(
-        Effect.gen(function* () {
-          const invoker = yield* GrpcInvoker.GrpcInvoker;
-          const responses = yield* invoker
-            .bidiStream(
-              GrpcReflection.ReflectionV1AlphaTag,
-              Stream.make({ host: "", listServices: "" }),
-            )
-            .pipe(Stream.take(1), Stream.runCollect);
-          return responses[0] as GrpcReflection.ServerReflectionResponse;
-        }),
-      ),
-    );
-
-    expect(
-      response.listServicesResponse?.service.map((entry) => entry.name),
-    ).toContain("grpc.reflection.v1alpha.ServerReflection");
+    expect(responses[0]?.originalRequest?.messageRequest).toEqual({
+      case: "fileContainingSymbol",
+      value: "demo.v1.Missing",
+    });
+    expect(descriptorNames(responses[1]!)).toEqual([
+      "demo/v1/user_service.proto",
+    ]);
   });
 });
+
+const listedServices = (
+  response: GrpcReflection.ServerReflectionResponse,
+): ReadonlyArray<string> =>
+  response.messageResponse.case === "listServicesResponse"
+    ? response.messageResponse.value.service.map((entry) => entry.name)
+    : [];
+
+const descriptorNames = (
+  response: GrpcReflection.ServerReflectionResponse,
+): ReadonlyArray<string> =>
+  response.messageResponse.case === "fileDescriptorResponse"
+    ? response.messageResponse.value.fileDescriptorProto.map(decodeFileName)
+    : [];
 
 const firstResponse = (
   responses: Stream.Stream<
@@ -173,7 +181,7 @@ const withReflectionServer = <A, E>(
         host: "127.0.0.1",
         port,
         services: [...services, GrpcReflection.service(services)],
-      }).pipe(Effect.provide(GrpcHealth.layer()), Effect.forkScoped);
+      }).pipe(Effect.provide(GrpcHealth.layer), Effect.forkScoped);
       yield* Effect.sleep("50 millis");
 
       const protocol = GrpcClientProtocol.layer({

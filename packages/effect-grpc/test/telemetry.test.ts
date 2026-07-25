@@ -20,11 +20,6 @@ import * as GrpcInvoker from "../src/GrpcInvoker.js";
 import type { GrpcMethodEntry } from "../src/GrpcMethodRegistry.js";
 import * as GrpcServerProtocol from "../src/GrpcServerProtocol.js";
 import * as GrpcStatusError from "../src/GrpcStatusError.js";
-import { TraceState } from "../src/GrpcTracing.js";
-import {
-  externalSpanFromHeaders,
-  traceStateFromHeaders,
-} from "../src/internal/tracing.js";
 import type { ServiceImplementation } from "./support/serverHarness.js";
 import {
   captureImplementation,
@@ -37,7 +32,7 @@ const TRACEPARENT_PATTERN = /^00-[0-9a-f]{32}-[0-9a-f]{16}-0[01]$/;
 type HeadersImport = ConstructorParameters<typeof Headers>[0];
 
 describe("client telemetry", () => {
-  it("forwards tracestate and records duration for client-streaming calls", async () => {
+  it("forwards trace headers and records duration for client-streaming calls", async () => {
     const telemetry = makeTestTelemetry();
     const { transport, headers } = fakeTransport({
       stream: async function* (input) {
@@ -52,7 +47,6 @@ describe("client telemetry", () => {
       traceId: "0123456789abcdef0123456789abcdef",
       spanId: "0123456789abcdef",
       sampled: true,
-      annotations: Context.add(Context.empty(), TraceState, "vendor=xyz"),
     });
 
     const result = await Effect.runPromise(
@@ -74,7 +68,6 @@ describe("client telemetry", () => {
 
     expect(result.response).toEqual({ received: 2 });
     expect(headers[0]?.get("traceparent")).toMatch(TRACEPARENT_PATTERN);
-    expect(headers[0]?.get("tracestate")).toBe("vendor=xyz");
 
     const span = telemetry.expectSpan(clientStreamingEntry.tag);
     expect(span.kind).toBe("client");
@@ -85,58 +78,6 @@ describe("client telemetry", () => {
       "rpc.method": "demo.v1.TelemetryService/Upload",
       "rpc.response.status_code": "OK",
     });
-  });
-
-  it("falls back to the ambient TraceState reference when the span ancestry has none", async () => {
-    const telemetry = makeTestTelemetry();
-    const { transport, headers } = fakeTransport({
-      unary: () => ({ ok: true }),
-    });
-
-    await Effect.runPromise(
-      telemetry.provide(
-        Effect.gen(function* () {
-          const invoker = yield* GrpcInvoker.GrpcInvoker;
-          return yield* invoker.unary(unaryEntry.tag, {});
-        }).pipe(
-          Effect.provide(clientLayer(transport)),
-          Effect.provideService(TraceState, "vendor=ambient"),
-        ),
-      ),
-    );
-
-    expect(headers[0]?.get("traceparent")).toMatch(TRACEPARENT_PATTERN);
-    expect(headers[0]?.get("tracestate")).toBe("vendor=ambient");
-  });
-
-  it("falls back to the ambient TraceState reference on streaming calls", async () => {
-    const telemetry = makeTestTelemetry();
-    const { transport, headers } = fakeTransport({
-      stream: async function* (input) {
-        for await (const _ of input) {
-          // drain
-        }
-        yield { received: true };
-      },
-    });
-
-    await Effect.runPromise(
-      telemetry.provide(
-        Effect.gen(function* () {
-          const invoker = yield* GrpcInvoker.GrpcInvoker;
-          return yield* invoker.clientStream(
-            clientStreamingEntry.tag,
-            Stream.make({ id: "1" }),
-          );
-        }).pipe(
-          Effect.provide(clientLayer(transport)),
-          Effect.provideService(TraceState, "vendor=ambient"),
-        ),
-      ),
-    );
-
-    expect(headers[0]?.get("traceparent")).toMatch(TRACEPARENT_PATTERN);
-    expect(headers[0]?.get("tracestate")).toBe("vendor=ambient");
   });
 
   it("records failed client-streaming calls with the failure status", async () => {
@@ -316,7 +257,6 @@ describe("client telemetry", () => {
       traceId: "0123456789abcdef0123456789abcdef",
       spanId: "0123456789abcdef",
       sampled: true,
-      annotations: Context.add(Context.empty(), TraceState, "vendor=abc"),
     });
 
     const result = await Effect.runPromise(
@@ -349,7 +289,6 @@ describe("client telemetry", () => {
     expect(traceparent).toMatch(TRACEPARENT_PATTERN);
     expect(traceparent).toBe(`00-${span.traceId}-${span.spanId}-01`);
     expect(span.traceId).toBe(parent.traceId);
-    expect(headers[0]?.get("tracestate")).toBe("vendor=abc");
 
     expectDuration(
       result.metrics,
@@ -412,7 +351,6 @@ describe("client telemetry", () => {
     );
 
     expect(headers[0]?.get("traceparent")).toBe(provided);
-    expect(headers[0]?.get("tracestate")).toBeNull();
   });
 
   it("does not inject a traceparent for noop spans", async () => {
@@ -431,7 +369,6 @@ describe("client telemetry", () => {
     );
 
     expect(headers[0]?.get("traceparent")).toBeNull();
-    expect(headers[0]?.get("tracestate")).toBeNull();
   });
 
   it("records the status code and error.type on unary failure", async () => {
@@ -479,7 +416,6 @@ describe("client telemetry", () => {
       traceId: "0123456789abcdef0123456789abcdef",
       spanId: "0123456789abcdef",
       sampled: true,
-      annotations: Context.add(Context.empty(), TraceState, "vendor=xyz"),
     });
 
     const result = await Effect.runPromise(
@@ -500,7 +436,6 @@ describe("client telemetry", () => {
 
     expect(result.responses).toHaveLength(2);
     expect(headers[0]?.get("traceparent")).toMatch(TRACEPARENT_PATTERN);
-    expect(headers[0]?.get("tracestate")).toBe("vendor=xyz");
 
     const span = telemetry.expectSpan(serverStreamingEntry.tag);
     expect(span.kind).toBe("client");
@@ -521,7 +456,6 @@ describe("server telemetry", () => {
   const parentSpanId = "b7ad6b7169203331";
   const incomingHeaders = {
     traceparent: `00-${traceId}-${parentSpanId}-01`,
-    tracestate: "vendor=abc",
   };
 
   it("parents the unary span to the incoming traceparent and records duration", async () => {
@@ -558,7 +492,6 @@ describe("server telemetry", () => {
     expect(parent._tag).toBe("ExternalSpan");
     expect(parent.traceId).toBe(traceId);
     expect(parent.spanId).toBe(parentSpanId);
-    expect(Context.get(parent.annotations, TraceState)).toBe("vendor=abc");
 
     expectDuration(
       result.metrics,
@@ -573,40 +506,7 @@ describe("server telemetry", () => {
     );
   });
 
-  it("forwards incoming tracestate to downstream client calls made from a unary handler", async () => {
-    const telemetry = makeTestTelemetry();
-    const { transport, headers } = fakeTransport({
-      unary: () => ({ ok: true }),
-    });
-
-    const result = await Effect.runPromise(
-      telemetry.provide(
-        Effect.gen(function* () {
-          const downstream = yield* Effect.provide(
-            Effect.service(GrpcInvoker.GrpcInvoker),
-            clientLayer(transport),
-          );
-          // The handler runs inside the request fiber with the incoming
-          // `tracestate` provided from the headers, so downstream client
-          // calls pick it up for header injection.
-          const call = yield* serverCall(unaryEntry, {
-            kind: "unary",
-            handler: () =>
-              downstream.unary(unaryEntry.tag, {}).pipe(Effect.orDie),
-          });
-          return yield* Effect.promise(() =>
-            call({}, handlerContext({ headers: incomingHeaders })),
-          );
-        }),
-      ),
-    );
-
-    expect(result).toEqual({ ok: true });
-    expect(headers[0]?.get("traceparent")).toMatch(TRACEPARENT_PATTERN);
-    expect(headers[0]?.get("tracestate")).toBe("vendor=abc");
-  });
-
-  it("forwards incoming tracestate to downstream client calls made from a server-streaming handler", async () => {
+  it("parents downstream client calls made from a server-streaming handler", async () => {
     const telemetry = makeTestTelemetry();
     const { transport, headers } = fakeTransport({
       unary: () => ({ ok: true }),
@@ -621,7 +521,7 @@ describe("server telemetry", () => {
           );
           // The handler fiber is spawned by the response pump; this pins the
           // pump context rehydration: the scoped server span parents the
-          // downstream span and the incoming `tracestate` is injected.
+          // downstream span.
           const call = yield* serverCall(serverStreamingEntry, {
             kind: "server-streaming",
             handler: () =>
@@ -645,7 +545,6 @@ describe("server telemetry", () => {
 
     expect(result).toEqual([{ ok: true }]);
     expect(headers[0]?.get("traceparent")).toMatch(TRACEPARENT_PATTERN);
-    expect(headers[0]?.get("tracestate")).toBe("vendor=abc");
 
     const serverSpan = telemetry.expectSpan(serverStreamingEntry.tag);
     expect(serverSpan.kind).toBe("server");
@@ -1192,39 +1091,6 @@ describe("server telemetry", () => {
       });
     },
   );
-});
-
-describe("tracestate decoding", () => {
-  const w3cHeaders: ReadonlyArray<readonly [string, string]> = [
-    ["traceparent", "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"],
-    ["tracestate", "vendor=abc"],
-  ];
-  const b3Headers: ReadonlyArray<readonly [string, string]> = [
-    ["b3", "0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-1"],
-    ["tracestate", "vendor=abc"],
-  ];
-
-  it("keeps tracestate alongside a valid W3C traceparent", () => {
-    expect(traceStateFromHeaders(w3cHeaders)).toBe("vendor=abc");
-    const parent = externalSpanFromHeaders(w3cHeaders);
-    expect(parent).toBeDefined();
-    expect(Context.get(parent!.annotations, TraceState)).toBe("vendor=abc");
-  });
-
-  it("discards tracestate on B3-only requests per W3C trace context", () => {
-    expect(traceStateFromHeaders(b3Headers)).toBeUndefined();
-    // The span is still parented via B3 — only the tracestate is dropped.
-    const parent = externalSpanFromHeaders(b3Headers);
-    expect(parent).toBeDefined();
-    expect(parent!.traceId).toBe("0af7651916cd43dd8448eb211c80319c");
-    expect(Context.get(parent!.annotations, TraceState)).toBeUndefined();
-  });
-
-  it("discards tracestate without any propagation headers", () => {
-    expect(
-      traceStateFromHeaders([["tracestate", "vendor=abc"]]),
-    ).toBeUndefined();
-  });
 });
 
 // ---------------------------------------------------------------------------

@@ -19,11 +19,6 @@ const file_grpc_health_v1_health = fileDesc(
 );
 
 /**
- * Wire values of `grpc.health.v1.HealthCheckResponse.ServingStatus`.
- */
-export type ServingStatusCode = 0 | 1 | 2 | 3;
-
-/**
  * Describes the service grpc.health.v1.Health.
  */
 export const Health: DescService = file_grpc_health_v1_health.services.find(

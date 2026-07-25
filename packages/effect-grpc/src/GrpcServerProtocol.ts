@@ -18,7 +18,6 @@ import * as Tracer from "effect/Tracer";
 
 import * as CodegenSupport from "./CodegenSupport.js";
 import type { GrpcServerContext } from "./CodegenSupport.js";
-import { TraceState } from "./GrpcTracing.js";
 import type {
   GrpcMethodEntry,
   GrpcMethodRegistry,
@@ -93,7 +92,7 @@ export const GrpcHandlers = Context.Service<GrpcHandlers>(
  * Builds the layer generated `*HandlersLayer` functions use to publish their
  * handlers. Captures the context so handler requirements `R` are resolved
  * where the layer is built; request-local services provided per call (the
- * server span, the incoming tracestate) take precedence over the capture.
+ * server span) take precedence over the capture.
  */
 export const handlersLayer = <R = never>(
   handlers: Record<string, GrpcHandler<R>>,
@@ -117,8 +116,8 @@ const bindHandler = <R>(
 ): GrpcHandler => {
   // The captured context carries the whole ambient build-time context, not
   // just `R` — merge it *beneath* the per-call context so request-local
-  // services (the server span, the incoming tracestate) stay authoritative
-  // over whatever happened to be in scope while the layer was built.
+  // services (the server span) stay authoritative over whatever happened to
+  // be in scope while the layer was built.
   const merge = (callContext: Context.Context<never>) =>
     Context.merge(context, callContext);
   switch (entry.kind) {
@@ -181,7 +180,6 @@ export const make = (
       ) => Effect.Effect<unknown, GrpcStatusError.GrpcStatusError>,
     ): Promise<unknown> => {
       const headers = Array.from(handlerContext.requestHeader.entries());
-      const traceState = GrpcTracing.traceStateFromHeaders(headers);
       let record: GrpcTracing.StatusRecorder | undefined;
       let outcome: ServerCallOutcome;
       try {
@@ -217,10 +215,6 @@ export const make = (
                 GrpcTracing.externalSpanFromHeaders(headers),
               ),
             ),
-            (effect) =>
-              traceState === undefined
-                ? effect
-                : Effect.provideService(effect, TraceState, traceState),
             Effect.catch((error) =>
               Effect.succeed<ServerCallOutcome>({ ok: false, error }),
             ),
@@ -252,7 +246,6 @@ export const make = (
       ) => Stream.Stream<unknown, GrpcStatusError.GrpcStatusError>,
     ): AsyncIterable<unknown> {
       const headers = Array.from(handlerContext.requestHeader.entries());
-      const traceState = GrpcTracing.traceStateFromHeaders(headers);
       const spanScope = await run(Scope.make());
       const span = await run(
         Effect.makeSpanScoped(
@@ -275,15 +268,8 @@ export const make = (
         body(CodegenSupport.serverContext(headers)),
       );
       // The pump spawns the handler fiber with this context, so the scoped
-      // span parents the handler's spans and the incoming `tracestate` is
-      // rehydrated for downstream client calls to pick up.
-      const handlerFiberContext = Context.add(
-        traceState === undefined
-          ? context
-          : Context.add(context, TraceState, traceState),
-        Tracer.ParentSpan,
-        span,
-      );
+      // span parents the handler's spans.
+      const handlerFiberContext = Context.add(context, Tracer.ParentSpan, span);
       // Closing the pump interrupts the handler fiber, so a pending pull
       // settles when the client goes away mid-stream.
       const pump = StreamBridge.responsePump(

@@ -25,13 +25,11 @@ import {
 import { describe, expect, it } from "vitest";
 
 import { generateFile } from "../src/generate.js";
-import { parseOptions } from "../src/options.js";
 import { plugin } from "../src/pluginDefinition.js";
 import type { GeneratorFile } from "../src/types.js";
 
 const demoFile: GeneratorFile = {
   protoFileName: "demo/v1/user_service.proto",
-  importExtension: "js",
   imports: [],
   enums: [],
   messages: [
@@ -134,7 +132,6 @@ describe("generateFile", () => {
   it("omits the Stream import for unary-only services", () => {
     const output = generateFile({
       protoFileName: "demo/v1/ping.proto",
-      importExtension: "js",
       imports: [],
       enums: [],
       messages: [
@@ -173,7 +170,6 @@ describe("generateFile", () => {
   it("omits readField and compact when every message is empty", () => {
     const output = generateFile({
       protoFileName: "demo/v1/empty.proto",
-      importExtension: "js",
       imports: [],
       enums: [],
       messages: [
@@ -210,7 +206,6 @@ describe("generateFile", () => {
   it("emits the annotated Schema.suspend for a recursive self-edge", () => {
     const output = generateFile({
       protoFileName: "demo/v1/node.proto",
-      importExtension: "js",
       imports: [],
       enums: [],
       messages: [
@@ -255,7 +250,6 @@ describe("generateFile", () => {
   it("omits the bare imported message type when only schema and converters are used", () => {
     const output = generateFile({
       protoFileName: "demo/v1/profile.proto",
-      importExtension: "js",
       imports: [
         {
           protoFileName: "demo/v1/common.proto",
@@ -307,7 +301,6 @@ describe("generateFile", () => {
   it("keeps bare imported types used by method signatures and enum casts", () => {
     const output = generateFile({
       protoFileName: "demo/v1/profile.proto",
-      importExtension: "js",
       imports: [
         {
           protoFileName: "demo/v1/common.proto",
@@ -351,7 +344,6 @@ describe("generateFile", () => {
   it("omits client-only rpc imports for a streaming-only service", () => {
     const output = generateFile({
       protoFileName: "demo/v1/upload.proto",
-      importExtension: "js",
       imports: [],
       enums: [],
       messages: [
@@ -619,34 +611,6 @@ describe("plugin fixture", () => {
   });
 });
 
-describe("parseOptions", () => {
-  it("defaults int64 to bigint and accepts the explicit option", () => {
-    expect(parseOptions([]).int64).toBe("bigint");
-    expect(parseOptions([{ key: "int64", value: "bigint" }]).int64).toBe(
-      "bigint",
-    );
-    expect(() => parseOptions([{ key: "int64", value: "number" }])).toThrow(
-      "Unsupported int64 option",
-    );
-  });
-
-  it("defaults methods to all four kinds and validates values", () => {
-    expect([...parseOptions([]).methods]).toEqual([
-      "unary",
-      "server-streaming",
-      "client-streaming",
-      "bidi-streaming",
-    ]);
-    expect([
-      ...parseOptions([{ key: "methods", value: "unary,client-streaming" }])
-        .methods,
-    ]).toEqual(["unary", "client-streaming"]);
-    expect(() =>
-      parseOptions([{ key: "methods", value: "full-duplex" }]),
-    ).toThrow("Unsupported methods option: full-duplex.");
-  });
-});
-
 describe("streaming methods", () => {
   it("generates the direct bridge for client-streaming and bidi methods", () => {
     const response = plugin.run(
@@ -679,25 +643,6 @@ describe("streaming methods", () => {
     expect(content).not.toContain("effect/unstable/rpc");
     expect(content).toContain("GrpcServerProtocol.handlersLayer");
   });
-
-  it("skips streaming methods when the methods option excludes them", () => {
-    const response = plugin.run(
-      fixtureRequest([], {
-        parameter:
-          "target=ts,import_extension=js,errors=grpc-status,methods=unary,server-streaming",
-        extraMethods: [
-          create(MethodDescriptorProtoSchema, {
-            name: "UploadUsers",
-            inputType: ".demo.v1.User",
-            outputType: ".demo.v1.GetUserResponse",
-            clientStreaming: true,
-          }),
-        ],
-      }),
-    );
-
-    expect(response.file[0]?.content).not.toContain("UploadUsers");
-  });
 });
 
 const fixtureRequest = (
@@ -707,7 +652,6 @@ const fixtureRequest = (
     readonly enumType?: ReadonlyArray<EnumDescriptorProto>;
     readonly extraFiles?: ReadonlyArray<FileDescriptorProto>;
     readonly extraMethods?: ReadonlyArray<MethodDescriptorProto>;
-    readonly parameter?: string;
     readonly requestNestedEnums?: ReadonlyArray<EnumDescriptorProto>;
     readonly requestNestedTypes?: ReadonlyArray<DescriptorProto>;
     readonly requestOneofs?: ReadonlyArray<OneofDescriptorProto>;
@@ -718,8 +662,7 @@ const fixtureRequest = (
 ) =>
   create(CodeGeneratorRequestSchema, {
     fileToGenerate: ["demo/v1/user_service.proto"],
-    parameter:
-      options?.parameter ?? "target=ts,import_extension=js,errors=grpc-status",
+    parameter: "target=ts,import_extension=js",
     protoFile: [
       ...(options?.extraFiles ?? []),
       create(FileDescriptorProtoSchema, {

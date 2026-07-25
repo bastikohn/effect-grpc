@@ -21,7 +21,7 @@ export const generateSchemas = (file: GeneratorFile, usage: FileUsage) => [
     : []),
   ...wellKnownMethodSchemas(usage),
   ...file.enums.flatMap(enumSchema),
-  ...usage.orderedMessages.flatMap((message) => [
+  ...file.messages.flatMap((message) => [
     `export const ${message.name}Schema = Schema.Struct({`,
     ...message.fields.map(
       (field) =>

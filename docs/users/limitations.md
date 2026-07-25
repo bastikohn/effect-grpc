@@ -5,11 +5,8 @@ client-streaming, and bidi-streaming.
 
 ## Streaming Semantics
 
-Generated clients invoke all four method kinds through the `GrpcInvoker` seam
-over the connect transport. On the server, all four method kinds run through
-the unified `GrpcServerProtocol.GrpcHandlers` map, bridging `Stream` and
-connect `AsyncIterable` directly over the same transport and registry.
-Consequences:
+Consequences of bridging `Stream` and connect `AsyncIterable` directly over
+one transport and registry:
 
 - There is no Effect RPC middleware hook on either side; cross-cutting
   behavior belongs in connect interceptors (client) or in the handler

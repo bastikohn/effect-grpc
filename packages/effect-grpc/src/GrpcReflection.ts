@@ -11,8 +11,7 @@ import type { ServeAllService } from "./GrpcNodeServer.js";
 import * as GrpcServerProtocol from "./GrpcServerProtocol.js";
 import * as GrpcStatusCode from "./GrpcStatusCode.js";
 import type * as GrpcStatusError from "./GrpcStatusError.js";
-import * as ReflectionV1AlphaPb from "./internal/reflectionV1AlphaPb.js";
-import * as ReflectionV1Pb from "./internal/reflectionV1Pb.js";
+import * as ReflectionPb from "./internal/reflectionPb.js";
 
 /**
  * Standard gRPC Server Reflection Protocol
@@ -311,11 +310,11 @@ export const ReflectionGrpcRegistry = new Map<
 >([
   [
     ReflectionV1Tag,
-    reflectionEntry(ReflectionV1Tag, ReflectionV1Pb.ServerReflection),
+    reflectionEntry(ReflectionV1Tag, ReflectionPb.ServerReflectionV1),
   ],
   [
     ReflectionV1AlphaTag,
-    reflectionEntry(ReflectionV1AlphaTag, ReflectionV1AlphaPb.ServerReflection),
+    reflectionEntry(ReflectionV1AlphaTag, ReflectionPb.ServerReflectionV1Alpha),
   ],
 ]);
 

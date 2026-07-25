@@ -132,10 +132,10 @@ import {
   RepeatedMessageFeature,
 } from "./repeated_messages_pb.js";
 
-export const AddressSchema = Schema.Struct({
-  city: Schema.String,
+export const UserListSchema = Schema.Struct({
+  users: Schema.Array(Schema.suspend((): typeof UserSchema => UserSchema)),
 });
-export type Address = Schema.Schema.Type<typeof AddressSchema>;
+export type UserList = Schema.Schema.Type<typeof UserListSchema>;
 
 export const UserSchema = Schema.Struct({
   id: Schema.String,
@@ -143,10 +143,10 @@ export const UserSchema = Schema.Struct({
 });
 export type User = Schema.Schema.Type<typeof UserSchema>;
 
-export const UserListSchema = Schema.Struct({
-  users: Schema.Array(Schema.suspend((): typeof UserSchema => UserSchema)),
+export const AddressSchema = Schema.Struct({
+  city: Schema.String,
 });
-export type UserList = Schema.Schema.Type<typeof UserListSchema>;
+export type Address = Schema.Schema.Type<typeof AddressSchema>;
 
 const readField = (message: unknown, field: string): unknown =>
   typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
@@ -854,11 +854,6 @@ import {
 export const FieldShapeValues_StateSchema = Schema.Number;
 export type FieldShapeValues_State = number;
 
-export const FieldShapeChildSchema = Schema.Struct({
-  id: Schema.String,
-});
-export type FieldShapeChild = Schema.Schema.Type<typeof FieldShapeChildSchema>;
-
 export const FieldShapeValuesSchema = Schema.Struct({
   ratio: Schema.optional(Schema.Number),
   score: Schema.optional(Schema.Number),
@@ -880,6 +875,11 @@ export const FieldShapeValuesSchema = Schema.Struct({
   childrenByNumber: Schema.Record(Schema.Number, Schema.suspend((): typeof FieldShapeChildSchema => FieldShapeChildSchema)),
 });
 export type FieldShapeValues = Schema.Schema.Type<typeof FieldShapeValuesSchema>;
+
+export const FieldShapeChildSchema = Schema.Struct({
+  id: Schema.String,
+});
+export type FieldShapeChild = Schema.Schema.Type<typeof FieldShapeChildSchema>;
 
 const readField = (message: unknown, field: string): unknown =>
   typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
@@ -1210,17 +1210,17 @@ import {
   MapFeature,
 } from "./maps_pb.js";
 
-export const MapUserSchema = Schema.Struct({
-  id: Schema.String,
-});
-export type MapUser = Schema.Schema.Type<typeof MapUserSchema>;
-
 export const MapValuesSchema = Schema.Struct({
   labels: Schema.Record(Schema.String, Schema.String),
   counts: Schema.Record(Schema.String, Schema.Number),
   users: Schema.Record(Schema.String, Schema.suspend((): typeof MapUserSchema => MapUserSchema)),
 });
 export type MapValues = Schema.Schema.Type<typeof MapValuesSchema>;
+
+export const MapUserSchema = Schema.Struct({
+  id: Schema.String,
+});
+export type MapUser = Schema.Schema.Type<typeof MapUserSchema>;
 
 const readField = (message: unknown, field: string): unknown =>
   typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
@@ -1327,15 +1327,15 @@ import {
   OneofFeature,
 } from "./oneofs_pb.js";
 
-export const OneofUserSchema = Schema.Struct({
-  id: Schema.String,
-});
-export type OneofUser = Schema.Schema.Type<typeof OneofUserSchema>;
-
 export const SearchRequestSchema = Schema.Struct({
   query: Schema.Union([Schema.Struct({ case: Schema.Literal("id"), value: Schema.String }), Schema.Struct({ case: Schema.Literal("email"), value: Schema.String }), Schema.Struct({ case: Schema.Literal("user"), value: Schema.suspend((): typeof OneofUserSchema => OneofUserSchema) }), Schema.Struct({ case: Schema.Undefined, value: Schema.optional(Schema.Undefined) })]),
 });
 export type SearchRequest = Schema.Schema.Type<typeof SearchRequestSchema>;
+
+export const OneofUserSchema = Schema.Struct({
+  id: Schema.String,
+});
+export type OneofUser = Schema.Schema.Type<typeof OneofUserSchema>;
 
 const readField = (message: unknown, field: string): unknown =>
   typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
@@ -1474,12 +1474,6 @@ import {
 export const NestedOuter_Inner_StatusSchema = Schema.Number;
 export type NestedOuter_Inner_Status = number;
 
-export const NestedOuter_InnerSchema = Schema.Struct({
-  id: Schema.String,
-  status: NestedOuter_Inner_StatusSchema,
-});
-export type NestedOuter_Inner = Schema.Schema.Type<typeof NestedOuter_InnerSchema>;
-
 export const NestedOuterSchema = Schema.Struct({
   inner: Schema.optional(Schema.suspend((): typeof NestedOuter_InnerSchema => NestedOuter_InnerSchema)),
   items: Schema.Array(Schema.suspend((): typeof NestedOuter_InnerSchema => NestedOuter_InnerSchema)),
@@ -1487,6 +1481,12 @@ export const NestedOuterSchema = Schema.Struct({
   choice: Schema.Union([Schema.Struct({ case: Schema.Literal("picked"), value: Schema.suspend((): typeof NestedOuter_InnerSchema => NestedOuter_InnerSchema) }), Schema.Struct({ case: Schema.Undefined, value: Schema.optional(Schema.Undefined) })]),
 });
 export type NestedOuter = Schema.Schema.Type<typeof NestedOuterSchema>;
+
+export const NestedOuter_InnerSchema = Schema.Struct({
+  id: Schema.String,
+  status: NestedOuter_Inner_StatusSchema,
+});
+export type NestedOuter_Inner = Schema.Schema.Type<typeof NestedOuter_InnerSchema>;
 
 const readField = (message: unknown, field: string): unknown =>
   typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
@@ -2070,11 +2070,6 @@ export const Choice_pickOneofSchema = Schema.Struct({
 });
 export type Choice_pickOneof = Schema.Schema.Type<typeof Choice_pickOneofSchema>;
 
-export const GrpcGoogleProtobufTimestampSchema = Schema.Struct({
-  at: Schema.optional(Schema.Date),
-});
-export type GrpcGoogleProtobufTimestamp = Schema.Schema.Type<typeof GrpcGoogleProtobufTimestampSchema>;
-
 export const ShadowSchema = Schema.Struct({
   shadowed: Schema.optional(Schema.suspend((): typeof GrpcGoogleProtobufTimestampSchema => GrpcGoogleProtobufTimestampSchema)),
 });
@@ -2089,6 +2084,11 @@ export const GrpcGoogleProtobufEmptySchema = Schema.Struct({
   label: Schema.String,
 });
 export type GrpcGoogleProtobufEmpty = Schema.Schema.Type<typeof GrpcGoogleProtobufEmptySchema>;
+
+export const GrpcGoogleProtobufTimestampSchema = Schema.Struct({
+  at: Schema.optional(Schema.Date),
+});
+export type GrpcGoogleProtobufTimestamp = Schema.Schema.Type<typeof GrpcGoogleProtobufTimestampSchema>;
 
 const readField = (message: unknown, field: string): unknown =>
   typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;

@@ -12,20 +12,13 @@
       "types": "./dist/user_service_pb.d.mts",
       "default": "./dist/user_service_pb.mjs"
     },
-    "./generated/*": {
-      "types": "./dist/generated/*.d.mts",
-      "default": "./dist/generated/*.mjs"
-    },
-    "./package.json": "./package.json",
-    "./internal/*": null
+    "./package.json": "./package.json"
   },
   "scripts": {
     "clean": "rm -rf src/generated dist coverage node_modules",
     "generate": "buf generate",
     "build": "pnpm run generate && tsdown --config-loader unrun",
-    "dev": "tsdown --watch --config-loader unrun",
-    "typecheck": "tsc --noEmit --project tsconfig.json",
-    "test": "vitest run --passWithNoTests"
+    "typecheck": "tsc --noEmit --project tsconfig.json"
   },
   "dependencies": {
     "@bufbuild/protobuf": "^2.0.0",

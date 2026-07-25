@@ -1,4 +1,4 @@
-import { create, type DescFile } from "@bufbuild/protobuf";
+import { create } from "@bufbuild/protobuf";
 import {
   CodeGeneratorRequestSchema,
   type DescriptorProto,
@@ -22,12 +22,11 @@ import { describe, expect, it } from "vitest";
 
 import { generateFile } from "../src/generate.js";
 import { parseOptions } from "../src/options.js";
-import { detectImportCycles, plugin } from "../src/pluginDefinition.js";
+import { plugin } from "../src/pluginDefinition.js";
 import type { GeneratorFile } from "../src/types.js";
 
 const demoFile: GeneratorFile = {
   protoFileName: "demo/v1/user_service.proto",
-  packageName: "demo.v1",
   importExtension: "js",
   imports: [],
   enums: [],
@@ -157,7 +156,6 @@ describe("generateFile", () => {
   it("omits the Stream import for unary-only services", () => {
     const output = generateFile({
       protoFileName: "demo/v1/ping.proto",
-      packageName: "demo.v1",
       importExtension: "js",
       imports: [],
       enums: [],
@@ -197,7 +195,6 @@ describe("generateFile", () => {
   it("omits readField and compact when every message is empty", () => {
     const output = generateFile({
       protoFileName: "demo/v1/empty.proto",
-      packageName: "demo.v1",
       importExtension: "js",
       imports: [],
       enums: [],
@@ -235,7 +232,6 @@ describe("generateFile", () => {
   it("emits the annotated Schema.suspend for a recursive self-edge", () => {
     const output = generateFile({
       protoFileName: "demo/v1/node.proto",
-      packageName: "demo.v1",
       importExtension: "js",
       imports: [],
       enums: [],
@@ -281,7 +277,6 @@ describe("generateFile", () => {
   it("omits the bare imported message type when only schema and converters are used", () => {
     const output = generateFile({
       protoFileName: "demo/v1/profile.proto",
-      packageName: "demo.v1",
       importExtension: "js",
       imports: [
         {
@@ -334,7 +329,6 @@ describe("generateFile", () => {
   it("keeps bare imported types used by method signatures and enum casts", () => {
     const output = generateFile({
       protoFileName: "demo/v1/profile.proto",
-      packageName: "demo.v1",
       importExtension: "js",
       imports: [
         {
@@ -379,7 +373,6 @@ describe("generateFile", () => {
   it("omits client-only rpc imports for a streaming-only service", () => {
     const output = generateFile({
       protoFileName: "demo/v1/upload.proto",
-      packageName: "demo.v1",
       importExtension: "js",
       imports: [],
       enums: [],
@@ -619,17 +612,6 @@ describe("plugin fixture", () => {
     );
     expect(response.file[0]?.content).toContain(
       "const fromGrpc$GoogleProtobufAny",
-    );
-  });
-
-  it("fails fast for unsupported import cycles", () => {
-    expect(() =>
-      detectImportCycles([
-        reflectedFile("demo/v1/user_service.proto", ["demo/v1/profile.proto"]),
-        reflectedFile("demo/v1/profile.proto", ["demo/v1/user_service.proto"]),
-      ]),
-    ).toThrow(
-      "import cycle detected: demo/v1/user_service.proto -> demo/v1/profile.proto -> demo/v1/user_service.proto",
     );
   });
 
@@ -895,12 +877,3 @@ const wrappersFile = () =>
       }),
     ],
   });
-
-const reflectedFile = (
-  name: string,
-  dependency: ReadonlyArray<string>,
-): DescFile =>
-  ({
-    name: name.slice(0, -".proto".length),
-    proto: { name, dependency },
-  }) as DescFile;

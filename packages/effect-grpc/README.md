@@ -5,11 +5,9 @@
 
 Runtime support for generated [Effect](https://effect.website)-native gRPC
 clients and servers. Pairs with the build-time generator
-[`@effect-grpc/protoc-gen-effect-grpc`](https://www.npmjs.com/package/@effect-grpc/protoc-gen-effect-grpc)
-(or the one-shot
-[`@effect-grpc/codegen`](https://www.npmjs.com/package/@effect-grpc/codegen)
-CLI), which turns `.proto` service definitions into typed Effect clients,
-server handler layers, and registries — no runtime `.proto` loading.
+[`@effect-grpc/protoc-gen-effect-grpc`](https://www.npmjs.com/package/@effect-grpc/protoc-gen-effect-grpc),
+which turns `.proto` service definitions into typed Effect clients, server
+handler layers, and registries — no runtime `.proto` loading.
 
 ## Install
 

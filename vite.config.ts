@@ -9,6 +9,9 @@ const generatedPatterns = [
   // Changesets regenerates CHANGELOG.md on every release; leave it untouched
   // so the auto-generated "Version packages" PR passes fmt/lint checks.
   "**/CHANGELOG.md",
+  // Working document, deleted once executed; kept byte-identical so the plan
+  // text stays quotable against the commits that implement it.
+  "COMPLEXITY-REDUCTION-PLAN.md",
   "pnpm-lock.yaml",
   "*.tsbuildinfo",
 ];

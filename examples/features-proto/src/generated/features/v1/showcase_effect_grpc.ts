@@ -15,17 +15,6 @@ import {
 export const UserStateSchema = Schema.Number;
 export type UserState = number;
 
-export const NoteSchema = Schema.Struct({
-  text: Schema.String,
-});
-export type Note = Schema.Schema.Type<typeof NoteSchema>;
-
-export const LocalUserSchema = Schema.Struct({
-  id: Schema.String,
-  role: Schema.String,
-});
-export type LocalUser = Schema.Schema.Type<typeof LocalUserSchema>;
-
 export const FeatureRequestSchema = Schema.Struct({
   tags: Schema.Array(Schema.String),
   scores: Schema.Array(Schema.Number),
@@ -49,6 +38,11 @@ export const FeatureResponseSchema = Schema.Struct({
 });
 export type FeatureResponse = Schema.Schema.Type<typeof FeatureResponseSchema>;
 
+export const NoteSchema = Schema.Struct({
+  text: Schema.String,
+});
+export type Note = Schema.Schema.Type<typeof NoteSchema>;
+
 export const UploadSummarySchema = Schema.Struct({
   count: Schema.Number,
   joined: Schema.String,
@@ -60,6 +54,12 @@ export const ChatMessageSchema = Schema.Struct({
   sequence: Schema.Number,
 });
 export type ChatMessage = Schema.Schema.Type<typeof ChatMessageSchema>;
+
+export const LocalUserSchema = Schema.Struct({
+  id: Schema.String,
+  role: Schema.String,
+});
+export type LocalUser = Schema.Schema.Type<typeof LocalUserSchema>;
 
 const readField = (message: unknown, field: string): unknown =>
   typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;

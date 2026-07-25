@@ -1,6 +1,5 @@
 export interface GeneratorFile {
   readonly protoFileName: string;
-  readonly packageName: string;
   readonly importExtension: "js" | "ts";
   readonly imports: ReadonlyArray<ImportModel>;
   readonly enums: ReadonlyArray<EnumModel>;

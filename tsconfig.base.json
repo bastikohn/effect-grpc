@@ -15,8 +15,6 @@
       "@effect-grpc/protoc-gen-effect-grpc/*": [
         "packages/protoc-gen-effect-grpc/src/*"
       ],
-      "@effect-grpc/codegen": ["packages/codegen/src/index.ts"],
-      "@effect-grpc/codegen/*": ["packages/codegen/src/*"],
       "@effect-grpc/features-proto/*": ["examples/features-proto/src/*"],
       "@effect-grpc/simple-proto/*": ["examples/simple-proto/src/*"]
     },
@@ -26,7 +24,6 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "verbatimModuleSyntax": true,
     "plugins": [
       {
         "name": "@effect/language-service",

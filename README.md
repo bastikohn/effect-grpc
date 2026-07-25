@@ -10,19 +10,13 @@ and bidi-streaming methods.
 
 This workspace is new and intentionally small. The first prototype proves that
 native gRPC paths can map through generated registries into Effect clients and
-server handlers without introducing runtime `.proto` loading. Generated
-clients invoke all four method kinds through the `GrpcInvoker` seam over a
-connect transport; generated server handlers publish all four method kinds
-into a unified handlers map, bridging `Stream` and connect iterables directly
-over the same transport.
+server handlers without introducing runtime `.proto` loading.
 
 ## Packages
 
 - `@effect-grpc/effect-grpc`: runtime transport, status, metadata, and codegen
   support.
 - `@effect-grpc/protoc-gen-effect-grpc`: build-time protobuf plugin.
-- `@effect-grpc/codegen`: self-contained CLI that compiles `.proto` files and
-  runs the effect-grpc generator.
 
 ## Examples
 
@@ -33,30 +27,6 @@ Private workspace packages under `examples/`:
 - `features-proto`, `features-server`, `features-client`: showcase a wider
   feature surface (client- and bidi-streaming methods, richer field shapes,
   well-known types).
-
-## Supported
-
-- Unary gRPC methods.
-- Server-streaming gRPC methods.
-- Client-streaming and bidi-streaming gRPC methods.
-- Generic `GrpcStatusError` failures for generated RPCs.
-- Build-time `.proto` code generation with Buf/protoc.
-- TLS and mTLS on server (`tls` on `serve`/`serveAll`) and client (`tls` on
-  `GrpcClientProtocol.layer`/`makeTransport`). See
-  [getting started](docs/users/getting-started.md#tls-and-mtls).
-- Bearer authentication via `GrpcAuth`: a per-request `authorization` header
-  interceptor plus static and auto-refreshing token layers. See
-  [getting started](docs/users/getting-started.md#bearer-authentication).
-- Custom client interceptors: pass connect `Interceptor`s via `interceptors`
-  on `GrpcClientProtocol.layer`/`makeTransport`, or build metadata-resolving
-  ones with `GrpcClientProtocol.metadataInterceptor`.
-- gRPC health checking protocol (`grpc.health.v1`) via `GrpcHealth`: a
-  ready-made `Health` service for `serveAll`, a per-service status map, and a
-  health client. See
-  [getting started](docs/users/getting-started.md#health-checking).
-- gRPC server reflection (`grpc.reflection.v1` plus the `v1alpha` alias) via
-  `GrpcReflection`: `grpcurl` and friends work without local `.proto` files.
-  See [getting started](docs/users/getting-started.md#server-reflection).
 
 ## Roadmap
 
@@ -95,7 +65,7 @@ design.
 ```sh
 pnpm install
 pnpm build
-pnpm test
+pnpm test:unit
 pnpm demo:generate
 ```
 
@@ -129,92 +99,10 @@ support policy.
 
 ### Generating from your own `.proto` files
 
-Codegen runs through [Buf](https://buf.build). Install the plugins alongside
-Buf in the package that owns your protos:
-
-```sh
-pnpm add -D @bufbuild/buf @bufbuild/protoc-gen-es @effect-grpc/protoc-gen-effect-grpc
-```
-
-Point Buf at your proto sources with a `buf.yaml`:
-
-```yaml
-version: v2
-modules:
-  - path: proto
-lint:
-  use:
-    - STANDARD
-```
-
-Configure both plugins in a `buf.gen.yaml`. `protoc-gen-es` emits the
-protobuf-es messages and `protoc-gen-effect-grpc` emits the effect-grpc glue:
-
-```yaml
-version: v2
-clean: true
-plugins:
-  - local: protoc-gen-es
-    out: src/generated
-    opt:
-      - target=ts
-      - import_extension=js
-  - local: protoc-gen-effect-grpc
-    out: src/generated
-    opt:
-      - target=ts
-      - import_extension=js
-      - errors=grpc-status
-```
-
-Then run the generator. Buf resolves the `local:` plugins from `node_modules`,
-so no global install is required:
-
-```sh
-# Generate into src/generated for every module in buf.yaml
-pnpm exec buf generate
-
-# Generate from an explicit input directory
-pnpm exec buf generate proto
-
-# Lint protos before generating
-pnpm exec buf lint
-```
-
-A typical project wires this into a `generate` script (the demo proto uses
-`"generate": "buf generate"`), so consumers run `pnpm --filter <pkg> generate`.
-
-#### `protoc-gen-effect-grpc` options
-
-Pass these under `opt:` in `buf.gen.yaml` (or as `--effect-grpc_opt` flags when
-invoking `protoc` directly):
-
-| Option             | Values                                                                          | Default       | Description                                    |
-| ------------------ | ------------------------------------------------------------------------------- | ------------- | ---------------------------------------------- |
-| `import_extension` | `js`, `ts`                                                                      | `js`          | Extension used in generated import paths.      |
-| `errors`           | `grpc-status`                                                                   | `grpc-status` | Error model for generated RPCs.                |
-| `methods`          | comma list of `unary`, `server-streaming`, `client-streaming`, `bidi-streaming` | all kinds     | Method kinds to emit.                          |
-| `int64`            | `bigint`                                                                        | `bigint`      | TypeScript representation for 64-bit integers. |
-
-Unknown options and unsupported values fail codegen with a clear error.
-
-## Effect Compatibility
-
-This prototype currently targets `effect@4.0.0-beta.92`. It uses unstable
-Effect modules (e.g. `effect/unstable/http`), so compatibility is
-intentionally pinned. Effect beta upgrades must update tests, generated code,
-and package smoke together.
-
-## Error Model
-
-Every generated RPC currently uses one generic `GrpcStatusError` schema. Native
-Connect/gRPC errors are translated at the transport boundary and surface to
-callers as typed `GrpcStatusError` failures.
-
-`GrpcStatusError` is a schema-backed tagged error, so generated client failures
-are decoded into real `GrpcStatusError` instances. Discriminate them by their
-`_tag` (`"GrpcStatusError"`) — e.g. with `Effect.catchTag("GrpcStatusError", …)`
-or a `_tag === "GrpcStatusError"` check — rather than relying on `instanceof`.
+Codegen runs through [Buf](https://buf.build). See the
+[`protoc-gen-effect-grpc` README](packages/protoc-gen-effect-grpc/README.md)
+for the install line, the `buf.yaml`/`buf.gen.yaml` recipe, and the full
+generator option table.
 
 ## Docs
 
@@ -223,8 +111,6 @@ or a `_tag === "GrpcStatusError"` check — rather than relying on `instanceof`.
 - [Current limitations](docs/users/limitations.md)
 - [Architecture](docs/contributors/architecture.md)
 - [Protocol bridge](docs/contributors/protocol-bridge.md)
-- [Codegen](docs/contributors/codegen.md)
-- [Testing](docs/contributors/testing.md)
 
 ## Releases
 

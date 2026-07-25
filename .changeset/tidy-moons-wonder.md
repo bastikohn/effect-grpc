@@ -1,6 +1,5 @@
 ---
 "@effect-grpc/effect-grpc": patch
-"@effect-grpc/codegen": patch
 "@effect-grpc/protoc-gen-effect-grpc": patch
 ---
 

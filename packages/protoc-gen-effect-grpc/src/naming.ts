@@ -1,8 +1,5 @@
 import { dirname, relative } from "node:path/posix";
 
-export const lowerFirst = (value: string) =>
-  value.length === 0 ? value : value[0]!.toLowerCase() + value.slice(1);
-
 export const protoBaseName = (protoFileName: string) => {
   const slash = protoFileName.lastIndexOf("/");
   const fileName = slash >= 0 ? protoFileName.slice(slash + 1) : protoFileName;

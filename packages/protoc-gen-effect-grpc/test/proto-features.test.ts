@@ -5,7 +5,8 @@ import { describe, expect, it } from "vitest";
 import {
   generateProtoFeature,
   type GeneratedProtoFeature,
-  typecheckProtoFeature,
+  runTypecheck,
+  writeTypecheckSource,
 } from "./protoFeatureFixtures.js";
 import { Schema } from "../../effect-grpc/node_modules/effect/dist/index.js";
 
@@ -59,7 +60,7 @@ describe("proto feature fixtures", () => {
   }, 120_000);
 
   it("typechecks generated output", () => {
-    typecheckProtoFeature(
+    writeTypecheckSource(
       generateProtoFeature("repeated_scalars"),
       [
         'import { create } from "@bufbuild/protobuf";',
@@ -84,7 +85,7 @@ describe("proto feature fixtures", () => {
         "",
       ].join("\n"),
     );
-    typecheckProtoFeature(
+    writeTypecheckSource(
       generateProtoFeature("repeated_messages"),
       [
         'import { UserListSchema as UserListPbSchema } from "./repeated_messages_pb.js";',
@@ -100,7 +101,7 @@ describe("proto feature fixtures", () => {
         "",
       ].join("\n"),
     );
-    typecheckProtoFeature(
+    writeTypecheckSource(
       generateProtoFeature("enums"),
       [
         'import { EnumUserSchema as EnumUserPbSchema } from "./enums_pb.js";',
@@ -114,7 +115,7 @@ describe("proto feature fixtures", () => {
         "",
       ].join("\n"),
     );
-    typecheckProtoFeature(
+    writeTypecheckSource(
       generateProtoFeature("imported_messages", {
         primary: "imported_messages.proto",
         protoFiles: ["imported_common.proto", "imported_messages.proto"],
@@ -132,7 +133,7 @@ describe("proto feature fixtures", () => {
         "",
       ].join("\n"),
     );
-    typecheckProtoFeature(
+    writeTypecheckSource(
       generateProtoFeature("int64_bigint"),
       [
         'import { Int64ScalarsSchema as Int64ScalarsPbSchema } from "./int64_bigint_pb.js";',
@@ -145,7 +146,7 @@ describe("proto feature fixtures", () => {
         "",
       ].join("\n"),
     );
-    typecheckProtoFeature(
+    writeTypecheckSource(
       generateProtoFeature("well_known_types"),
       [
         'import { Duration } from "effect";',
@@ -171,7 +172,7 @@ describe("proto feature fixtures", () => {
         "",
       ].join("\n"),
     );
-    typecheckProtoFeature(
+    writeTypecheckSource(
       generateProtoFeature("field_shapes"),
       [
         'import { Duration } from "effect";',
@@ -207,7 +208,7 @@ describe("proto feature fixtures", () => {
         "",
       ].join("\n"),
     );
-    typecheckProtoFeature(
+    writeTypecheckSource(
       generateProtoFeature("maps"),
       [
         'import { MapValuesSchema as MapValuesPbSchema } from "./maps_pb.js";',
@@ -220,7 +221,7 @@ describe("proto feature fixtures", () => {
         "",
       ].join("\n"),
     );
-    typecheckProtoFeature(
+    writeTypecheckSource(
       generateProtoFeature("oneofs"),
       [
         'import { SearchRequestSchema as SearchRequestPbSchema } from "./oneofs_pb.js";',
@@ -233,7 +234,7 @@ describe("proto feature fixtures", () => {
         "",
       ].join("\n"),
     );
-    typecheckProtoFeature(
+    writeTypecheckSource(
       generateProtoFeature("nested_messages"),
       [
         'import { NestedOuterSchema as NestedOuterPbSchema } from "./nested_messages_pb.js";',
@@ -256,7 +257,7 @@ describe("proto feature fixtures", () => {
         "",
       ].join("\n"),
     );
-    typecheckProtoFeature(
+    writeTypecheckSource(
       generateProtoFeature("cross_package", {
         primary: "cross_package.proto",
         protoFiles: ["cross_package_common.proto", "cross_package.proto"],
@@ -284,7 +285,7 @@ describe("proto feature fixtures", () => {
         "",
       ].join("\n"),
     );
-    typecheckProtoFeature(
+    writeTypecheckSource(
       generateProtoFeature("optional_scalars"),
       [
         'import { OptionalScalarsSchema as OptionalScalarsPbSchema } from "./optional_scalars_pb.js";',
@@ -314,7 +315,7 @@ describe("proto feature fixtures", () => {
     // and as a method input/output it was read back as the well-known it is
     // named after, which declared its schema and type a second time. Only a
     // typecheck sees those duplicate declarations.
-    typecheckProtoFeature(
+    writeTypecheckSource(
       generateProtoFeature("bytes_collision"),
       [
         "import {",
@@ -367,6 +368,8 @@ describe("proto feature fixtures", () => {
         "",
       ].join("\n"),
     );
+
+    runTypecheck();
   }, 120_000);
 
   it("converts repeated scalar fields through generated registry output", async () => {

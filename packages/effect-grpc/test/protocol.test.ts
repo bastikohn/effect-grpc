@@ -6,6 +6,11 @@ import * as GrpcClientProtocol from "../src/GrpcClientProtocol.js";
 import type { GrpcMethodEntry } from "../src/GrpcMethodRegistry.js";
 import * as GrpcServerProtocol from "../src/GrpcServerProtocol.js";
 import * as GrpcStatusError from "../src/GrpcStatusError.js";
+import {
+  captureImplementation,
+  handlerContext,
+  methodEntries,
+} from "./support/serverHarness.js";
 
 describe("metadataInterceptor", () => {
   it("adds metadata as defaults, lets per-call win, and re-reads per call", async () => {
@@ -668,39 +673,12 @@ const handlers = (
   handler: GrpcServerProtocol.GrpcHandler,
 ): GrpcServerProtocol.GrpcHandlers => new Map([[tag, handler]]);
 
-const unaryEntry: GrpcMethodEntry = {
-  kind: "unary",
-  tag: "demo.v1.TestService/Get",
-  service: {} as GrpcMethodEntry["service"],
-  localName: "get",
-  payloadSchema: Schema.Unknown,
-  successSchema: Schema.Unknown,
-  toGrpcRequest: (value) => value as never,
-  fromGrpcRequest: (message) => message,
-  toGrpcResponse: (value) => value as never,
-  fromGrpcResponse: (message) => message,
-};
-
-const serverStreamingEntry: GrpcMethodEntry = {
-  ...unaryEntry,
-  kind: "server-streaming",
-  tag: "demo.v1.TestService/Watch",
-  localName: "watch",
-};
-
-const clientStreamingEntry: GrpcMethodEntry = {
-  ...unaryEntry,
-  kind: "client-streaming",
-  tag: "demo.v1.TestService/Upload",
-  localName: "upload",
-};
-
-const bidiStreamingEntry: GrpcMethodEntry = {
-  ...unaryEntry,
-  kind: "bidi-streaming",
-  tag: "demo.v1.TestService/Chat",
-  localName: "chat",
-};
+const {
+  unary: unaryEntry,
+  serverStreaming: serverStreamingEntry,
+  clientStreaming: clientStreamingEntry,
+  bidiStreaming: bidiStreamingEntry,
+} = methodEntries("demo.v1.TestService");
 
 const captureUnaryImplementation = (
   routes: (router: ConnectRouter) => ConnectRouter,
@@ -723,39 +701,3 @@ const captureServerStreamingImplementation = (
     string,
     (request: unknown, context: HandlerContext) => AsyncIterable<unknown>
   >;
-
-const captureImplementation = (
-  routes: (router: ConnectRouter) => ConnectRouter,
-) => {
-  let implementation:
-    | Record<
-        string,
-        (
-          request: unknown,
-          context: HandlerContext,
-        ) => Promise<unknown> | AsyncIterable<unknown>
-      >
-    | undefined;
-  const router = {
-    service(_service: unknown, serviceImplementation: unknown) {
-      implementation = serviceImplementation as typeof implementation;
-      return router;
-    },
-  };
-
-  routes(router as unknown as ConnectRouter);
-
-  if (!implementation) {
-    throw new Error("Expected routes to register a service implementation");
-  }
-  return implementation;
-};
-
-const handlerContext = (options?: {
-  readonly headers?: Headers;
-  readonly signal?: AbortSignal;
-}): HandlerContext =>
-  ({
-    requestHeader: options?.headers ?? new Headers(),
-    signal: options?.signal ?? new AbortController().signal,
-  }) as HandlerContext;

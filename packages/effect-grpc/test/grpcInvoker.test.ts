@@ -1,12 +1,12 @@
 import type { Transport } from "@connectrpc/connect";
 import { Code, ConnectError } from "@connectrpc/connect";
-import { Deferred, Effect, Fiber, Ref, Schema, Stream } from "effect";
+import { Deferred, Effect, Fiber, Ref, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 
 import * as GrpcClientProtocol from "../src/GrpcClientProtocol.js";
 import * as GrpcInvoker from "../src/GrpcInvoker.js";
-import type { GrpcMethodEntry } from "../src/GrpcMethodRegistry.js";
 import * as GrpcStatusError from "../src/GrpcStatusError.js";
+import { methodEntries } from "./support/serverHarness.js";
 
 const withInvokerEffect = <A, E>(
   handlers: GrpcInvoker.GrpcInMemoryHandlers,
@@ -600,30 +600,7 @@ describe("GrpcInvoker (connect adapter)", () => {
   });
 });
 
-const streamingService = {
-  typeName: "test.Svc",
-  methods: [
-    { methodKind: "server_streaming", localName: "serverStream" },
-    { methodKind: "bidi_streaming", localName: "bidiStream" },
-  ],
-} as unknown as GrpcMethodEntry["service"];
-
-const serverStreamingEntry: GrpcMethodEntry = {
-  kind: "server-streaming",
-  tag: "test.Svc/ServerStream",
-  service: streamingService,
-  localName: "serverStream",
-  payloadSchema: Schema.Unknown,
-  successSchema: Schema.Unknown,
-  toGrpcRequest: (value) => value as never,
-  fromGrpcRequest: (message) => message,
-  toGrpcResponse: (value) => value as never,
-  fromGrpcResponse: (message) => message,
-};
-
-const bidiStreamingEntry: GrpcMethodEntry = {
-  ...serverStreamingEntry,
-  kind: "bidi-streaming",
-  tag: "test.Svc/BidiStream",
-  localName: "bidiStream",
-};
+const {
+  serverStreaming: serverStreamingEntry,
+  bidiStreaming: bidiStreamingEntry,
+} = methodEntries("test.Svc");

@@ -10,6 +10,10 @@ import {
   FieldDescriptorProto_Type,
   type FileDescriptorProto,
   FieldDescriptorProtoSchema,
+  file_google_protobuf_any,
+  file_google_protobuf_duration,
+  file_google_protobuf_empty,
+  file_google_protobuf_wrappers,
   FileDescriptorProtoSchema,
   MessageOptionsSchema,
   type MethodDescriptorProto,
@@ -110,47 +114,21 @@ const demoFile: GeneratorFile = {
 };
 
 describe("generateFile", () => {
+  // The snapshot below pins the whole emission; the assertions kept here name
+  // the two decisions a reader cannot infer from it — the annotated
+  // `Schema.suspend` recursive edge, and that the server path routes through
+  // `handlersLayer` rather than Effect RPC.
   it("generates schemas, registry, client, and server glue", () => {
     const output = generateFile(demoFile);
 
-    expect(output).toContain("export const UserSchema = Schema.Struct");
     expect(output).toContain(
       "user: Schema.optional(Schema.suspend((): typeof UserSchema => UserSchema))",
     );
-    expect(output).toContain(
-      'user: readField(message, "user") == null ? undefined : fromUser(readField(message, "user"))',
-    );
-    expect(output).toContain("export type UserServiceClientError");
-    expect(output).toContain("UserServiceGrpcRegistry");
-    expect(output).toContain("export interface UserServiceClientService");
-    expect(output).toContain("export interface UserServiceImplementation");
-    expect(output).toContain("UserServiceHandlersLayer");
-    expect(output).toMatchSnapshot();
-  });
-
-  it("routes every method through the unified handlers map", () => {
-    const output = generateFile(demoFile);
-
-    // The server path is fully off Effect RPC: no `Rpc.make`/`RpcGroup`
-    // consts and no `effect/unstable/rpc` import in generated code.
+    expect(output).toContain("GrpcServerProtocol.handlersLayer<R>({");
     expect(output).not.toContain("Rpc.make(");
     expect(output).not.toContain("RpcGroup");
     expect(output).not.toContain("effect/unstable/rpc");
-    expect(output).toContain(
-      'invoker.clientStream("demo.v1.UserService/UploadUsers", requests, options)',
-    );
-    expect(output).toContain(
-      'invoker.bidiStream("demo.v1.UserService/ChatUsers", requests, options)',
-    );
-    expect(output).toContain("GrpcServerProtocol.handlersLayer<R>({");
-    expect(output).toContain('kind: "unary"');
-    expect(output).toContain('kind: "server-streaming"');
-    expect(output).toContain('kind: "client-streaming"');
-    expect(output).toContain('kind: "bidi-streaming"');
-    expect(output).toContain(
-      "requests: Stream.Stream<User, GrpcStatusError.GrpcStatusError>",
-    );
-    expect(output).toContain("successSchema: GetUserResponseSchema");
+    expect(output).toMatchSnapshot();
   });
 
   it("omits the Stream import for unary-only services", () => {
@@ -434,7 +412,7 @@ describe("plugin fixture", () => {
     const response = plugin.run(
       fixtureRequest([], {
         dependency: ["google/protobuf/empty.proto"],
-        extraFiles: [emptyFile()],
+        extraFiles: [file_google_protobuf_empty.proto],
         methodInputType: ".google.protobuf.Empty",
         methodOutputType: ".google.protobuf.Empty",
       }),
@@ -458,7 +436,10 @@ describe("plugin fixture", () => {
           "google/protobuf/duration.proto",
           "google/protobuf/wrappers.proto",
         ],
-        extraFiles: [durationFile(), wrappersFile()],
+        extraFiles: [
+          file_google_protobuf_duration.proto,
+          file_google_protobuf_wrappers.proto,
+        ],
         methodInputType: ".google.protobuf.BoolValue",
         methodOutputType: ".google.protobuf.Duration",
       }),
@@ -602,7 +583,7 @@ describe("plugin fixture", () => {
         ],
         {
           dependency: ["google/protobuf/any.proto"],
-          extraFiles: [anyFile()],
+          extraFiles: [file_google_protobuf_any.proto],
         },
       ),
     );
@@ -820,60 +801,3 @@ const expectUnsupportedField = (
     message,
   );
 };
-
-const anyFile = () =>
-  create(FileDescriptorProtoSchema, {
-    name: "google/protobuf/any.proto",
-    package: "google.protobuf",
-    syntax: "proto3",
-    messageType: [
-      create(DescriptorProtoSchema, {
-        name: "Any",
-        field: [
-          field("type_url", 1, FieldDescriptorProto_Type.STRING),
-          field("value", 2, FieldDescriptorProto_Type.BYTES),
-        ],
-      }),
-    ],
-  });
-
-const emptyFile = () =>
-  create(FileDescriptorProtoSchema, {
-    name: "google/protobuf/empty.proto",
-    package: "google.protobuf",
-    syntax: "proto3",
-    messageType: [
-      create(DescriptorProtoSchema, {
-        name: "Empty",
-      }),
-    ],
-  });
-
-const durationFile = () =>
-  create(FileDescriptorProtoSchema, {
-    name: "google/protobuf/duration.proto",
-    package: "google.protobuf",
-    syntax: "proto3",
-    messageType: [
-      create(DescriptorProtoSchema, {
-        name: "Duration",
-        field: [
-          field("seconds", 1, FieldDescriptorProto_Type.INT64),
-          field("nanos", 2, FieldDescriptorProto_Type.INT32),
-        ],
-      }),
-    ],
-  });
-
-const wrappersFile = () =>
-  create(FileDescriptorProtoSchema, {
-    name: "google/protobuf/wrappers.proto",
-    package: "google.protobuf",
-    syntax: "proto3",
-    messageType: [
-      create(DescriptorProtoSchema, {
-        name: "BoolValue",
-        field: [field("value", 1, FieldDescriptorProto_Type.BOOL)],
-      }),
-    ],
-  });

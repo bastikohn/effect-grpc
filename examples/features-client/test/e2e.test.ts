@@ -23,14 +23,14 @@ import {
   UserServiceClient,
   UserServiceClientLayer,
   UserServiceGrpcRegistry,
-  UserServiceHandlersLayer,
+  UserServiceHandlers,
   type UserServiceImplementation,
 } from "@effect-grpc/simple-proto/generated/demo/v1/user_service_effect_grpc";
 import {
   FeatureShowcaseServiceClient,
   FeatureShowcaseServiceClientLayer,
   FeatureShowcaseServiceGrpcRegistry,
-  FeatureShowcaseServiceHandlersLayer,
+  FeatureShowcaseServiceHandlers,
   type FeatureRequest,
   type FeatureShowcaseServiceImplementation,
 } from "@effect-grpc/features-proto/generated/features/v1/showcase_effect_grpc";
@@ -465,14 +465,14 @@ const withServer = <A, E, R>(
         services: [
           {
             registry: FeatureShowcaseServiceGrpcRegistry,
-            handlers: FeatureShowcaseServiceHandlersLayer({
+            handlers: FeatureShowcaseServiceHandlers({
               ...implementation,
               ...overrides,
             }),
           },
           {
             registry: UserServiceGrpcRegistry,
-            handlers: UserServiceHandlersLayer(userImplementation),
+            handlers: UserServiceHandlers(userImplementation),
           },
         ],
       }).pipe(Effect.forkScoped);

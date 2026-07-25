@@ -1,7 +1,7 @@
 import * as http2 from "node:http2";
 import type { ConnectRouter } from "@connectrpc/connect";
 import { connectNodeAdapter } from "@connectrpc/connect-node";
-import { Context, Effect, Layer, Option, Scope } from "effect";
+import { Effect, Scope } from "effect";
 
 import * as MethodRegistry from "./GrpcMethodRegistry.js";
 import type { GrpcMethodRegistry } from "./GrpcMethodRegistry.js";
@@ -36,7 +36,7 @@ export interface ServeOptions {
 
 export interface ServeAllService<R = never> {
   readonly registry: GrpcMethodRegistry;
-  readonly handlers: Layer.Layer<GrpcServerProtocol.GrpcHandlers, never, R>;
+  readonly handlers: Effect.Effect<GrpcServerProtocol.GrpcHandlers, never, R>;
 }
 
 export interface ServeAllOptions<
@@ -54,17 +54,15 @@ export const serveAll = <
   options: ServeAllOptions<Services>,
 ): Effect.Effect<never, never, Scope.Scope | ServiceRequirements<Services>> =>
   Effect.gen(function* () {
-    // Handlers layers are built individually so each service's handlers
-    // (carried inside the layer) can be collected without one service's map
-    // overriding another's.
-    const contexts = yield* Effect.forEach(options.services, (service) =>
-      Layer.build(service.handlers),
+    const maps = yield* Effect.forEach(
+      options.services,
+      (service) => service.handlers,
     );
     const { routes } = yield* GrpcServerProtocol.make({
       registry: MethodRegistry.merge(
         options.services.map((service) => service.registry),
       ),
-      handlers: mergeHandlers(contexts),
+      handlers: new Map(maps.flatMap((map) => [...map])),
     });
 
     return yield* serve({
@@ -85,10 +83,10 @@ export const serve = (
         options.routes(router);
       },
     });
-    const server = yield* Effect.acquireRelease(
+    const { server } = yield* Effect.acquireRelease(
       Effect.promise(
         () =>
-          new Promise<NodeHttp2Server>((resolve, reject) => {
+          new Promise<ListeningServer>((resolve, reject) => {
             const sessions = new Set<http2.ServerHttp2Session>();
             const server =
               options.tls === undefined
@@ -97,11 +95,6 @@ export const serve = (
                     secureServerOptions(options.tls),
                     handler,
                   );
-            (
-              server as unknown as {
-                [kSessions]: Set<http2.ServerHttp2Session>;
-              }
-            )[kSessions] = sessions;
             server.on("session", (session) => {
               sessions.add(session);
               session.once("close", () => {
@@ -114,14 +107,15 @@ export const serve = (
             };
             const onListening = () => {
               server.off("error", onError);
-              resolve(server);
+              resolve({ server, sessions });
             };
             server.once("error", onError);
             server.once("listening", onListening);
             server.listen(options.port, options.host);
           }),
       ),
-      (server) => Effect.promise(() => closeServer(server, options)),
+      ({ server, sessions }) =>
+        Effect.promise(() => closeServer(server, sessions, options)),
     );
 
     yield* Effect.logInfo(
@@ -143,25 +137,13 @@ export const serve = (
     return server as never;
   });
 
-const mergeHandlers = (
-  contexts: ReadonlyArray<Context.Context<GrpcServerProtocol.GrpcHandlers>>,
-): GrpcServerProtocol.GrpcHandlers => {
-  const merged = new Map<string, GrpcServerProtocol.GrpcHandler>();
-  for (const context of contexts) {
-    const handlers = Context.getOption(
-      context,
-      GrpcServerProtocol.GrpcHandlers,
-    );
-    if (Option.isSome(handlers)) {
-      for (const [tag, handler] of handlers.value) {
-        merged.set(tag, handler);
-      }
-    }
-  }
-  return merged;
-};
-
 type NodeHttp2Server = http2.Http2Server | http2.Http2SecureServer;
+
+/** A listening server and the live sessions {@link closeServer} must drain. */
+interface ListeningServer {
+  readonly server: NodeHttp2Server;
+  readonly sessions: ReadonlySet<http2.ServerHttp2Session>;
+}
 
 /**
  * Maps the first-class TLS options onto Node's secure-server options.
@@ -178,19 +160,13 @@ const secureServerOptions = (
     : {}),
 });
 
-const kSessions = Symbol("effectGrpcHttp2Sessions");
-
-const serverSessions = (server: NodeHttp2Server) =>
-  (
-    server as unknown as {
-      readonly [kSessions]?: Set<http2.ServerHttp2Session>;
-    }
-  )[kSessions] ?? new Set<http2.ServerHttp2Session>();
-
-const closeServer = (server: NodeHttp2Server, options: ServeOptions) =>
+const closeServer = (
+  server: NodeHttp2Server,
+  sessions: ReadonlySet<http2.ServerHttp2Session>,
+  options: ServeOptions,
+) =>
   new Promise<void>((resolve) => {
     let resolved = false;
-    const sessions = serverSessions(server);
     const resolveOnce = () => {
       if (resolved) return;
       resolved = true;

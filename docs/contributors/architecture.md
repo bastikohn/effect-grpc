@@ -6,14 +6,15 @@ The repository has two public packages:
   metadata types, node server helper, and codegen support helpers.
 - `@effect-grpc/protoc-gen-effect-grpc` owns build-time generation from
   protobuf descriptors to Effect schemas, registries, clients, and server
-  handler layers.
+  handlers.
 
 Generated code is the contract between the packages. It imports protobuf-es
 service descriptors, builds a `GrpcMethodRegistry`, and exposes a narrow client
 and server facade. Generated clients invoke every method kind through the
 `GrpcInvoker` seam — the single client-side entry point to the transport —
-while generated server handler layers publish every method kind into the
-`GrpcServerProtocol.GrpcHandlers` map — the single server-side handler seam.
+while generated `*Handlers` functions return every method kind as an `Effect`
+of the `GrpcServerProtocol.GrpcHandlers` map — the single server-side handler
+seam.
 Runtime code should not need to inspect `.proto` files.
 
 Symbols exported from package roots are public. Files under `internal/*` are not

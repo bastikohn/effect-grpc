@@ -24,9 +24,6 @@ export const RepeatedScalarsSchema = Schema.Struct({
 });
 export type RepeatedScalars = Schema.Schema.Type<typeof RepeatedScalarsSchema>;
 
-const readField = (message: unknown, field: string): unknown =>
-  typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
-
 const compact = <T extends Record<string, unknown>>(object: T): T => {
   const result: Record<string, unknown> = {};
   for (const key of Object.keys(object)) {
@@ -42,25 +39,25 @@ const toGrpc$Bytes = (value: unknown): Uint8Array =>
   Uint8Array.from(Buffer.from(value as string, "base64"));
 
 export const fromRepeatedScalars = (message: unknown): unknown => compact({
-  tags: ((readField(message, "tags") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as string),
-  flags: ((readField(message, "flags") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as boolean),
-  blobs: ((readField(message, "blobs") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => fromGrpc$Bytes((value) as Uint8Array)),
-  scores: ((readField(message, "scores") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as number),
-  counts: ((readField(message, "counts") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as number),
-  ratios: ((readField(message, "ratios") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as number),
-  weights: ((readField(message, "weights") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as number),
+  tags: ((CodegenSupport.readField(message, "tags") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as string),
+  flags: ((CodegenSupport.readField(message, "flags") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as boolean),
+  blobs: ((CodegenSupport.readField(message, "blobs") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => fromGrpc$Bytes((value) as Uint8Array)),
+  scores: ((CodegenSupport.readField(message, "scores") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as number),
+  counts: ((CodegenSupport.readField(message, "counts") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as number),
+  ratios: ((CodegenSupport.readField(message, "ratios") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as number),
+  weights: ((CodegenSupport.readField(message, "weights") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as number),
 });
 
 export const toRepeatedScalars = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    tags: ((readField(message, "tags") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as string),
-    flags: ((readField(message, "flags") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as boolean),
-    blobs: ((readField(message, "blobs") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => toGrpc$Bytes(value)),
-    scores: ((readField(message, "scores") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as number),
-    counts: ((readField(message, "counts") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as number),
-    ratios: ((readField(message, "ratios") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as number),
-    weights: ((readField(message, "weights") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as number),
+    tags: ((CodegenSupport.readField(message, "tags") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as string),
+    flags: ((CodegenSupport.readField(message, "flags") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as boolean),
+    blobs: ((CodegenSupport.readField(message, "blobs") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => toGrpc$Bytes(value)),
+    scores: ((CodegenSupport.readField(message, "scores") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as number),
+    counts: ((CodegenSupport.readField(message, "counts") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as number),
+    ratios: ((CodegenSupport.readField(message, "ratios") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as number),
+    weights: ((CodegenSupport.readField(message, "weights") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as number),
   });
 };
 
@@ -105,10 +102,10 @@ export interface RepeatedScalarFeatureImplementation<R = never> {
   readonly echo: (request: RepeatedScalars, context: CodegenSupport.GrpcServerContext) => Effect.Effect<RepeatedScalars, GrpcStatusError.GrpcStatusError, R>;
 }
 
-export const RepeatedScalarFeatureHandlersLayer = <R>(
+export const RepeatedScalarFeatureHandlers = <R>(
   implementation: RepeatedScalarFeatureImplementation<R>,
-): Layer.Layer<GrpcServerProtocol.GrpcHandlers, never, R> =>
-  GrpcServerProtocol.handlersLayer<R>({
+): Effect.Effect<GrpcServerProtocol.GrpcHandlers, never, R> =>
+  GrpcServerProtocol.handlersEffect<R>({
     "features.v1.RepeatedScalarFeature/Echo": {
       kind: "unary",
       handler: (request, context) => implementation.echo(request as RepeatedScalars, context),
@@ -148,9 +145,6 @@ export const AddressSchema = Schema.Struct({
 });
 export type Address = Schema.Schema.Type<typeof AddressSchema>;
 
-const readField = (message: unknown, field: string): unknown =>
-  typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
-
 const compact = <T extends Record<string, unknown>>(object: T): T => {
   const result: Record<string, unknown> = {};
   for (const key of Object.keys(object)) {
@@ -160,37 +154,37 @@ const compact = <T extends Record<string, unknown>>(object: T): T => {
 };
 
 export const fromUserList = (message: unknown): unknown => compact({
-  users: ((readField(message, "users") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => fromUser(value)),
+  users: ((CodegenSupport.readField(message, "users") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => fromUser(value)),
 });
 
 export const toUserList = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    users: ((readField(message, "users") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => toUser(value)),
+    users: ((CodegenSupport.readField(message, "users") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => toUser(value)),
   });
 };
 
 export const fromUser = (message: unknown): unknown => compact({
-  id: (readField(message, "id")) as string,
-  addresses: ((readField(message, "addresses") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => fromAddress(value)),
+  id: (CodegenSupport.readField(message, "id")) as string,
+  addresses: ((CodegenSupport.readField(message, "addresses") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => fromAddress(value)),
 });
 
 export const toUser = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    id: (readField(message, "id")) as string,
-    addresses: ((readField(message, "addresses") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => toAddress(value)),
+    id: (CodegenSupport.readField(message, "id")) as string,
+    addresses: ((CodegenSupport.readField(message, "addresses") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => toAddress(value)),
   });
 };
 
 export const fromAddress = (message: unknown): unknown => compact({
-  city: (readField(message, "city")) as string,
+  city: (CodegenSupport.readField(message, "city")) as string,
 });
 
 export const toAddress = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    city: (readField(message, "city")) as string,
+    city: (CodegenSupport.readField(message, "city")) as string,
   });
 };
 
@@ -235,10 +229,10 @@ export interface RepeatedMessageFeatureImplementation<R = never> {
   readonly echo: (request: UserList, context: CodegenSupport.GrpcServerContext) => Effect.Effect<UserList, GrpcStatusError.GrpcStatusError, R>;
 }
 
-export const RepeatedMessageFeatureHandlersLayer = <R>(
+export const RepeatedMessageFeatureHandlers = <R>(
   implementation: RepeatedMessageFeatureImplementation<R>,
-): Layer.Layer<GrpcServerProtocol.GrpcHandlers, never, R> =>
-  GrpcServerProtocol.handlersLayer<R>({
+): Effect.Effect<GrpcServerProtocol.GrpcHandlers, never, R> =>
+  GrpcServerProtocol.handlersEffect<R>({
     "features.v1.RepeatedMessageFeature/Echo": {
       kind: "unary",
       handler: (request, context) => implementation.echo(request as UserList, context),
@@ -272,9 +266,6 @@ export const EnumUserSchema = Schema.Struct({
 });
 export type EnumUser = Schema.Schema.Type<typeof EnumUserSchema>;
 
-const readField = (message: unknown, field: string): unknown =>
-  typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
-
 const compact = <T extends Record<string, unknown>>(object: T): T => {
   const result: Record<string, unknown> = {};
   for (const key of Object.keys(object)) {
@@ -284,17 +275,17 @@ const compact = <T extends Record<string, unknown>>(object: T): T => {
 };
 
 export const fromEnumUser = (message: unknown): unknown => compact({
-  id: (readField(message, "id")) as string,
-  state: readField(message, "state") as UserState,
-  history: ((readField(message, "history") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => value as UserState),
+  id: (CodegenSupport.readField(message, "id")) as string,
+  state: CodegenSupport.readField(message, "state") as UserState,
+  history: ((CodegenSupport.readField(message, "history") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => value as UserState),
 });
 
 export const toEnumUser = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    id: (readField(message, "id")) as string,
-    state: readField(message, "state") as number,
-    history: ((readField(message, "history") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => value as number),
+    id: (CodegenSupport.readField(message, "id")) as string,
+    state: CodegenSupport.readField(message, "state") as number,
+    history: ((CodegenSupport.readField(message, "history") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => value as number),
   });
 };
 
@@ -339,10 +330,10 @@ export interface EnumFeatureImplementation<R = never> {
   readonly echo: (request: EnumUser, context: CodegenSupport.GrpcServerContext) => Effect.Effect<EnumUser, GrpcStatusError.GrpcStatusError, R>;
 }
 
-export const EnumFeatureHandlersLayer = <R>(
+export const EnumFeatureHandlers = <R>(
   implementation: EnumFeatureImplementation<R>,
-): Layer.Layer<GrpcServerProtocol.GrpcHandlers, never, R> =>
-  GrpcServerProtocol.handlersLayer<R>({
+): Effect.Effect<GrpcServerProtocol.GrpcHandlers, never, R> =>
+  GrpcServerProtocol.handlersEffect<R>({
     "features.v1.EnumFeature/Echo": {
       kind: "unary",
       handler: (request, context) => implementation.echo(request as EnumUser, context),
@@ -361,6 +352,7 @@ exports[`proto feature fixtures > snapshots generated output 4`] = `
     "// @generated by protoc-gen-effect-grpc. DO NOT EDIT.
 
 import { Schema } from "effect";
+import { CodegenSupport } from "@effect-grpc/effect-grpc";
 
 export const ImportedStateSchema = Schema.Number;
 export type ImportedState = number;
@@ -371,9 +363,6 @@ export const ImportedUserSchema = Schema.Struct({
 });
 export type ImportedUser = Schema.Schema.Type<typeof ImportedUserSchema>;
 
-const readField = (message: unknown, field: string): unknown =>
-  typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
-
 const compact = <T extends Record<string, unknown>>(object: T): T => {
   const result: Record<string, unknown> = {};
   for (const key of Object.keys(object)) {
@@ -383,15 +372,15 @@ const compact = <T extends Record<string, unknown>>(object: T): T => {
 };
 
 export const fromImportedUser = (message: unknown): unknown => compact({
-  id: (readField(message, "id")) as string,
-  name: (readField(message, "name")) as string,
+  id: (CodegenSupport.readField(message, "id")) as string,
+  name: (CodegenSupport.readField(message, "name")) as string,
 });
 
 export const toImportedUser = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    id: (readField(message, "id")) as string,
-    name: (readField(message, "name")) as string,
+    id: (CodegenSupport.readField(message, "id")) as string,
+    name: (CodegenSupport.readField(message, "name")) as string,
   });
 };
 
@@ -420,9 +409,6 @@ export const GetImportedUserResponseSchema = Schema.Struct({
 });
 export type GetImportedUserResponse = Schema.Schema.Type<typeof GetImportedUserResponseSchema>;
 
-const readField = (message: unknown, field: string): unknown =>
-  typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
-
 const compact = <T extends Record<string, unknown>>(object: T): T => {
   const result: Record<string, unknown> = {};
   for (const key of Object.keys(object)) {
@@ -432,15 +418,15 @@ const compact = <T extends Record<string, unknown>>(object: T): T => {
 };
 
 export const fromGetImportedUserResponse = (message: unknown): unknown => compact({
-  user: readField(message, "user") == null ? undefined : fromImportedUser(readField(message, "user")),
-  state: readField(message, "state") as ImportedState,
+  user: CodegenSupport.readField(message, "user") == null ? undefined : fromImportedUser(CodegenSupport.readField(message, "user")),
+  state: CodegenSupport.readField(message, "state") as ImportedState,
 });
 
 export const toGetImportedUserResponse = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    user: readField(message, "user") == null ? undefined : toImportedUser(readField(message, "user")),
-    state: readField(message, "state") as number,
+    user: CodegenSupport.readField(message, "user") == null ? undefined : toImportedUser(CodegenSupport.readField(message, "user")),
+    state: CodegenSupport.readField(message, "state") as number,
   });
 };
 
@@ -485,10 +471,10 @@ export interface ImportedMessageFeatureImplementation<R = never> {
   readonly echo: (request: GetImportedUserResponse, context: CodegenSupport.GrpcServerContext) => Effect.Effect<GetImportedUserResponse, GrpcStatusError.GrpcStatusError, R>;
 }
 
-export const ImportedMessageFeatureHandlersLayer = <R>(
+export const ImportedMessageFeatureHandlers = <R>(
   implementation: ImportedMessageFeatureImplementation<R>,
-): Layer.Layer<GrpcServerProtocol.GrpcHandlers, never, R> =>
-  GrpcServerProtocol.handlersLayer<R>({
+): Effect.Effect<GrpcServerProtocol.GrpcHandlers, never, R> =>
+  GrpcServerProtocol.handlersEffect<R>({
     "features.v1.ImportedMessageFeature/Echo": {
       kind: "unary",
       handler: (request, context) => implementation.echo(request as GetImportedUserResponse, context),
@@ -521,9 +507,6 @@ export const Int64ScalarsSchema = Schema.Struct({
 });
 export type Int64Scalars = Schema.Schema.Type<typeof Int64ScalarsSchema>;
 
-const readField = (message: unknown, field: string): unknown =>
-  typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
-
 const compact = <T extends Record<string, unknown>>(object: T): T => {
   const result: Record<string, unknown> = {};
   for (const key of Object.keys(object)) {
@@ -533,21 +516,21 @@ const compact = <T extends Record<string, unknown>>(object: T): T => {
 };
 
 export const fromInt64Scalars = (message: unknown): unknown => compact({
-  id: String(readField(message, "id")),
-  count: String(readField(message, "count")),
-  delta: String(readField(message, "delta")),
-  hash: String(readField(message, "hash")),
-  value: String(readField(message, "value")),
+  id: String(CodegenSupport.readField(message, "id")),
+  count: String(CodegenSupport.readField(message, "count")),
+  delta: String(CodegenSupport.readField(message, "delta")),
+  hash: String(CodegenSupport.readField(message, "hash")),
+  value: String(CodegenSupport.readField(message, "value")),
 });
 
 export const toInt64Scalars = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    id: BigInt((readField(message, "id")) as string),
-    count: BigInt((readField(message, "count")) as string),
-    delta: BigInt((readField(message, "delta")) as string),
-    hash: BigInt((readField(message, "hash")) as string),
-    value: BigInt((readField(message, "value")) as string),
+    id: BigInt((CodegenSupport.readField(message, "id")) as string),
+    count: BigInt((CodegenSupport.readField(message, "count")) as string),
+    delta: BigInt((CodegenSupport.readField(message, "delta")) as string),
+    hash: BigInt((CodegenSupport.readField(message, "hash")) as string),
+    value: BigInt((CodegenSupport.readField(message, "value")) as string),
   });
 };
 
@@ -592,10 +575,10 @@ export interface Int64BigintFeatureImplementation<R = never> {
   readonly echo: (request: Int64Scalars, context: CodegenSupport.GrpcServerContext) => Effect.Effect<Int64Scalars, GrpcStatusError.GrpcStatusError, R>;
 }
 
-export const Int64BigintFeatureHandlersLayer = <R>(
+export const Int64BigintFeatureHandlers = <R>(
   implementation: Int64BigintFeatureImplementation<R>,
-): Layer.Layer<GrpcServerProtocol.GrpcHandlers, never, R> =>
-  GrpcServerProtocol.handlersLayer<R>({
+): Effect.Effect<GrpcServerProtocol.GrpcHandlers, never, R> =>
+  GrpcServerProtocol.handlersEffect<R>({
     "features.v1.Int64BigintFeature/Echo": {
       kind: "unary",
       handler: (request, context) => implementation.echo(request as Int64Scalars, context),
@@ -634,9 +617,6 @@ export const WellKnownValuesSchema = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean),
 });
 export type WellKnownValues = Schema.Schema.Type<typeof WellKnownValuesSchema>;
-
-const readField = (message: unknown, field: string): unknown =>
-  typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
 
 const compact = <T extends Record<string, unknown>>(object: T): T => {
   const result: Record<string, unknown> = {};
@@ -695,17 +675,17 @@ const toGrpc$GoogleProtobufBoolValueMessage = (value: unknown) => ({
 });
 
 export const fromWellKnownValues = (message: unknown): unknown => compact({
-  createdAt: readField(message, "createdAt") == null ? undefined : fromGrpc$GoogleProtobufTimestamp(readField(message, "createdAt")),
-  timeout: readField(message, "timeout") == null ? undefined : fromGrpc$GoogleProtobufDuration(readField(message, "timeout")),
-  enabled: readField(message, "enabled") == null ? undefined : fromGrpc$GoogleProtobufBoolValue(readField(message, "enabled")),
+  createdAt: CodegenSupport.readField(message, "createdAt") == null ? undefined : fromGrpc$GoogleProtobufTimestamp(CodegenSupport.readField(message, "createdAt")),
+  timeout: CodegenSupport.readField(message, "timeout") == null ? undefined : fromGrpc$GoogleProtobufDuration(CodegenSupport.readField(message, "timeout")),
+  enabled: CodegenSupport.readField(message, "enabled") == null ? undefined : fromGrpc$GoogleProtobufBoolValue(CodegenSupport.readField(message, "enabled")),
 });
 
 export const toWellKnownValues = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    createdAt: readField(message, "createdAt") == null ? undefined : toGrpc$GoogleProtobufTimestamp(readField(message, "createdAt")),
-    timeout: readField(message, "timeout") == null ? undefined : toGrpc$GoogleProtobufDuration(readField(message, "timeout")),
-    enabled: readField(message, "enabled") == null ? undefined : toGrpc$GoogleProtobufBoolValue(readField(message, "enabled")),
+    createdAt: CodegenSupport.readField(message, "createdAt") == null ? undefined : toGrpc$GoogleProtobufTimestamp(CodegenSupport.readField(message, "createdAt")),
+    timeout: CodegenSupport.readField(message, "timeout") == null ? undefined : toGrpc$GoogleProtobufDuration(CodegenSupport.readField(message, "timeout")),
+    enabled: CodegenSupport.readField(message, "enabled") == null ? undefined : toGrpc$GoogleProtobufBoolValue(CodegenSupport.readField(message, "enabled")),
   });
 };
 
@@ -804,10 +784,10 @@ export interface WellKnownTypeFeatureImplementation<R = never> {
   readonly echoBoolValue: (request: Grpc$GoogleProtobufBoolValue, context: CodegenSupport.GrpcServerContext) => Effect.Effect<Grpc$GoogleProtobufBoolValue, GrpcStatusError.GrpcStatusError, R>;
 }
 
-export const WellKnownTypeFeatureHandlersLayer = <R>(
+export const WellKnownTypeFeatureHandlers = <R>(
   implementation: WellKnownTypeFeatureImplementation<R>,
-): Layer.Layer<GrpcServerProtocol.GrpcHandlers, never, R> =>
-  GrpcServerProtocol.handlersLayer<R>({
+): Effect.Effect<GrpcServerProtocol.GrpcHandlers, never, R> =>
+  GrpcServerProtocol.handlersEffect<R>({
     "features.v1.WellKnownTypeFeature/Echo": {
       kind: "unary",
       handler: (request, context) => implementation.echo(request as WellKnownValues, context),
@@ -880,9 +860,6 @@ export const FieldShapeChildSchema = Schema.Struct({
   id: Schema.String,
 });
 export type FieldShapeChild = Schema.Schema.Type<typeof FieldShapeChildSchema>;
-
-const readField = (message: unknown, field: string): unknown =>
-  typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
 
 const compact = <T extends Record<string, unknown>>(object: T): T => {
   const result: Record<string, unknown> = {};
@@ -1087,58 +1064,58 @@ const toGrpc$FieldShapeValues_choiceOneof = (value: unknown): unknown => {
 };
 
 export const fromFieldShapeValues = (message: unknown): unknown => compact({
-  ratio: readField(message, "ratio") == null ? undefined : fromGrpc$GoogleProtobufDoubleValue(readField(message, "ratio")),
-  score: readField(message, "score") == null ? undefined : fromGrpc$GoogleProtobufFloatValue(readField(message, "score")),
-  count: readField(message, "count") == null ? undefined : fromGrpc$GoogleProtobufInt32Value(readField(message, "count")),
-  total: readField(message, "total") == null ? undefined : fromGrpc$GoogleProtobufInt64Value(readField(message, "total")),
-  size: readField(message, "size") == null ? undefined : fromGrpc$GoogleProtobufUInt32Value(readField(message, "size")),
-  serial: readField(message, "serial") == null ? undefined : fromGrpc$GoogleProtobufUInt64Value(readField(message, "serial")),
-  label: readField(message, "label") == null ? undefined : fromGrpc$GoogleProtobufStringValue(readField(message, "label")),
-  blob: readField(message, "blob") == null ? undefined : fromGrpc$GoogleProtobufBytesValue(readField(message, "blob")),
-  payload: readField(message, "payload") == null ? undefined : fromGrpc$GoogleProtobufAny(readField(message, "payload")),
-  metadata: readField(message, "metadata") == null ? undefined : fromGrpc$GoogleProtobufStruct(readField(message, "metadata")),
-  dynamicValue: readField(message, "dynamicValue") == null ? undefined : fromGrpc$GoogleProtobufValue(readField(message, "dynamicValue")),
-  listValue: readField(message, "listValue") == null ? undefined : fromGrpc$GoogleProtobufListValue(readField(message, "listValue")),
-  updateMask: readField(message, "updateMask") == null ? undefined : fromGrpc$GoogleProtobufFieldMask(readField(message, "updateMask")),
-  choice: fromGrpc$FieldShapeValues_choiceOneof(readField(message, "choice")),
-  labelsByNumber: Object.fromEntries(Object.entries((readField(message, "labelsByNumber") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [Number(key), (value) as string])),
-  statesByNumber: Object.fromEntries(Object.entries((readField(message, "statesByNumber") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [Number(key), value as FieldShapeValues_State])),
-  statesByName: Object.fromEntries(Object.entries((readField(message, "statesByName") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, value as FieldShapeValues_State])),
-  childrenByNumber: Object.fromEntries(Object.entries((readField(message, "childrenByNumber") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [Number(key), fromFieldShapeChild(value)])),
+  ratio: CodegenSupport.readField(message, "ratio") == null ? undefined : fromGrpc$GoogleProtobufDoubleValue(CodegenSupport.readField(message, "ratio")),
+  score: CodegenSupport.readField(message, "score") == null ? undefined : fromGrpc$GoogleProtobufFloatValue(CodegenSupport.readField(message, "score")),
+  count: CodegenSupport.readField(message, "count") == null ? undefined : fromGrpc$GoogleProtobufInt32Value(CodegenSupport.readField(message, "count")),
+  total: CodegenSupport.readField(message, "total") == null ? undefined : fromGrpc$GoogleProtobufInt64Value(CodegenSupport.readField(message, "total")),
+  size: CodegenSupport.readField(message, "size") == null ? undefined : fromGrpc$GoogleProtobufUInt32Value(CodegenSupport.readField(message, "size")),
+  serial: CodegenSupport.readField(message, "serial") == null ? undefined : fromGrpc$GoogleProtobufUInt64Value(CodegenSupport.readField(message, "serial")),
+  label: CodegenSupport.readField(message, "label") == null ? undefined : fromGrpc$GoogleProtobufStringValue(CodegenSupport.readField(message, "label")),
+  blob: CodegenSupport.readField(message, "blob") == null ? undefined : fromGrpc$GoogleProtobufBytesValue(CodegenSupport.readField(message, "blob")),
+  payload: CodegenSupport.readField(message, "payload") == null ? undefined : fromGrpc$GoogleProtobufAny(CodegenSupport.readField(message, "payload")),
+  metadata: CodegenSupport.readField(message, "metadata") == null ? undefined : fromGrpc$GoogleProtobufStruct(CodegenSupport.readField(message, "metadata")),
+  dynamicValue: CodegenSupport.readField(message, "dynamicValue") == null ? undefined : fromGrpc$GoogleProtobufValue(CodegenSupport.readField(message, "dynamicValue")),
+  listValue: CodegenSupport.readField(message, "listValue") == null ? undefined : fromGrpc$GoogleProtobufListValue(CodegenSupport.readField(message, "listValue")),
+  updateMask: CodegenSupport.readField(message, "updateMask") == null ? undefined : fromGrpc$GoogleProtobufFieldMask(CodegenSupport.readField(message, "updateMask")),
+  choice: fromGrpc$FieldShapeValues_choiceOneof(CodegenSupport.readField(message, "choice")),
+  labelsByNumber: Object.fromEntries(Object.entries((CodegenSupport.readField(message, "labelsByNumber") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [Number(key), (value) as string])),
+  statesByNumber: Object.fromEntries(Object.entries((CodegenSupport.readField(message, "statesByNumber") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [Number(key), value as FieldShapeValues_State])),
+  statesByName: Object.fromEntries(Object.entries((CodegenSupport.readField(message, "statesByName") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, value as FieldShapeValues_State])),
+  childrenByNumber: Object.fromEntries(Object.entries((CodegenSupport.readField(message, "childrenByNumber") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [Number(key), fromFieldShapeChild(value)])),
 });
 
 export const toFieldShapeValues = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    ratio: readField(message, "ratio") == null ? undefined : toGrpc$GoogleProtobufDoubleValue(readField(message, "ratio")),
-    score: readField(message, "score") == null ? undefined : toGrpc$GoogleProtobufFloatValue(readField(message, "score")),
-    count: readField(message, "count") == null ? undefined : toGrpc$GoogleProtobufInt32Value(readField(message, "count")),
-    total: readField(message, "total") == null ? undefined : toGrpc$GoogleProtobufInt64Value(readField(message, "total")),
-    size: readField(message, "size") == null ? undefined : toGrpc$GoogleProtobufUInt32Value(readField(message, "size")),
-    serial: readField(message, "serial") == null ? undefined : toGrpc$GoogleProtobufUInt64Value(readField(message, "serial")),
-    label: readField(message, "label") == null ? undefined : toGrpc$GoogleProtobufStringValue(readField(message, "label")),
-    blob: readField(message, "blob") == null ? undefined : toGrpc$GoogleProtobufBytesValue(readField(message, "blob")),
-    payload: readField(message, "payload") == null ? undefined : toGrpc$GoogleProtobufAny(readField(message, "payload")),
-    metadata: readField(message, "metadata") == null ? undefined : toGrpc$GoogleProtobufStruct(readField(message, "metadata")),
-    dynamicValue: readField(message, "dynamicValue") == null ? undefined : toGrpc$GoogleProtobufValue(readField(message, "dynamicValue")),
-    listValue: readField(message, "listValue") == null ? undefined : toGrpc$GoogleProtobufListValue(readField(message, "listValue")),
-    updateMask: readField(message, "updateMask") == null ? undefined : toGrpc$GoogleProtobufFieldMask(readField(message, "updateMask")),
-    choice: toGrpc$FieldShapeValues_choiceOneof(readField(message, "choice")),
-    labelsByNumber: Object.fromEntries(Object.entries((readField(message, "labelsByNumber") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [Number(key), (value) as string])),
-    statesByNumber: Object.fromEntries(Object.entries((readField(message, "statesByNumber") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [Number(key), value as number])),
-    statesByName: Object.fromEntries(Object.entries((readField(message, "statesByName") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, value as number])),
-    childrenByNumber: Object.fromEntries(Object.entries((readField(message, "childrenByNumber") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [Number(key), toFieldShapeChild(value)])),
+    ratio: CodegenSupport.readField(message, "ratio") == null ? undefined : toGrpc$GoogleProtobufDoubleValue(CodegenSupport.readField(message, "ratio")),
+    score: CodegenSupport.readField(message, "score") == null ? undefined : toGrpc$GoogleProtobufFloatValue(CodegenSupport.readField(message, "score")),
+    count: CodegenSupport.readField(message, "count") == null ? undefined : toGrpc$GoogleProtobufInt32Value(CodegenSupport.readField(message, "count")),
+    total: CodegenSupport.readField(message, "total") == null ? undefined : toGrpc$GoogleProtobufInt64Value(CodegenSupport.readField(message, "total")),
+    size: CodegenSupport.readField(message, "size") == null ? undefined : toGrpc$GoogleProtobufUInt32Value(CodegenSupport.readField(message, "size")),
+    serial: CodegenSupport.readField(message, "serial") == null ? undefined : toGrpc$GoogleProtobufUInt64Value(CodegenSupport.readField(message, "serial")),
+    label: CodegenSupport.readField(message, "label") == null ? undefined : toGrpc$GoogleProtobufStringValue(CodegenSupport.readField(message, "label")),
+    blob: CodegenSupport.readField(message, "blob") == null ? undefined : toGrpc$GoogleProtobufBytesValue(CodegenSupport.readField(message, "blob")),
+    payload: CodegenSupport.readField(message, "payload") == null ? undefined : toGrpc$GoogleProtobufAny(CodegenSupport.readField(message, "payload")),
+    metadata: CodegenSupport.readField(message, "metadata") == null ? undefined : toGrpc$GoogleProtobufStruct(CodegenSupport.readField(message, "metadata")),
+    dynamicValue: CodegenSupport.readField(message, "dynamicValue") == null ? undefined : toGrpc$GoogleProtobufValue(CodegenSupport.readField(message, "dynamicValue")),
+    listValue: CodegenSupport.readField(message, "listValue") == null ? undefined : toGrpc$GoogleProtobufListValue(CodegenSupport.readField(message, "listValue")),
+    updateMask: CodegenSupport.readField(message, "updateMask") == null ? undefined : toGrpc$GoogleProtobufFieldMask(CodegenSupport.readField(message, "updateMask")),
+    choice: toGrpc$FieldShapeValues_choiceOneof(CodegenSupport.readField(message, "choice")),
+    labelsByNumber: Object.fromEntries(Object.entries((CodegenSupport.readField(message, "labelsByNumber") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [Number(key), (value) as string])),
+    statesByNumber: Object.fromEntries(Object.entries((CodegenSupport.readField(message, "statesByNumber") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [Number(key), value as number])),
+    statesByName: Object.fromEntries(Object.entries((CodegenSupport.readField(message, "statesByName") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, value as number])),
+    childrenByNumber: Object.fromEntries(Object.entries((CodegenSupport.readField(message, "childrenByNumber") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [Number(key), toFieldShapeChild(value)])),
   });
 };
 
 export const fromFieldShapeChild = (message: unknown): unknown => compact({
-  id: (readField(message, "id")) as string,
+  id: (CodegenSupport.readField(message, "id")) as string,
 });
 
 export const toFieldShapeChild = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    id: (readField(message, "id")) as string,
+    id: (CodegenSupport.readField(message, "id")) as string,
   });
 };
 
@@ -1183,10 +1160,10 @@ export interface FieldShapeFeatureImplementation<R = never> {
   readonly echo: (request: FieldShapeValues, context: CodegenSupport.GrpcServerContext) => Effect.Effect<FieldShapeValues, GrpcStatusError.GrpcStatusError, R>;
 }
 
-export const FieldShapeFeatureHandlersLayer = <R>(
+export const FieldShapeFeatureHandlers = <R>(
   implementation: FieldShapeFeatureImplementation<R>,
-): Layer.Layer<GrpcServerProtocol.GrpcHandlers, never, R> =>
-  GrpcServerProtocol.handlersLayer<R>({
+): Effect.Effect<GrpcServerProtocol.GrpcHandlers, never, R> =>
+  GrpcServerProtocol.handlersEffect<R>({
     "features.v1.FieldShapeFeature/Echo": {
       kind: "unary",
       handler: (request, context) => implementation.echo(request as FieldShapeValues, context),
@@ -1222,9 +1199,6 @@ export const MapUserSchema = Schema.Struct({
 });
 export type MapUser = Schema.Schema.Type<typeof MapUserSchema>;
 
-const readField = (message: unknown, field: string): unknown =>
-  typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
-
 const compact = <T extends Record<string, unknown>>(object: T): T => {
   const result: Record<string, unknown> = {};
   for (const key of Object.keys(object)) {
@@ -1234,28 +1208,28 @@ const compact = <T extends Record<string, unknown>>(object: T): T => {
 };
 
 export const fromMapValues = (message: unknown): unknown => compact({
-  labels: Object.fromEntries(Object.entries((readField(message, "labels") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, (value) as string])),
-  counts: Object.fromEntries(Object.entries((readField(message, "counts") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, (value) as number])),
-  users: Object.fromEntries(Object.entries((readField(message, "users") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, fromMapUser(value)])),
+  labels: Object.fromEntries(Object.entries((CodegenSupport.readField(message, "labels") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, (value) as string])),
+  counts: Object.fromEntries(Object.entries((CodegenSupport.readField(message, "counts") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, (value) as number])),
+  users: Object.fromEntries(Object.entries((CodegenSupport.readField(message, "users") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, fromMapUser(value)])),
 });
 
 export const toMapValues = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    labels: Object.fromEntries(Object.entries((readField(message, "labels") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, (value) as string])),
-    counts: Object.fromEntries(Object.entries((readField(message, "counts") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, (value) as number])),
-    users: Object.fromEntries(Object.entries((readField(message, "users") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, toMapUser(value)])),
+    labels: Object.fromEntries(Object.entries((CodegenSupport.readField(message, "labels") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, (value) as string])),
+    counts: Object.fromEntries(Object.entries((CodegenSupport.readField(message, "counts") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, (value) as number])),
+    users: Object.fromEntries(Object.entries((CodegenSupport.readField(message, "users") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, toMapUser(value)])),
   });
 };
 
 export const fromMapUser = (message: unknown): unknown => compact({
-  id: (readField(message, "id")) as string,
+  id: (CodegenSupport.readField(message, "id")) as string,
 });
 
 export const toMapUser = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    id: (readField(message, "id")) as string,
+    id: (CodegenSupport.readField(message, "id")) as string,
   });
 };
 
@@ -1300,10 +1274,10 @@ export interface MapFeatureImplementation<R = never> {
   readonly echo: (request: MapValues, context: CodegenSupport.GrpcServerContext) => Effect.Effect<MapValues, GrpcStatusError.GrpcStatusError, R>;
 }
 
-export const MapFeatureHandlersLayer = <R>(
+export const MapFeatureHandlers = <R>(
   implementation: MapFeatureImplementation<R>,
-): Layer.Layer<GrpcServerProtocol.GrpcHandlers, never, R> =>
-  GrpcServerProtocol.handlersLayer<R>({
+): Effect.Effect<GrpcServerProtocol.GrpcHandlers, never, R> =>
+  GrpcServerProtocol.handlersEffect<R>({
     "features.v1.MapFeature/Echo": {
       kind: "unary",
       handler: (request, context) => implementation.echo(request as MapValues, context),
@@ -1336,9 +1310,6 @@ export const OneofUserSchema = Schema.Struct({
   id: Schema.String,
 });
 export type OneofUser = Schema.Schema.Type<typeof OneofUserSchema>;
-
-const readField = (message: unknown, field: string): unknown =>
-  typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
 
 const compact = <T extends Record<string, unknown>>(object: T): T => {
   const result: Record<string, unknown> = {};
@@ -1382,24 +1353,24 @@ const toGrpc$SearchRequest_queryOneof = (value: unknown): unknown => {
 };
 
 export const fromSearchRequest = (message: unknown): unknown => compact({
-  query: fromGrpc$SearchRequest_queryOneof(readField(message, "query")),
+  query: fromGrpc$SearchRequest_queryOneof(CodegenSupport.readField(message, "query")),
 });
 
 export const toSearchRequest = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    query: toGrpc$SearchRequest_queryOneof(readField(message, "query")),
+    query: toGrpc$SearchRequest_queryOneof(CodegenSupport.readField(message, "query")),
   });
 };
 
 export const fromOneofUser = (message: unknown): unknown => compact({
-  id: (readField(message, "id")) as string,
+  id: (CodegenSupport.readField(message, "id")) as string,
 });
 
 export const toOneofUser = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    id: (readField(message, "id")) as string,
+    id: (CodegenSupport.readField(message, "id")) as string,
   });
 };
 
@@ -1444,10 +1415,10 @@ export interface OneofFeatureImplementation<R = never> {
   readonly echo: (request: SearchRequest, context: CodegenSupport.GrpcServerContext) => Effect.Effect<SearchRequest, GrpcStatusError.GrpcStatusError, R>;
 }
 
-export const OneofFeatureHandlersLayer = <R>(
+export const OneofFeatureHandlers = <R>(
   implementation: OneofFeatureImplementation<R>,
-): Layer.Layer<GrpcServerProtocol.GrpcHandlers, never, R> =>
-  GrpcServerProtocol.handlersLayer<R>({
+): Effect.Effect<GrpcServerProtocol.GrpcHandlers, never, R> =>
+  GrpcServerProtocol.handlersEffect<R>({
     "features.v1.OneofFeature/Echo": {
       kind: "unary",
       handler: (request, context) => implementation.echo(request as SearchRequest, context),
@@ -1488,9 +1459,6 @@ export const NestedOuter_InnerSchema = Schema.Struct({
 });
 export type NestedOuter_Inner = Schema.Schema.Type<typeof NestedOuter_InnerSchema>;
 
-const readField = (message: unknown, field: string): unknown =>
-  typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
-
 const compact = <T extends Record<string, unknown>>(object: T): T => {
   const result: Record<string, unknown> = {};
   for (const key of Object.keys(object)) {
@@ -1525,32 +1493,32 @@ const toGrpc$NestedOuter_choiceOneof = (value: unknown): unknown => {
 };
 
 export const fromNestedOuter = (message: unknown): unknown => compact({
-  inner: readField(message, "inner") == null ? undefined : fromNestedOuter_Inner(readField(message, "inner")),
-  items: ((readField(message, "items") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => fromNestedOuter_Inner(value)),
-  byId: Object.fromEntries(Object.entries((readField(message, "byId") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, fromNestedOuter_Inner(value)])),
-  choice: fromGrpc$NestedOuter_choiceOneof(readField(message, "choice")),
+  inner: CodegenSupport.readField(message, "inner") == null ? undefined : fromNestedOuter_Inner(CodegenSupport.readField(message, "inner")),
+  items: ((CodegenSupport.readField(message, "items") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => fromNestedOuter_Inner(value)),
+  byId: Object.fromEntries(Object.entries((CodegenSupport.readField(message, "byId") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, fromNestedOuter_Inner(value)])),
+  choice: fromGrpc$NestedOuter_choiceOneof(CodegenSupport.readField(message, "choice")),
 });
 
 export const toNestedOuter = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    inner: readField(message, "inner") == null ? undefined : toNestedOuter_Inner(readField(message, "inner")),
-    items: ((readField(message, "items") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => toNestedOuter_Inner(value)),
-    byId: Object.fromEntries(Object.entries((readField(message, "byId") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, toNestedOuter_Inner(value)])),
-    choice: toGrpc$NestedOuter_choiceOneof(readField(message, "choice")),
+    inner: CodegenSupport.readField(message, "inner") == null ? undefined : toNestedOuter_Inner(CodegenSupport.readField(message, "inner")),
+    items: ((CodegenSupport.readField(message, "items") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => toNestedOuter_Inner(value)),
+    byId: Object.fromEntries(Object.entries((CodegenSupport.readField(message, "byId") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, toNestedOuter_Inner(value)])),
+    choice: toGrpc$NestedOuter_choiceOneof(CodegenSupport.readField(message, "choice")),
   });
 };
 
 export const fromNestedOuter_Inner = (message: unknown): unknown => compact({
-  id: (readField(message, "id")) as string,
-  status: readField(message, "status") as NestedOuter_Inner_Status,
+  id: (CodegenSupport.readField(message, "id")) as string,
+  status: CodegenSupport.readField(message, "status") as NestedOuter_Inner_Status,
 });
 
 export const toNestedOuter_Inner = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    id: (readField(message, "id")) as string,
-    status: readField(message, "status") as number,
+    id: (CodegenSupport.readField(message, "id")) as string,
+    status: CodegenSupport.readField(message, "status") as number,
   });
 };
 
@@ -1595,10 +1563,10 @@ export interface NestedMessageFeatureImplementation<R = never> {
   readonly echo: (request: NestedOuter, context: CodegenSupport.GrpcServerContext) => Effect.Effect<NestedOuter, GrpcStatusError.GrpcStatusError, R>;
 }
 
-export const NestedMessageFeatureHandlersLayer = <R>(
+export const NestedMessageFeatureHandlers = <R>(
   implementation: NestedMessageFeatureImplementation<R>,
-): Layer.Layer<GrpcServerProtocol.GrpcHandlers, never, R> =>
-  GrpcServerProtocol.handlersLayer<R>({
+): Effect.Effect<GrpcServerProtocol.GrpcHandlers, never, R> =>
+  GrpcServerProtocol.handlersEffect<R>({
     "features.v1.NestedMessageFeature/Echo": {
       kind: "unary",
       handler: (request, context) => implementation.echo(request as NestedOuter, context),
@@ -1617,6 +1585,7 @@ exports[`proto feature fixtures > snapshots generated output 11`] = `
     "// @generated by protoc-gen-effect-grpc. DO NOT EDIT.
 
 import { Schema } from "effect";
+import { CodegenSupport } from "@effect-grpc/effect-grpc";
 
 export const CommonStateSchema = Schema.Number;
 export type CommonState = number;
@@ -1627,9 +1596,6 @@ export const CommonUserSchema = Schema.Struct({
 });
 export type CommonUser = Schema.Schema.Type<typeof CommonUserSchema>;
 
-const readField = (message: unknown, field: string): unknown =>
-  typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
-
 const compact = <T extends Record<string, unknown>>(object: T): T => {
   const result: Record<string, unknown> = {};
   for (const key of Object.keys(object)) {
@@ -1639,15 +1605,15 @@ const compact = <T extends Record<string, unknown>>(object: T): T => {
 };
 
 export const fromCommonUser = (message: unknown): unknown => compact({
-  id: (readField(message, "id")) as string,
-  state: readField(message, "state") as CommonState,
+  id: (CodegenSupport.readField(message, "id")) as string,
+  state: CodegenSupport.readField(message, "state") as CommonState,
 });
 
 export const toCommonUser = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    id: (readField(message, "id")) as string,
-    state: readField(message, "state") as number,
+    id: (CodegenSupport.readField(message, "id")) as string,
+    state: CodegenSupport.readField(message, "state") as number,
   });
 };
 
@@ -1680,9 +1646,6 @@ export const CrossPackageRequestSchema = Schema.Struct({
   choice: Schema.Union([Schema.Struct({ case: Schema.Literal("picked"), value: CommonUserSchema }), Schema.Struct({ case: Schema.Undefined, value: Schema.optional(Schema.Undefined) })]),
 });
 export type CrossPackageRequest = Schema.Schema.Type<typeof CrossPackageRequestSchema>;
-
-const readField = (message: unknown, field: string): unknown =>
-  typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
 
 const compact = <T extends Record<string, unknown>>(object: T): T => {
   const result: Record<string, unknown> = {};
@@ -1718,23 +1681,23 @@ const toGrpc$CrossPackageRequest_choiceOneof = (value: unknown): unknown => {
 };
 
 export const fromCrossPackageRequest = (message: unknown): unknown => compact({
-  user: readField(message, "user") == null ? undefined : fromCommonUser(readField(message, "user")),
-  users: ((readField(message, "users") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => fromCommonUser(value)),
-  byId: Object.fromEntries(Object.entries((readField(message, "byId") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, fromCommonUser(value)])),
-  state: readField(message, "state") as CommonState,
-  states: ((readField(message, "states") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => value as CommonState),
-  choice: fromGrpc$CrossPackageRequest_choiceOneof(readField(message, "choice")),
+  user: CodegenSupport.readField(message, "user") == null ? undefined : fromCommonUser(CodegenSupport.readField(message, "user")),
+  users: ((CodegenSupport.readField(message, "users") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => fromCommonUser(value)),
+  byId: Object.fromEntries(Object.entries((CodegenSupport.readField(message, "byId") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, fromCommonUser(value)])),
+  state: CodegenSupport.readField(message, "state") as CommonState,
+  states: ((CodegenSupport.readField(message, "states") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => value as CommonState),
+  choice: fromGrpc$CrossPackageRequest_choiceOneof(CodegenSupport.readField(message, "choice")),
 });
 
 export const toCrossPackageRequest = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    user: readField(message, "user") == null ? undefined : toCommonUser(readField(message, "user")),
-    users: ((readField(message, "users") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => toCommonUser(value)),
-    byId: Object.fromEntries(Object.entries((readField(message, "byId") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, toCommonUser(value)])),
-    state: readField(message, "state") as number,
-    states: ((readField(message, "states") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => value as number),
-    choice: toGrpc$CrossPackageRequest_choiceOneof(readField(message, "choice")),
+    user: CodegenSupport.readField(message, "user") == null ? undefined : toCommonUser(CodegenSupport.readField(message, "user")),
+    users: ((CodegenSupport.readField(message, "users") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => toCommonUser(value)),
+    byId: Object.fromEntries(Object.entries((CodegenSupport.readField(message, "byId") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, toCommonUser(value)])),
+    state: CodegenSupport.readField(message, "state") as number,
+    states: ((CodegenSupport.readField(message, "states") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => value as number),
+    choice: toGrpc$CrossPackageRequest_choiceOneof(CodegenSupport.readField(message, "choice")),
   });
 };
 
@@ -1797,10 +1760,10 @@ export interface CrossPackageFeatureImplementation<R = never> {
   readonly getUser: (request: CommonUser, context: CodegenSupport.GrpcServerContext) => Effect.Effect<CommonUser, GrpcStatusError.GrpcStatusError, R>;
 }
 
-export const CrossPackageFeatureHandlersLayer = <R>(
+export const CrossPackageFeatureHandlers = <R>(
   implementation: CrossPackageFeatureImplementation<R>,
-): Layer.Layer<GrpcServerProtocol.GrpcHandlers, never, R> =>
-  GrpcServerProtocol.handlersLayer<R>({
+): Effect.Effect<GrpcServerProtocol.GrpcHandlers, never, R> =>
+  GrpcServerProtocol.handlersEffect<R>({
     "features.v1.CrossPackageFeature/Echo": {
       kind: "unary",
       handler: (request, context) => implementation.echo(request as CrossPackageRequest, context),
@@ -1842,9 +1805,6 @@ export const OptionalScalarsSchema = Schema.Struct({
 });
 export type OptionalScalars = Schema.Schema.Type<typeof OptionalScalarsSchema>;
 
-const readField = (message: unknown, field: string): unknown =>
-  typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
-
 const compact = <T extends Record<string, unknown>>(object: T): T => {
   const result: Record<string, unknown> = {};
   for (const key of Object.keys(object)) {
@@ -1860,23 +1820,23 @@ const toGrpc$Bytes = (value: unknown): Uint8Array =>
   Uint8Array.from(Buffer.from(value as string, "base64"));
 
 export const fromOptionalScalars = (message: unknown): unknown => compact({
-  name: readField(message, "name") == null ? undefined : (readField(message, "name")) as string,
-  enabled: readField(message, "enabled") == null ? undefined : (readField(message, "enabled")) as boolean,
-  blob: readField(message, "blob") == null ? undefined : fromGrpc$Bytes((readField(message, "blob")) as Uint8Array),
-  score: readField(message, "score") == null ? undefined : (readField(message, "score")) as number,
-  total: readField(message, "total") == null ? undefined : String(readField(message, "total")),
-  state: readField(message, "state") as OptionalState | undefined,
+  name: CodegenSupport.readField(message, "name") == null ? undefined : (CodegenSupport.readField(message, "name")) as string,
+  enabled: CodegenSupport.readField(message, "enabled") == null ? undefined : (CodegenSupport.readField(message, "enabled")) as boolean,
+  blob: CodegenSupport.readField(message, "blob") == null ? undefined : fromGrpc$Bytes((CodegenSupport.readField(message, "blob")) as Uint8Array),
+  score: CodegenSupport.readField(message, "score") == null ? undefined : (CodegenSupport.readField(message, "score")) as number,
+  total: CodegenSupport.readField(message, "total") == null ? undefined : String(CodegenSupport.readField(message, "total")),
+  state: CodegenSupport.readField(message, "state") as OptionalState | undefined,
 });
 
 export const toOptionalScalars = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    name: readField(message, "name") == null ? undefined : (readField(message, "name")) as string,
-    enabled: readField(message, "enabled") == null ? undefined : (readField(message, "enabled")) as boolean,
-    blob: readField(message, "blob") == null ? undefined : toGrpc$Bytes(readField(message, "blob")),
-    score: readField(message, "score") == null ? undefined : (readField(message, "score")) as number,
-    total: readField(message, "total") == null ? undefined : BigInt((readField(message, "total")) as string),
-    state: readField(message, "state") as number | undefined,
+    name: CodegenSupport.readField(message, "name") == null ? undefined : (CodegenSupport.readField(message, "name")) as string,
+    enabled: CodegenSupport.readField(message, "enabled") == null ? undefined : (CodegenSupport.readField(message, "enabled")) as boolean,
+    blob: CodegenSupport.readField(message, "blob") == null ? undefined : toGrpc$Bytes(CodegenSupport.readField(message, "blob")),
+    score: CodegenSupport.readField(message, "score") == null ? undefined : (CodegenSupport.readField(message, "score")) as number,
+    total: CodegenSupport.readField(message, "total") == null ? undefined : BigInt((CodegenSupport.readField(message, "total")) as string),
+    state: CodegenSupport.readField(message, "state") as number | undefined,
   });
 };
 
@@ -1921,10 +1881,10 @@ export interface OptionalScalarFeatureImplementation<R = never> {
   readonly echo: (request: OptionalScalars, context: CodegenSupport.GrpcServerContext) => Effect.Effect<OptionalScalars, GrpcStatusError.GrpcStatusError, R>;
 }
 
-export const OptionalScalarFeatureHandlersLayer = <R>(
+export const OptionalScalarFeatureHandlers = <R>(
   implementation: OptionalScalarFeatureImplementation<R>,
-): Layer.Layer<GrpcServerProtocol.GrpcHandlers, never, R> =>
-  GrpcServerProtocol.handlersLayer<R>({
+): Effect.Effect<GrpcServerProtocol.GrpcHandlers, never, R> =>
+  GrpcServerProtocol.handlersEffect<R>({
     "features.v1.OptionalScalarFeature/Echo": {
       kind: "unary",
       handler: (request, context) => implementation.echo(request as OptionalScalars, context),
@@ -1957,9 +1917,6 @@ export const GetStatusResponseSchema = Schema.Struct({
 });
 export type GetStatusResponse = Schema.Schema.Type<typeof GetStatusResponseSchema>;
 
-const readField = (message: unknown, field: string): unknown =>
-  typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
-
 const compact = <T extends Record<string, unknown>>(object: T): T => {
   const result: Record<string, unknown> = {};
   for (const key of Object.keys(object)) {
@@ -1973,13 +1930,13 @@ export const fromGetStatusRequest = (_message: unknown): unknown => ({});
 export const toGetStatusRequest = (_value: unknown): Record<string, unknown> => ({});
 
 export const fromGetStatusResponse = (message: unknown): unknown => compact({
-  status: (readField(message, "status")) as string,
+  status: (CodegenSupport.readField(message, "status")) as string,
 });
 
 export const toGetStatusResponse = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    status: (readField(message, "status")) as string,
+    status: (CodegenSupport.readField(message, "status")) as string,
   });
 };
 
@@ -2024,10 +1981,10 @@ export interface EmptyMessageFeatureImplementation<R = never> {
   readonly getStatus: (request: GetStatusRequest, context: CodegenSupport.GrpcServerContext) => Effect.Effect<GetStatusResponse, GrpcStatusError.GrpcStatusError, R>;
 }
 
-export const EmptyMessageFeatureHandlersLayer = <R>(
+export const EmptyMessageFeatureHandlers = <R>(
   implementation: EmptyMessageFeatureImplementation<R>,
-): Layer.Layer<GrpcServerProtocol.GrpcHandlers, never, R> =>
-  GrpcServerProtocol.handlersLayer<R>({
+): Effect.Effect<GrpcServerProtocol.GrpcHandlers, never, R> =>
+  GrpcServerProtocol.handlersEffect<R>({
     "features.v1.EmptyMessageFeature/GetStatus": {
       kind: "unary",
       handler: (request, context) => implementation.getStatus(request as GetStatusRequest, context),
@@ -2090,9 +2047,6 @@ export const GrpcGoogleProtobufTimestampSchema = Schema.Struct({
 });
 export type GrpcGoogleProtobufTimestamp = Schema.Schema.Type<typeof GrpcGoogleProtobufTimestampSchema>;
 
-const readField = (message: unknown, field: string): unknown =>
-  typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
-
 const compact = <T extends Record<string, unknown>>(object: T): T => {
   const result: Record<string, unknown> = {};
   for (const key of Object.keys(object)) {
@@ -2124,13 +2078,13 @@ export const toGrpc$GoogleProtobufTimestamp = (value: unknown) => {
 };
 
 export const fromBytes = (message: unknown): unknown => compact({
-  data: fromGrpc$Bytes((readField(message, "data")) as Uint8Array),
+  data: fromGrpc$Bytes((CodegenSupport.readField(message, "data")) as Uint8Array),
 });
 
 export const toBytes = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    data: toGrpc$Bytes(readField(message, "data")),
+    data: toGrpc$Bytes(CodegenSupport.readField(message, "data")),
   });
 };
 
@@ -2164,46 +2118,46 @@ const toGrpc$Choice_pickOneof = (value: unknown): unknown => {
 };
 
 export const fromChoice = (message: unknown): unknown => compact({
-  pick: fromGrpc$Choice_pickOneof(readField(message, "pick")),
+  pick: fromGrpc$Choice_pickOneof(CodegenSupport.readField(message, "pick")),
 });
 
 export const toChoice = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    pick: toGrpc$Choice_pickOneof(readField(message, "pick")),
+    pick: toGrpc$Choice_pickOneof(CodegenSupport.readField(message, "pick")),
   });
 };
 
 export const fromChoice_pickOneof = (message: unknown): unknown => compact({
-  label: (readField(message, "label")) as string,
+  label: (CodegenSupport.readField(message, "label")) as string,
 });
 
 export const toChoice_pickOneof = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    label: (readField(message, "label")) as string,
+    label: (CodegenSupport.readField(message, "label")) as string,
   });
 };
 
 export const fromShadow = (message: unknown): unknown => compact({
-  shadowed: readField(message, "shadowed") == null ? undefined : fromGrpcGoogleProtobufTimestamp(readField(message, "shadowed")),
+  shadowed: CodegenSupport.readField(message, "shadowed") == null ? undefined : fromGrpcGoogleProtobufTimestamp(CodegenSupport.readField(message, "shadowed")),
 });
 
 export const toShadow = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    shadowed: readField(message, "shadowed") == null ? undefined : toGrpcGoogleProtobufTimestamp(readField(message, "shadowed")),
+    shadowed: CodegenSupport.readField(message, "shadowed") == null ? undefined : toGrpcGoogleProtobufTimestamp(CodegenSupport.readField(message, "shadowed")),
   });
 };
 
 export const fromGrpcGoogleProtobufTimestamp = (message: unknown): unknown => compact({
-  at: readField(message, "at") == null ? undefined : fromGrpc$GoogleProtobufTimestamp(readField(message, "at")),
+  at: CodegenSupport.readField(message, "at") == null ? undefined : fromGrpc$GoogleProtobufTimestamp(CodegenSupport.readField(message, "at")),
 });
 
 export const toGrpcGoogleProtobufTimestamp = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    at: readField(message, "at") == null ? undefined : toGrpc$GoogleProtobufTimestamp(readField(message, "at")),
+    at: CodegenSupport.readField(message, "at") == null ? undefined : toGrpc$GoogleProtobufTimestamp(CodegenSupport.readField(message, "at")),
   });
 };
 
@@ -2378,10 +2332,10 @@ export interface BytesCollisionFeatureImplementation<R = never> {
   readonly echoTimestamp: (request: Grpc$GoogleProtobufTimestamp, context: CodegenSupport.GrpcServerContext) => Effect.Effect<Grpc$GoogleProtobufTimestamp, GrpcStatusError.GrpcStatusError, R>;
 }
 
-export const BytesCollisionFeatureHandlersLayer = <R>(
+export const BytesCollisionFeatureHandlers = <R>(
   implementation: BytesCollisionFeatureImplementation<R>,
-): Layer.Layer<GrpcServerProtocol.GrpcHandlers, never, R> =>
-  GrpcServerProtocol.handlersLayer<R>({
+): Effect.Effect<GrpcServerProtocol.GrpcHandlers, never, R> =>
+  GrpcServerProtocol.handlersEffect<R>({
     "features.v1.BytesCollisionFeature/Echo": {
       kind: "unary",
       handler: (request, context) => implementation.echo(request as Bytes, context),

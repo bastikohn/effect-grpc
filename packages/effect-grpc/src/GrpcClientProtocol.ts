@@ -6,7 +6,7 @@ import { Effect, Layer } from "effect";
 import * as GrpcInvoker from "./GrpcInvoker.js";
 import * as GrpcMetadata from "./GrpcMetadata.js";
 import type { GrpcMethodRegistry } from "./GrpcMethodRegistry.js";
-import { metadataViolation } from "./internal/metadata.js";
+import { metadataViolation } from "./internal/invoker.js";
 
 export type { GrpcTransportOptions } from "@connectrpc/connect-node";
 

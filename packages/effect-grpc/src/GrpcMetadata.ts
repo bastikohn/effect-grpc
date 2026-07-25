@@ -1,17 +1,8 @@
-import { Schema } from "effect";
-
 export type GrpcMetadataValue = string | Uint8Array;
 
 export type GrpcMetadata = ReadonlyArray<
   readonly [key: string, value: GrpcMetadataValue]
 >;
-
-export const schema = Schema.Array(
-  Schema.Tuple([
-    Schema.String,
-    Schema.Union([Schema.String, Schema.Uint8Array]),
-  ]),
-);
 
 export const empty: GrpcMetadata = [];
 

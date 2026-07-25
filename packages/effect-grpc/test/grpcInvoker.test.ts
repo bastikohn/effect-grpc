@@ -1,6 +1,16 @@
 import type { Transport } from "@connectrpc/connect";
 import { Code, ConnectError } from "@connectrpc/connect";
-import { Deferred, Effect, Fiber, Ref, Stream } from "effect";
+import {
+  Context,
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  Metric,
+  Ref,
+  Stream,
+} from "effect";
+import * as Tracer from "effect/Tracer";
 import { describe, expect, it } from "vitest";
 
 import * as GrpcClientProtocol from "../src/GrpcClientProtocol.js";
@@ -561,6 +571,54 @@ describe("GrpcInvoker (connect adapter)", () => {
     );
   });
 
+  it("dies with a named defect when an entry's localName is not on the service", async () => {
+    // `localName` is carried verbatim by registry entries (the built-in
+    // services hand-write it), so a mismatch is a wiring defect, not a status.
+    const entry = { ...unaryEntry, localName: "nope" };
+    const spans = captureSpanEnds();
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const exit = yield* Effect.exit(
+          GrpcInvoker.GrpcInvoker.pipe(
+            Effect.flatMap((invoker) => invoker.unary(entry.tag, {})),
+            Effect.provide(
+              GrpcInvoker.layerConnect({
+                registry: new Map([[entry.tag, entry]]),
+                transport: GrpcClientProtocol.makeTransport({
+                  baseUrl: "http://127.0.0.1:1",
+                }),
+              }),
+            ),
+          ),
+        );
+        return { exit, metrics: yield* Metric.snapshot };
+      }).pipe(spans.provide),
+    );
+
+    expect(Exit.isFailure(result.exit)).toBe(true);
+    expect(String(result.exit)).toContain("has no method 'nope'");
+
+    // The defect kills the fiber, so the call has to be recorded before the
+    // throw or the span would close OK, attributeless and without a duration
+    // observation — telemetry showing a healthy call that never happened.
+    const span = spans.expect(entry.tag);
+    expect(span.attributes.get("rpc.response.status_code")).toBe(
+      "UNIMPLEMENTED",
+    );
+    expect(span.attributes.get("error.type")).toBe("UNIMPLEMENTED");
+    expect(Exit.isFailure(span.exit)).toBe(true);
+
+    const durations = result.metrics.filter(
+      (metric) => metric.id === "rpc.client.call.duration",
+    );
+    expect(durations).toHaveLength(1);
+    expect(durations[0]?.attributes).toMatchObject({
+      "rpc.method": entry.tag,
+      "rpc.response.status_code": "UNIMPLEMENTED",
+      "error.type": "UNIMPLEMENTED",
+    });
+  });
+
   it("maps synchronous server and bidi transport throws to typed status errors", async () => {
     const transport = {
       stream() {
@@ -600,7 +658,51 @@ describe("GrpcInvoker (connect adapter)", () => {
   });
 });
 
+/**
+ * Snapshots each span's attributes and exit as it ends, and isolates the
+ * metric registry so a snapshot sees only the call under test.
+ */
+const captureSpanEnds = () => {
+  const ended = new Map<
+    string,
+    {
+      readonly attributes: ReadonlyMap<string, unknown>;
+      readonly exit: Exit.Exit<unknown, unknown>;
+    }
+  >();
+  const native = Context.get(Context.empty(), Tracer.Tracer);
+  const tracer = Tracer.make({
+    span(options) {
+      const span = native.span(options);
+      const end = span.end.bind(span);
+      span.end = (endTime, exit) => {
+        ended.set(span.name, { attributes: new Map(span.attributes), exit });
+        end(endTime, exit);
+      };
+      return span;
+    },
+  });
+  const registry = new Map<string, never>();
+  return {
+    provide: <A, E, R>(
+      effect: Effect.Effect<A, E, R>,
+    ): Effect.Effect<A, E, R> =>
+      effect.pipe(
+        Effect.provideService(Tracer.Tracer, tracer),
+        Effect.provideService(Metric.MetricRegistry, registry as never),
+      ),
+    expect: (name: string) => {
+      const span = ended.get(name);
+      if (!span) {
+        throw new Error(`Expected an ended span named ${name}`);
+      }
+      return span;
+    },
+  };
+};
+
 const {
+  unary: unaryEntry,
   serverStreaming: serverStreamingEntry,
   bidiStreaming: bidiStreamingEntry,
 } = methodEntries("test.Svc");

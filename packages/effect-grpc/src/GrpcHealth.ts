@@ -7,7 +7,7 @@ import {
   SubscriptionRef,
 } from "effect";
 
-import type * as CodegenSupport from "./CodegenSupport.js";
+import * as CodegenSupport from "./CodegenSupport.js";
 import * as GrpcInvoker from "./GrpcInvoker.js";
 import type * as GrpcMethodRegistry from "./GrpcMethodRegistry.js";
 import type { ServeAllService } from "./GrpcNodeServer.js";
@@ -76,25 +76,20 @@ const servingStatusCode = (name: unknown): number => {
 const servingStatusFromCode = (code: unknown): ServingStatus =>
   ServingStatuses[code as number] ?? "UNKNOWN";
 
-const readField = (message: unknown, field: string): unknown =>
-  typeof message === "object" && message !== null
-    ? (message as Record<string, unknown>)[field]
-    : undefined;
-
 const fromHealthCheckRequest = (message: unknown): unknown => ({
-  service: (readField(message, "service") ?? "") as string,
+  service: (CodegenSupport.readField(message, "service") ?? "") as string,
 });
 
 const toHealthCheckRequest = (value: unknown): Record<string, unknown> => ({
-  service: (readField(value, "service") ?? "") as string,
+  service: (CodegenSupport.readField(value, "service") ?? "") as string,
 });
 
 const fromHealthCheckResponse = (message: unknown): unknown => ({
-  status: servingStatusFromCode(readField(message, "status")),
+  status: servingStatusFromCode(CodegenSupport.readField(message, "status")),
 });
 
 const toHealthCheckResponse = (value: unknown): Record<string, unknown> => ({
-  status: servingStatusCode(readField(value, "status")),
+  status: servingStatusCode(CodegenSupport.readField(value, "status")),
 });
 
 export const HealthGrpcRegistry = new Map<
@@ -219,11 +214,11 @@ export const layer: Layer.Layer<GrpcHealth> = Layer.effect(GrpcHealth, make);
  * Handlers for the `grpc.health.v1.Health` RPCs, reading statuses from
  * {@link GrpcHealth}.
  */
-export const HealthHandlersLayer: Layer.Layer<
+export const HealthHandlers: Effect.Effect<
   GrpcServerProtocol.GrpcHandlers,
   never,
   GrpcHealth
-> = GrpcServerProtocol.handlersLayer<GrpcHealth>({
+> = GrpcServerProtocol.handlersEffect<GrpcHealth>({
   "grpc.health.v1.Health/Check": {
     kind: "unary",
     handler: (request) =>
@@ -257,7 +252,7 @@ export const HealthHandlersLayer: Layer.Layer<
  */
 export const service: ServeAllService<GrpcHealth> = {
   registry: HealthGrpcRegistry,
-  handlers: HealthHandlersLayer,
+  handlers: HealthHandlers,
 };
 
 export type HealthClientError = GrpcStatusError.GrpcStatusError;

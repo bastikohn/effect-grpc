@@ -20,13 +20,18 @@ export const generateFile = (
   ];
   // Generated code no longer touches Effect RPC on either side: clients
   // depend on the `GrpcInvoker` seam and servers publish their handlers
-  // through `GrpcServerProtocol.handlersLayer`.
+  // through `GrpcServerProtocol.handlersEffect`. Message-only files still
+  // need `CodegenSupport.readField` for their converters.
   const effectGrpcImports = [
-    "CodegenSupport",
-    "GrpcInvoker",
-    "GrpcMethodRegistry",
-    "GrpcServerProtocol",
-    "GrpcStatusError",
+    ...(usage.hasServices || usage.readsFields ? ["CodegenSupport"] : []),
+    ...(usage.hasServices
+      ? [
+          "GrpcInvoker",
+          "GrpcMethodRegistry",
+          "GrpcServerProtocol",
+          "GrpcStatusError",
+        ]
+      : []),
   ];
 
   const lines = [
@@ -44,9 +49,13 @@ export const generateFile = (
         ]
       : []),
     `import { ${effectImports.join(", ")} } from "effect";`,
-    ...(usage.hasServices
+    ...(effectGrpcImports.length > 0
       ? [
           `import { ${effectGrpcImports.join(", ")} } from "@effect-grpc/effect-grpc";`,
+        ]
+      : []),
+    ...(usage.hasServices
+      ? [
           "import {",
           ...descriptorImports.map((item) => `  ${item},`),
           `} from "${pbImport}";`,

@@ -1,4 +1,4 @@
-import type { CallOptions } from "@connectrpc/connect";
+import { createClient, type CallOptions } from "@connectrpc/connect";
 import { Effect, Scope, Stream } from "effect";
 import type * as Tracer from "effect/Tracer";
 
@@ -12,7 +12,6 @@ import * as MethodRegistry from "../GrpcMethodRegistry.js";
 import type { GrpcMethodEntry } from "../GrpcMethodRegistry.js";
 import type { GrpcStatusCode } from "../GrpcStatusCode.js";
 import * as GrpcStatusError from "../GrpcStatusError.js";
-import { getClient } from "./connect.js";
 import { callTimeoutMs, unknownTag, validateCallMetadata } from "./invoker.js";
 import * as StreamBridge from "./streamBridge.js";
 import * as GrpcTracing from "./tracing.js";
@@ -30,18 +29,45 @@ export const makeConnect = (
     const context = yield* Effect.context<never>();
     const transport = options.transport;
 
-    const resolveMethod = (entry: GrpcMethodEntry) => {
-      const client = getClient(transport, entry.service) as Record<
-        string,
-        unknown
-      >;
+    // One connect client per service descriptor, built on first use. The
+    // transport is fixed for the invoker, so the cache is too.
+    const clients = new Map<
+      GrpcMethodEntry["service"],
+      Record<string, unknown>
+    >();
+
+    /**
+     * @throws `Error` when the entry names a method the service descriptor
+     * does not declare. Registry entries carry `localName` verbatim — the
+     * built-in services hand-write it — so a mismatch is a wiring defect, not
+     * a status a caller could act on. The call is still recorded as
+     * `unimplemented` first: the defect kills the fiber, which would
+     * otherwise close the span OK, attributeless and without a duration
+     * observation, hiding the broken wiring from telemetry entirely.
+     */
+    const resolveMethod = (
+      entry: GrpcMethodEntry,
+      record: GrpcTracing.StatusRecorder,
+    ) => {
+      let client = clients.get(entry.service);
+      if (!client) {
+        client = createClient(entry.service, transport) as Record<
+          string,
+          unknown
+        >;
+        clients.set(entry.service, client);
+      }
       const method = client[entry.localName];
-      return typeof method === "function"
-        ? (method.bind(client) as (
-            input: unknown,
-            options?: CallOptions,
-          ) => unknown)
-        : undefined;
+      if (typeof method !== "function") {
+        record("unimplemented");
+        throw new Error(
+          `gRPC client for ${entry.service.typeName} has no method '${entry.localName}' (tag ${entry.tag})`,
+        );
+      }
+      return method.bind(client) as (
+        input: unknown,
+        options?: CallOptions,
+      ) => unknown;
     };
 
     const openRequests = (
@@ -155,17 +181,6 @@ export const makeConnect = (
         return { span, record };
       });
 
-    const missingMethod = (
-      entry: GrpcMethodEntry,
-      record: GrpcTracing.StatusRecorder,
-    ) => {
-      const error = GrpcStatusError.unimplemented(
-        `gRPC client is missing method ${entry.localName}`,
-      );
-      record(error.code);
-      return error;
-    };
-
     // Reject unsendable metadata up front — a reserved key, a key or value
     // no header can spell, a value contradicting its key's `-bin` suffix — so
     // it is a recorded `invalid_argument` on every shape rather than a
@@ -174,13 +189,32 @@ export const makeConnect = (
     const recordMetadata = (
       options: GrpcCallOptions | undefined,
       record: GrpcTracing.StatusRecorder,
-    ) =>
-      validateCallMetadata(options).pipe(
-        Effect.mapError((error) => {
+    ) => validateCallMetadata(options).pipe(recorded(record));
+
+    /**
+     * Records a failing step's status on its way out. Every step of every
+     * shape has to do this before propagating, so it is spelled once.
+     */
+    const recorded =
+      (record: GrpcTracing.StatusRecorder) =>
+      <A>(
+        effect: Effect.Effect<A, GrpcStatusError.GrpcStatusError>,
+      ): Effect.Effect<A, GrpcStatusError.GrpcStatusError> =>
+        Effect.mapError(effect, (error) => {
           record(error.code);
           return error;
-        }),
-      );
+        });
+
+    /** {@link recorded} for the response half of a stream-shaped call. */
+    const recordedStream =
+      (record: GrpcTracing.StatusRecorder) =>
+      <A>(
+        stream: Stream.Stream<A, GrpcStatusError.GrpcStatusError>,
+      ): Stream.Stream<A, GrpcStatusError.GrpcStatusError> =>
+        Stream.mapError(stream, (error) => {
+          record(error.code);
+          return error;
+        });
 
     const invokeStream = (
       invoke: () => AsyncIterable<unknown>,
@@ -201,46 +235,27 @@ export const makeConnect = (
       return withCallSpanEffect(entry, ({ span, record }) =>
         Effect.gen(function* () {
           yield* recordMetadata(callOptions, record);
-          const method = resolveMethod(entry);
-          if (!method) {
-            return yield* Effect.fail(missingMethod(entry, record));
-          }
+          const method = resolveMethod(entry, record);
           const grpcRequest = yield* MethodRegistry.encodeRequest(
             entry,
             request,
-          ).pipe(
-            Effect.mapError((error) => {
+          ).pipe(recorded(record));
+          const value = yield* Effect.tryPromise({
+            try: (signal) =>
+              method(
+                grpcRequest,
+                callOptionsFor(callOptions, span, signal),
+              ) as Promise<unknown>,
+            catch: (cause) => {
+              const error = GrpcStatusError.fromConnectError(cause);
               record(error.code);
               return error;
-            }),
-          );
-          const result = yield* Effect.promise(
-            async (signal): Promise<CallResult> => {
-              try {
-                const call = method(
-                  grpcRequest,
-                  callOptionsFor(callOptions, span, signal),
-                ) as Promise<unknown>;
-                return { ok: true, value: await call };
-              } catch (cause) {
-                return { ok: false, cause };
-              }
             },
-          );
-          if (!result.ok) {
-            const error = GrpcStatusError.fromConnectError(result.cause);
-            record(error.code);
-            return yield* Effect.fail(error);
-          }
+          });
           const response = yield* MethodRegistry.decodeResponse(
             entry,
-            result.value,
-          ).pipe(
-            Effect.mapError((error) => {
-              record(error.code);
-              return error;
-            }),
-          );
+            value,
+          ).pipe(recorded(record));
           record("ok");
           return response;
         }),
@@ -263,19 +278,11 @@ export const makeConnect = (
         ({ span, record }) =>
           Effect.gen(function* () {
             yield* recordMetadata(callOptions, record);
-            const method = resolveMethod(entry);
-            if (!method) {
-              return yield* Effect.fail(missingMethod(entry, record));
-            }
+            const method = resolveMethod(entry, record);
             const grpcRequest = yield* MethodRegistry.encodeRequest(
               entry,
               request,
-            ).pipe(
-              Effect.mapError((error) => {
-                record(error.code);
-                return error;
-              }),
-            );
+            ).pipe(recorded(record));
             const controller = new AbortController();
             // An early consumer close aborts a live call, so the
             // finalizer's `cancelled` is correct for what remains; natural
@@ -300,10 +307,7 @@ export const makeConnect = (
               Stream.mapEffect((message) =>
                 MethodRegistry.decodeResponse(entry, message),
               ),
-              Stream.mapError((error) => {
-                record(error.code);
-                return error;
-              }),
+              recordedStream(record),
               Stream.onEnd(Effect.sync(() => record("ok"))),
             );
           }),
@@ -326,10 +330,7 @@ export const makeConnect = (
         ({ span, record }) =>
           Effect.gen(function* () {
             yield* recordMetadata(callOptions, record);
-            const method = resolveMethod(entry);
-            if (!method) {
-              return yield* Effect.fail(missingMethod(entry, record));
-            }
+            const method = resolveMethod(entry, record);
             const controller = new AbortController();
             const pump = openRequests(
               entry,
@@ -367,12 +368,7 @@ export const makeConnect = (
             const response = yield* MethodRegistry.decodeResponse(
               entry,
               result.value,
-            ).pipe(
-              Effect.mapError((error) => {
-                record(error.code);
-                return error;
-              }),
-            );
+            ).pipe(recorded(record));
             record("ok");
             return response;
           }),
@@ -395,10 +391,7 @@ export const makeConnect = (
         ({ span, record }) =>
           Effect.gen(function* () {
             yield* recordMetadata(callOptions, record);
-            const method = resolveMethod(entry);
-            if (!method) {
-              return Stream.fail(missingMethod(entry, record));
-            }
+            const method = resolveMethod(entry, record);
             const controller = new AbortController();
             const pump = openRequests(
               entry,

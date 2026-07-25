@@ -39,9 +39,6 @@ export const UserEventSchema = Schema.Struct({
 });
 export type UserEvent = Schema.Schema.Type<typeof UserEventSchema>;
 
-const readField = (message: unknown, field: string): unknown =>
-  typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
-
 const compact = <T extends Record<string, unknown>>(object: T): T => {
   const result: Record<string, unknown> = {};
   for (const key of Object.keys(object)) {
@@ -51,67 +48,67 @@ const compact = <T extends Record<string, unknown>>(object: T): T => {
 };
 
 export const fromGetUserRequest = (message: unknown): unknown => compact({
-  id: (readField(message, "id")) as string,
+  id: (CodegenSupport.readField(message, "id")) as string,
 });
 
 export const toGetUserRequest = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    id: (readField(message, "id")) as string,
+    id: (CodegenSupport.readField(message, "id")) as string,
   });
 };
 
 export const fromGetUserResponse = (message: unknown): unknown => compact({
-  user: readField(message, "user") == null ? undefined : fromUser(readField(message, "user")),
+  user: CodegenSupport.readField(message, "user") == null ? undefined : fromUser(CodegenSupport.readField(message, "user")),
 });
 
 export const toGetUserResponse = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    user: readField(message, "user") == null ? undefined : toUser(readField(message, "user")),
+    user: CodegenSupport.readField(message, "user") == null ? undefined : toUser(CodegenSupport.readField(message, "user")),
   });
 };
 
 export const fromWatchUsersRequest = (message: unknown): unknown => compact({
-  tenantId: (readField(message, "tenantId")) as string,
-  count: (readField(message, "count")) as number,
+  tenantId: (CodegenSupport.readField(message, "tenantId")) as string,
+  count: (CodegenSupport.readField(message, "count")) as number,
 });
 
 export const toWatchUsersRequest = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    tenantId: (readField(message, "tenantId")) as string,
-    count: (readField(message, "count")) as number,
+    tenantId: (CodegenSupport.readField(message, "tenantId")) as string,
+    count: (CodegenSupport.readField(message, "count")) as number,
   });
 };
 
 export const fromUser = (message: unknown): unknown => compact({
-  id: (readField(message, "id")) as string,
-  name: (readField(message, "name")) as string,
+  id: (CodegenSupport.readField(message, "id")) as string,
+  name: (CodegenSupport.readField(message, "name")) as string,
 });
 
 export const toUser = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    id: (readField(message, "id")) as string,
-    name: (readField(message, "name")) as string,
+    id: (CodegenSupport.readField(message, "id")) as string,
+    name: (CodegenSupport.readField(message, "name")) as string,
   });
 };
 
 export const fromUserEvent = (message: unknown): unknown => compact({
-  id: (readField(message, "id")) as string,
-  name: (readField(message, "name")) as string,
-  action: (readField(message, "action")) as string,
-  sequence: (readField(message, "sequence")) as number,
+  id: (CodegenSupport.readField(message, "id")) as string,
+  name: (CodegenSupport.readField(message, "name")) as string,
+  action: (CodegenSupport.readField(message, "action")) as string,
+  sequence: (CodegenSupport.readField(message, "sequence")) as number,
 });
 
 export const toUserEvent = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    id: (readField(message, "id")) as string,
-    name: (readField(message, "name")) as string,
-    action: (readField(message, "action")) as string,
-    sequence: (readField(message, "sequence")) as number,
+    id: (CodegenSupport.readField(message, "id")) as string,
+    name: (CodegenSupport.readField(message, "name")) as string,
+    action: (CodegenSupport.readField(message, "action")) as string,
+    sequence: (CodegenSupport.readField(message, "sequence")) as number,
   });
 };
 
@@ -210,10 +207,10 @@ export interface UserServiceImplementation<R = never> {
   readonly chatUsers: (requests: Stream.Stream<UserEvent, GrpcStatusError.GrpcStatusError>, context: CodegenSupport.GrpcServerContext) => Stream.Stream<UserEvent, GrpcStatusError.GrpcStatusError, R>;
 }
 
-export const UserServiceHandlersLayer = <R>(
+export const UserServiceHandlers = <R>(
   implementation: UserServiceImplementation<R>,
-): Layer.Layer<GrpcServerProtocol.GrpcHandlers, never, R> =>
-  GrpcServerProtocol.handlersLayer<R>({
+): Effect.Effect<GrpcServerProtocol.GrpcHandlers, never, R> =>
+  GrpcServerProtocol.handlersEffect<R>({
     "demo.v1.UserService/GetUser": {
       kind: "unary",
       handler: (request, context) => implementation.getUser(request as GetUserRequest, context),

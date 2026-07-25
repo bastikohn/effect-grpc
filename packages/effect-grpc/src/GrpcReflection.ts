@@ -2,14 +2,14 @@ import type { DescExtension, DescFile, DescMessage } from "@bufbuild/protobuf";
 import { toBinary } from "@bufbuild/protobuf";
 import { base64Decode, base64Encode } from "@bufbuild/protobuf/wire";
 import { FileDescriptorProtoSchema } from "@bufbuild/protobuf/wkt";
+import { Code } from "@connectrpc/connect";
 import { Context, Effect, Layer, Schema, Stream } from "effect";
 
-import type * as CodegenSupport from "./CodegenSupport.js";
+import * as CodegenSupport from "./CodegenSupport.js";
 import * as GrpcInvoker from "./GrpcInvoker.js";
 import type * as GrpcMethodRegistry from "./GrpcMethodRegistry.js";
 import type { ServeAllService } from "./GrpcNodeServer.js";
 import * as GrpcServerProtocol from "./GrpcServerProtocol.js";
-import * as GrpcStatusCode from "./GrpcStatusCode.js";
 import type * as GrpcStatusError from "./GrpcStatusError.js";
 import * as ReflectionPb from "./internal/reflectionPb.js";
 
@@ -121,11 +121,6 @@ export type ServerReflectionResponse = Schema.Schema.Type<
 export const ReflectionV1Tag =
   "grpc.reflection.v1.ServerReflection/ServerReflectionInfo";
 
-const readField = (message: unknown, field: string): unknown =>
-  typeof message === "object" && message !== null
-    ? (message as Record<string, unknown>)[field]
-    : undefined;
-
 type OneofField = { readonly case?: string | null; readonly value?: unknown };
 
 /*
@@ -145,23 +140,28 @@ const toOneof = (oneof: unknown): unknown => {
 };
 
 const descriptorsOf = <A>(value: unknown): ReadonlyArray<A> =>
-  (readField(value, "fileDescriptorProto") ?? []) as ReadonlyArray<A>;
+  (CodegenSupport.readField(value, "fileDescriptorProto") ??
+    []) as ReadonlyArray<A>;
 
 const fromReflectionRequest = (message: unknown): unknown => ({
-  host: (readField(message, "host") ?? "") as string,
-  messageRequest: fromOneof(readField(message, "messageRequest")),
+  host: (CodegenSupport.readField(message, "host") ?? "") as string,
+  messageRequest: fromOneof(
+    CodegenSupport.readField(message, "messageRequest"),
+  ),
 });
 
 const toReflectionRequest = (value: unknown): Record<string, unknown> => ({
-  host: (readField(value, "host") ?? "") as string,
-  messageRequest: toOneof(readField(value, "messageRequest")),
+  host: (CodegenSupport.readField(value, "host") ?? "") as string,
+  messageRequest: toOneof(CodegenSupport.readField(value, "messageRequest")),
 });
 
 const fromReflectionResponse = (message: unknown): unknown => {
-  const original = readField(message, "originalRequest");
-  const oneof = readField(message, "messageResponse") as OneofField | undefined;
+  const original = CodegenSupport.readField(message, "originalRequest");
+  const oneof = CodegenSupport.readField(message, "messageResponse") as
+    | OneofField
+    | undefined;
   return {
-    validHost: (readField(message, "validHost") ?? "") as string,
+    validHost: (CodegenSupport.readField(message, "validHost") ?? "") as string,
     ...(original == null
       ? {}
       : { originalRequest: fromReflectionRequest(original) }),
@@ -180,10 +180,12 @@ const fromReflectionResponse = (message: unknown): unknown => {
 };
 
 const toReflectionResponse = (value: unknown): Record<string, unknown> => {
-  const original = readField(value, "originalRequest");
-  const oneof = readField(value, "messageResponse") as OneofField | undefined;
+  const original = CodegenSupport.readField(value, "originalRequest");
+  const oneof = CodegenSupport.readField(value, "messageResponse") as
+    | OneofField
+    | undefined;
   return {
-    validHost: (readField(value, "validHost") ?? "") as string,
+    validHost: (CodegenSupport.readField(value, "validHost") ?? "") as string,
     ...(original == null
       ? {}
       : { originalRequest: toReflectionRequest(original) }),
@@ -222,13 +224,11 @@ export const ReflectionGrpcRegistry = new Map<
   ],
 ]);
 
-interface IndexedFile {
-  /**
-   * Serialized `FileDescriptorProto`s: the file itself first, followed by its
-   * transitive imports.
-   */
-  readonly closure: ReadonlyArray<Uint8Array>;
-}
+/**
+ * Serialized `FileDescriptorProto`s of one file: the file itself first,
+ * followed by its transitive imports — exactly what a file query answers with.
+ */
+type FileClosure = ReadonlyArray<Uint8Array>;
 
 /**
  * Prebuilt lookup tables answering every reflection query, derived from the
@@ -237,10 +237,10 @@ interface IndexedFile {
  */
 export interface ReflectionIndex {
   readonly serviceNames: ReadonlyArray<string>;
-  readonly filesByName: ReadonlyMap<string, IndexedFile>;
-  readonly filesBySymbol: ReadonlyMap<string, IndexedFile>;
+  readonly filesByName: ReadonlyMap<string, FileClosure>;
+  readonly filesBySymbol: ReadonlyMap<string, FileClosure>;
   /** Keyed by `<extendee typeName>:<field number>`. */
-  readonly filesByExtension: ReadonlyMap<string, IndexedFile>;
+  readonly filesByExtension: ReadonlyMap<string, FileClosure>;
   readonly extensionNumbers: ReadonlyMap<string, ReadonlyArray<number>>;
   /** Message type names, for `all_extension_numbers_of_type` existence checks. */
   readonly messageTypes: ReadonlySet<string>;
@@ -275,7 +275,7 @@ export const makeIndex = (
   for (const [name, file] of files) {
     serialized.set(name, toBinary(FileDescriptorProtoSchema, file.proto));
   }
-  const closureOf = (file: DescFile): ReadonlyArray<Uint8Array> => {
+  const closureOf = (file: DescFile): FileClosure => {
     const seen = new Set<string>();
     const closure: Uint8Array[] = [];
     const visit = (current: DescFile) => {
@@ -288,14 +288,14 @@ export const makeIndex = (
     return closure;
   };
 
-  const filesByName = new Map<string, IndexedFile>();
-  const filesBySymbol = new Map<string, IndexedFile>();
-  const filesByExtension = new Map<string, IndexedFile>();
+  const filesByName = new Map<string, FileClosure>();
+  const filesBySymbol = new Map<string, FileClosure>();
+  const filesByExtension = new Map<string, FileClosure>();
   const extensionNumbers = new Map<string, number[]>();
   const messageTypes = new Set<string>();
 
   for (const file of files.values()) {
-    const indexed: IndexedFile = { closure: closureOf(file) };
+    const indexed = closureOf(file);
     filesByName.set(fileName(file), indexed);
     const registerExtension = (extension: DescExtension) => {
       filesBySymbol.set(extension.typeName, indexed);
@@ -339,11 +339,6 @@ export const makeIndex = (
   };
 };
 
-const NOT_FOUND = GrpcStatusCode.toConnectCode("not_found") as number;
-const INVALID_ARGUMENT = GrpcStatusCode.toConnectCode(
-  "invalid_argument",
-) as number;
-
 const stripLeadingDot = (symbol: string): string =>
   symbol.startsWith(".") ? symbol.slice(1) : symbol;
 
@@ -362,20 +357,20 @@ export const respond = (
     ...base,
     messageResponse: {
       case: "errorResponse",
-      value: { errorCode: NOT_FOUND, errorMessage: message },
+      value: { errorCode: Code.NotFound, errorMessage: message },
     },
   });
   const found = (
-    file: IndexedFile | undefined,
+    closure: FileClosure | undefined,
     message: string,
   ): ServerReflectionResponse =>
-    file === undefined
+    closure === undefined
       ? notFound(message)
       : {
           ...base,
           messageResponse: {
             case: "fileDescriptorResponse",
-            value: { fileDescriptorProto: file.closure },
+            value: { fileDescriptorProto: closure },
           },
         };
 
@@ -432,7 +427,7 @@ export const respond = (
         messageResponse: {
           case: "errorResponse",
           value: {
-            errorCode: INVALID_ARGUMENT,
+            errorCode: Code.InvalidArgument,
             errorMessage: "no message_request set",
           },
         },
@@ -461,7 +456,7 @@ export const service = (
     );
   return {
     registry: ReflectionGrpcRegistry,
-    handlers: GrpcServerProtocol.handlersLayer({
+    handlers: GrpcServerProtocol.handlersEffect({
       [ReflectionV1Tag]: { kind: "bidi-streaming", handler },
     }),
   };

@@ -1,5 +1,7 @@
+import * as net from "node:net";
+
 import type { ConnectRouter, HandlerContext } from "@connectrpc/connect";
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 
 import type { GrpcMethodEntry } from "../../src/GrpcMethodRegistry.js";
 
@@ -39,6 +41,22 @@ export const handlerContext = (options?: {
     requestHeader: new Headers(options?.headers),
     signal: options?.signal ?? new AbortController().signal,
   }) as HandlerContext;
+
+/** A loopback port nothing is listening on, for tests that boot a server. */
+export const freePort = Effect.promise(
+  () =>
+    new Promise<number>((resolve, reject) => {
+      const server = net.createServer();
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", () => {
+        const address = server.address();
+        server.close(() => {
+          if (address && typeof address === "object") resolve(address.port);
+          else reject(new Error("Unable to allocate a local port"));
+        });
+      });
+    }),
+);
 
 /**
  * A four-shape method fixture for one service: a shared descriptor plus a

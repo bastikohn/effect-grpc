@@ -1,5 +1,3 @@
-import * as net from "node:net";
-
 import type { Transport } from "@connectrpc/connect";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
@@ -10,6 +8,7 @@ import * as GrpcInvoker from "../src/GrpcInvoker.js";
 import type * as GrpcMetadata from "../src/GrpcMetadata.js";
 import * as GrpcNodeServer from "../src/GrpcNodeServer.js";
 import * as GrpcServerProtocol from "../src/GrpcServerProtocol.js";
+import { freePort } from "./support/serverHarness.js";
 
 /**
  * Adapter parity over a real listener. `grpc.health.v1.Health/Check` is the
@@ -236,18 +235,3 @@ const inMemory = <A, E>(
       };
     }),
   );
-
-const freePort = Effect.promise(
-  () =>
-    new Promise<number>((resolve, reject) => {
-      const server = net.createServer();
-      server.once("error", reject);
-      server.listen(0, "127.0.0.1", () => {
-        const address = server.address();
-        server.close(() => {
-          if (address && typeof address === "object") resolve(address.port);
-          else reject(new Error("Unable to allocate a local port"));
-        });
-      });
-    }),
-);

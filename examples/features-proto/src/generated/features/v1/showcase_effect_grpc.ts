@@ -61,9 +61,6 @@ export const LocalUserSchema = Schema.Struct({
 });
 export type LocalUser = Schema.Schema.Type<typeof LocalUserSchema>;
 
-const readField = (message: unknown, field: string): unknown =>
-  typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;
-
 const compact = <T extends Record<string, unknown>>(object: T): T => {
   const result: Record<string, unknown> = {};
   for (const key of Object.keys(object)) {
@@ -143,100 +140,100 @@ const toGrpc$FeatureRequest_contactOneof = (value: unknown): unknown => {
 };
 
 export const fromFeatureRequest = (message: unknown): unknown => compact({
-  tags: ((readField(message, "tags") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as string),
-  scores: ((readField(message, "scores") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as number),
-  notes: ((readField(message, "notes") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => fromNote(value)),
-  state: readField(message, "state") as UserState,
-  owner: readField(message, "owner") == null ? undefined : fromFeatureUser(readField(message, "owner")),
-  labels: Object.fromEntries(Object.entries((readField(message, "labels") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, (value) as string])),
-  counts: Object.fromEntries(Object.entries((readField(message, "counts") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, (value) as number])),
-  reviewers: Object.fromEntries(Object.entries((readField(message, "reviewers") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, fromLocalUser(value)])),
-  createdAt: readField(message, "createdAt") == null ? undefined : fromGrpc$GoogleProtobufTimestamp(readField(message, "createdAt")),
-  ttl: readField(message, "ttl") == null ? undefined : fromGrpc$GoogleProtobufDuration(readField(message, "ttl")),
-  payload: fromGrpc$Bytes((readField(message, "payload")) as Uint8Array),
-  sequence: String(readField(message, "sequence")),
-  contact: fromGrpc$FeatureRequest_contactOneof(readField(message, "contact")),
+  tags: ((CodegenSupport.readField(message, "tags") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as string),
+  scores: ((CodegenSupport.readField(message, "scores") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as number),
+  notes: ((CodegenSupport.readField(message, "notes") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => fromNote(value)),
+  state: CodegenSupport.readField(message, "state") as UserState,
+  owner: CodegenSupport.readField(message, "owner") == null ? undefined : fromFeatureUser(CodegenSupport.readField(message, "owner")),
+  labels: Object.fromEntries(Object.entries((CodegenSupport.readField(message, "labels") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, (value) as string])),
+  counts: Object.fromEntries(Object.entries((CodegenSupport.readField(message, "counts") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, (value) as number])),
+  reviewers: Object.fromEntries(Object.entries((CodegenSupport.readField(message, "reviewers") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, fromLocalUser(value)])),
+  createdAt: CodegenSupport.readField(message, "createdAt") == null ? undefined : fromGrpc$GoogleProtobufTimestamp(CodegenSupport.readField(message, "createdAt")),
+  ttl: CodegenSupport.readField(message, "ttl") == null ? undefined : fromGrpc$GoogleProtobufDuration(CodegenSupport.readField(message, "ttl")),
+  payload: fromGrpc$Bytes((CodegenSupport.readField(message, "payload")) as Uint8Array),
+  sequence: String(CodegenSupport.readField(message, "sequence")),
+  contact: fromGrpc$FeatureRequest_contactOneof(CodegenSupport.readField(message, "contact")),
 });
 
 export const toFeatureRequest = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    tags: ((readField(message, "tags") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as string),
-    scores: ((readField(message, "scores") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as number),
-    notes: ((readField(message, "notes") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => toNote(value)),
-    state: readField(message, "state") as number,
-    owner: readField(message, "owner") == null ? undefined : toFeatureUser(readField(message, "owner")),
-    labels: Object.fromEntries(Object.entries((readField(message, "labels") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, (value) as string])),
-    counts: Object.fromEntries(Object.entries((readField(message, "counts") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, (value) as number])),
-    reviewers: Object.fromEntries(Object.entries((readField(message, "reviewers") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, toLocalUser(value)])),
-    createdAt: readField(message, "createdAt") == null ? undefined : toGrpc$GoogleProtobufTimestamp(readField(message, "createdAt")),
-    ttl: readField(message, "ttl") == null ? undefined : toGrpc$GoogleProtobufDuration(readField(message, "ttl")),
-    payload: toGrpc$Bytes(readField(message, "payload")),
-    sequence: BigInt((readField(message, "sequence")) as string),
-    contact: toGrpc$FeatureRequest_contactOneof(readField(message, "contact")),
+    tags: ((CodegenSupport.readField(message, "tags") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as string),
+    scores: ((CodegenSupport.readField(message, "scores") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as number),
+    notes: ((CodegenSupport.readField(message, "notes") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => toNote(value)),
+    state: CodegenSupport.readField(message, "state") as number,
+    owner: CodegenSupport.readField(message, "owner") == null ? undefined : toFeatureUser(CodegenSupport.readField(message, "owner")),
+    labels: Object.fromEntries(Object.entries((CodegenSupport.readField(message, "labels") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, (value) as string])),
+    counts: Object.fromEntries(Object.entries((CodegenSupport.readField(message, "counts") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, (value) as number])),
+    reviewers: Object.fromEntries(Object.entries((CodegenSupport.readField(message, "reviewers") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [key, toLocalUser(value)])),
+    createdAt: CodegenSupport.readField(message, "createdAt") == null ? undefined : toGrpc$GoogleProtobufTimestamp(CodegenSupport.readField(message, "createdAt")),
+    ttl: CodegenSupport.readField(message, "ttl") == null ? undefined : toGrpc$GoogleProtobufDuration(CodegenSupport.readField(message, "ttl")),
+    payload: toGrpc$Bytes(CodegenSupport.readField(message, "payload")),
+    sequence: BigInt((CodegenSupport.readField(message, "sequence")) as string),
+    contact: toGrpc$FeatureRequest_contactOneof(CodegenSupport.readField(message, "contact")),
   });
 };
 
 export const fromFeatureResponse = (message: unknown): unknown => compact({
-  request: readField(message, "request") == null ? undefined : fromFeatureRequest(readField(message, "request")),
-  summary: (readField(message, "summary")) as string,
+  request: CodegenSupport.readField(message, "request") == null ? undefined : fromFeatureRequest(CodegenSupport.readField(message, "request")),
+  summary: (CodegenSupport.readField(message, "summary")) as string,
 });
 
 export const toFeatureResponse = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    request: readField(message, "request") == null ? undefined : toFeatureRequest(readField(message, "request")),
-    summary: (readField(message, "summary")) as string,
+    request: CodegenSupport.readField(message, "request") == null ? undefined : toFeatureRequest(CodegenSupport.readField(message, "request")),
+    summary: (CodegenSupport.readField(message, "summary")) as string,
   });
 };
 
 export const fromNote = (message: unknown): unknown => compact({
-  text: (readField(message, "text")) as string,
+  text: (CodegenSupport.readField(message, "text")) as string,
 });
 
 export const toNote = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    text: (readField(message, "text")) as string,
+    text: (CodegenSupport.readField(message, "text")) as string,
   });
 };
 
 export const fromUploadSummary = (message: unknown): unknown => compact({
-  count: (readField(message, "count")) as number,
-  joined: (readField(message, "joined")) as string,
+  count: (CodegenSupport.readField(message, "count")) as number,
+  joined: (CodegenSupport.readField(message, "joined")) as string,
 });
 
 export const toUploadSummary = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    count: (readField(message, "count")) as number,
-    joined: (readField(message, "joined")) as string,
+    count: (CodegenSupport.readField(message, "count")) as number,
+    joined: (CodegenSupport.readField(message, "joined")) as string,
   });
 };
 
 export const fromChatMessage = (message: unknown): unknown => compact({
-  text: (readField(message, "text")) as string,
-  sequence: (readField(message, "sequence")) as number,
+  text: (CodegenSupport.readField(message, "text")) as string,
+  sequence: (CodegenSupport.readField(message, "sequence")) as number,
 });
 
 export const toChatMessage = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    text: (readField(message, "text")) as string,
-    sequence: (readField(message, "sequence")) as number,
+    text: (CodegenSupport.readField(message, "text")) as string,
+    sequence: (CodegenSupport.readField(message, "sequence")) as number,
   });
 };
 
 export const fromLocalUser = (message: unknown): unknown => compact({
-  id: (readField(message, "id")) as string,
-  role: (readField(message, "role")) as string,
+  id: (CodegenSupport.readField(message, "id")) as string,
+  role: (CodegenSupport.readField(message, "role")) as string,
 });
 
 export const toLocalUser = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    id: (readField(message, "id")) as string,
-    role: (readField(message, "role")) as string,
+    id: (CodegenSupport.readField(message, "id")) as string,
+    role: (CodegenSupport.readField(message, "role")) as string,
   });
 };
 
@@ -317,10 +314,10 @@ export interface FeatureShowcaseServiceImplementation<R = never> {
   readonly chat: (requests: Stream.Stream<ChatMessage, GrpcStatusError.GrpcStatusError>, context: CodegenSupport.GrpcServerContext) => Stream.Stream<ChatMessage, GrpcStatusError.GrpcStatusError, R>;
 }
 
-export const FeatureShowcaseServiceHandlersLayer = <R>(
+export const FeatureShowcaseServiceHandlers = <R>(
   implementation: FeatureShowcaseServiceImplementation<R>,
-): Layer.Layer<GrpcServerProtocol.GrpcHandlers, never, R> =>
-  GrpcServerProtocol.handlersLayer<R>({
+): Effect.Effect<GrpcServerProtocol.GrpcHandlers, never, R> =>
+  GrpcServerProtocol.handlersEffect<R>({
     "features.v1.FeatureShowcaseService/Describe": {
       kind: "unary",
       handler: (request, context) => implementation.describe(request as FeatureRequest, context),

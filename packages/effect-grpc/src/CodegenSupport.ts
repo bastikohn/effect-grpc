@@ -1,4 +1,4 @@
-import * as GrpcMetadata from "./GrpcMetadata.js";
+import type * as GrpcMetadata from "./GrpcMetadata.js";
 
 export interface GrpcCallOptions {
   /**
@@ -19,12 +19,11 @@ export interface GrpcServerContext {
 }
 
 /**
- * Builds the per-call context server handlers receive: the request metadata,
- * decoded from the incoming headers — `-bin` values arrive as `Uint8Array`,
- * matching what the caller sent.
+ * Reads a field off a wire message, tolerating an absent or non-object
+ * message. Every generated registry converter needs exactly this, so it is
+ * exported here rather than emitted into each generated file.
  */
-export const serverContext = (
-  headers: Headers | ReadonlyArray<readonly [string, string]>,
-): GrpcServerContext => ({
-  metadata: GrpcMetadata.fromHeaders(headers),
-});
+export const readField = (message: unknown, field: string): unknown =>
+  typeof message === "object" && message !== null
+    ? (message as Record<string, unknown>)[field]
+    : undefined;

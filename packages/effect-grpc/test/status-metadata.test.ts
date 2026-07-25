@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import * as GrpcMetadata from "../src/GrpcMetadata.js";
 import * as GrpcStatusCode from "../src/GrpcStatusCode.js";
 import * as GrpcStatusError from "../src/GrpcStatusError.js";
-import { metadataViolation } from "../src/internal/metadata.js";
+import { metadataViolation } from "../src/internal/invoker.js";
 
 describe("GrpcStatusCode", () => {
   it("converts to and from Connect codes", () => {
@@ -122,9 +122,19 @@ describe("GrpcMetadata", () => {
         "Invalid gRPC metadata key",
       );
     }
-    expect(metadataViolation([["x-trace", "a\nb"]])).toContain(
-      "Invalid gRPC metadata value",
-    );
+    // ...and gRPC's charset is narrower than HTTP's, so the encode path alone
+    // would let these onto the wire for a conforming peer to drop or reject,
+    // instead of failing the call locally with `invalid_argument`.
+    for (const key of ["x-parity$q", "foo!", "key#1", "a%b", "a&b", "a|b"]) {
+      expect(metadataViolation([[key, "v"]])).toContain(
+        "Invalid gRPC metadata key",
+      );
+    }
+    for (const value of ["a\nb", "héllo", "a\tb", "a\u000Bb"]) {
+      expect(metadataViolation([["x-trace", value]])).toContain(
+        "Invalid gRPC metadata value",
+      );
+    }
     expect(
       metadataViolation([
         ["x-trace", "ok"],

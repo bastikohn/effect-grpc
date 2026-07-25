@@ -119,7 +119,7 @@ const withHealthServer = <A, E>(
   Effect.scoped(
     Effect.gen(function* () {
       const port = yield* freePort;
-      const health = yield* GrpcHealth.make();
+      const health = yield* GrpcHealth.make;
 
       yield* GrpcNodeServer.serveAll({
         host: "127.0.0.1",

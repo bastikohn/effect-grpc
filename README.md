@@ -41,8 +41,7 @@ Shipped:
       token layers.
 - [x] Custom client interceptors and per-call/default timeouts.
 - [x] gRPC health checking protocol (`grpc.health.v1`) via `GrpcHealth`.
-- [x] gRPC server reflection (`grpc.reflection.v1` and `v1alpha`) via
-      `GrpcReflection`.
+- [x] gRPC server reflection (`grpc.reflection.v1`) via `GrpcReflection`.
 - [x] OpenTelemetry tracing and metrics for clients and servers
       (semconv spans and duration histograms, exporter-agnostic; see
       [observability](docs/users/observability.md)).
@@ -101,8 +100,8 @@ support policy.
 
 Codegen runs through [Buf](https://buf.build). See the
 [`protoc-gen-effect-grpc` README](packages/protoc-gen-effect-grpc/README.md)
-for the install line, the `buf.yaml`/`buf.gen.yaml` recipe, and the full
-generator option table.
+for the install line, the `buf.yaml`/`buf.gen.yaml` recipe, and the generator
+options.
 
 ## Docs
 

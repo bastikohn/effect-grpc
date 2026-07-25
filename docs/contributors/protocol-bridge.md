@@ -29,8 +29,8 @@ Execution runs through two templates behind four thin connect adapters
   response stream through `StreamBridge.responsePump`, so demand follows
   connect's iteration and HTTP/2 flow control, and closing the pump interrupts
   the handler fiber when the client goes away. The pump spawns the handler
-  fiber with the scoped server span as parent and the incoming `tracestate`
-  provided, so downstream client calls inherit span context and propagation.
+  fiber with the scoped server span as parent, so downstream client calls
+  inherit span context.
 
 `internal/streamBridge.ts` owns the `Stream` <-> `AsyncIterable` termination
 semantics on both sides:

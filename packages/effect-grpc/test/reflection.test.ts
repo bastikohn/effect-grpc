@@ -1,6 +1,6 @@
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import { fileDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
-import { base64Decode, base64Encode } from "@bufbuild/protobuf/wire";
+import { base64Encode } from "@bufbuild/protobuf/wire";
 import { FileDescriptorProtoSchema } from "@bufbuild/protobuf/wkt";
 import type { ConnectRouter, HandlerContext } from "@connectrpc/connect";
 import { Context, Effect, Layer } from "effect";
@@ -17,8 +17,8 @@ const INVALID_ARGUMENT = 3;
 
 const HEALTH_PROTO = "grpc/health/v1/health.proto";
 
-const decodeFileName = (base64: string): string =>
-  fromBinary(FileDescriptorProtoSchema, base64Decode(base64)).name;
+const decodeFileName = (bytes: Uint8Array): string =>
+  fromBinary(FileDescriptorProtoSchema, bytes).name;
 
 describe("GrpcReflection index", () => {
   const index = GrpcReflection.makeIndex([
@@ -29,15 +29,19 @@ describe("GrpcReflection index", () => {
   it("lists every registered service, sorted", () => {
     const response = GrpcReflection.respond(index, {
       host: "localhost",
-      listServices: "*",
+      messageRequest: { case: "listServices", value: "*" },
     });
 
     expect(response.validHost).toBe("localhost");
-    expect(response.listServicesResponse?.service).toEqual([
-      { name: "grpc.health.v1.Health" },
-      { name: "grpc.reflection.v1.ServerReflection" },
-      { name: "grpc.reflection.v1alpha.ServerReflection" },
-    ]);
+    expect(response.messageResponse).toEqual({
+      case: "listServicesResponse",
+      value: {
+        service: [
+          { name: "grpc.health.v1.Health" },
+          { name: "grpc.reflection.v1.ServerReflection" },
+        ],
+      },
+    });
   });
 
   it.each([
@@ -49,43 +53,50 @@ describe("GrpcReflection index", () => {
   ])("resolves file_containing_symbol for a %s", (_kind, symbol) => {
     const response = GrpcReflection.respond(index, {
       host: "",
-      fileContainingSymbol: symbol,
+      messageRequest: { case: "fileContainingSymbol", value: symbol },
     });
 
-    const files = response.fileDescriptorResponse?.fileDescriptorProto ?? [];
-    expect(files.map(decodeFileName)).toEqual([HEALTH_PROTO]);
+    expect(descriptorNames(response)).toEqual([HEALTH_PROTO]);
   });
 
   it("resolves file_by_filename", () => {
     const response = GrpcReflection.respond(index, {
       host: "",
-      fileByFilename: HEALTH_PROTO,
+      messageRequest: { case: "fileByFilename", value: HEALTH_PROTO },
     });
 
-    const files = response.fileDescriptorResponse?.fileDescriptorProto ?? [];
-    expect(files.map(decodeFileName)).toEqual([HEALTH_PROTO]);
+    expect(descriptorNames(response)).toEqual([HEALTH_PROTO]);
   });
 
   it("answers unknown names with an in-band NOT_FOUND echoing the request", () => {
     const request = {
       host: "localhost",
-      fileContainingSymbol: "no.such.Symbol",
-    };
+      messageRequest: {
+        case: "fileContainingSymbol",
+        value: "no.such.Symbol",
+      },
+    } as const;
     const response = GrpcReflection.respond(index, request);
 
-    expect(response.fileDescriptorResponse).toBeUndefined();
-    expect(response.errorResponse).toEqual({
-      errorCode: NOT_FOUND,
-      errorMessage: "symbol not found: no.such.Symbol",
+    expect(response.messageResponse).toEqual({
+      case: "errorResponse",
+      value: {
+        errorCode: NOT_FOUND,
+        errorMessage: "symbol not found: no.such.Symbol",
+      },
     });
     expect(response.originalRequest).toEqual(request);
   });
 
   it("answers a request without a message_request with INVALID_ARGUMENT", () => {
-    const response = GrpcReflection.respond(index, { host: "" });
+    const response = GrpcReflection.respond(index, {
+      host: "",
+      messageRequest: { case: undefined },
+    });
 
-    expect(response.errorResponse).toMatchObject({
-      errorCode: INVALID_ARGUMENT,
+    expect(response.messageResponse).toMatchObject({
+      case: "errorResponse",
+      value: { errorCode: INVALID_ARGUMENT },
     });
   });
 });
@@ -142,69 +153,84 @@ describe("GrpcReflection index with imports and extensions", () => {
   it("returns the transitive import closure, requested file first", () => {
     const response = GrpcReflection.respond(index, {
       host: "",
-      fileContainingSymbol: "test.a.AService.Do",
+      messageRequest: {
+        case: "fileContainingSymbol",
+        value: "test.a.AService.Do",
+      },
     });
 
-    const files = response.fileDescriptorResponse?.fileDescriptorProto ?? [];
-    expect(files.map(decodeFileName)).toEqual(["test/a.proto", "test/b.proto"]);
+    expect(descriptorNames(response)).toEqual(["test/a.proto", "test/b.proto"]);
   });
 
   it("imported files are themselves queryable", () => {
     const response = GrpcReflection.respond(index, {
       host: "",
-      fileContainingSymbol: "test.b.BMsg",
+      messageRequest: { case: "fileContainingSymbol", value: "test.b.BMsg" },
     });
 
-    const files = response.fileDescriptorResponse?.fileDescriptorProto ?? [];
-    expect(files.map(decodeFileName)).toEqual(["test/b.proto"]);
+    expect(descriptorNames(response)).toEqual(["test/b.proto"]);
   });
 
   it("resolves file_containing_extension", () => {
     const response = GrpcReflection.respond(index, {
       host: "",
-      fileContainingExtension: {
-        containingType: "test.b.BMsg",
-        extensionNumber: 100,
+      messageRequest: {
+        case: "fileContainingExtension",
+        value: { containingType: "test.b.BMsg", extensionNumber: 100 },
       },
     });
 
-    const files = response.fileDescriptorResponse?.fileDescriptorProto ?? [];
-    expect(files.map(decodeFileName)).toEqual(["test/a.proto", "test/b.proto"]);
+    expect(descriptorNames(response)).toEqual(["test/a.proto", "test/b.proto"]);
 
     const missing = GrpcReflection.respond(index, {
       host: "",
-      fileContainingExtension: {
-        containingType: "test.b.BMsg",
-        extensionNumber: 101,
+      messageRequest: {
+        case: "fileContainingExtension",
+        value: { containingType: "test.b.BMsg", extensionNumber: 101 },
       },
     });
-    expect(missing.errorResponse).toMatchObject({ errorCode: NOT_FOUND });
+    expect(missing.messageResponse).toMatchObject({
+      case: "errorResponse",
+      value: { errorCode: NOT_FOUND },
+    });
   });
 
   it("resolves all_extension_numbers_of_type", () => {
     const known = GrpcReflection.respond(index, {
       host: "",
-      allExtensionNumbersOfType: "test.b.BMsg",
+      messageRequest: {
+        case: "allExtensionNumbersOfType",
+        value: "test.b.BMsg",
+      },
     });
-    expect(known.allExtensionNumbersResponse).toEqual({
-      baseTypeName: "test.b.BMsg",
-      extensionNumber: [100],
+    expect(known.messageResponse).toEqual({
+      case: "allExtensionNumbersResponse",
+      value: { baseTypeName: "test.b.BMsg", extensionNumber: [100] },
     });
 
     const noExtensions = GrpcReflection.respond(index, {
       host: "",
-      allExtensionNumbersOfType: "test.a.Req",
+      messageRequest: {
+        case: "allExtensionNumbersOfType",
+        value: "test.a.Req",
+      },
     });
-    expect(noExtensions.allExtensionNumbersResponse).toEqual({
-      baseTypeName: "test.a.Req",
-      extensionNumber: [],
+    expect(noExtensions.messageResponse).toEqual({
+      case: "allExtensionNumbersResponse",
+      value: { baseTypeName: "test.a.Req", extensionNumber: [] },
     });
 
     const unknown = GrpcReflection.respond(index, {
       host: "",
-      allExtensionNumbersOfType: "test.Missing",
+      messageRequest: {
+        case: "allExtensionNumbersOfType",
+        value: "test.Missing",
+      },
     });
-    expect(unknown.errorResponse).toMatchObject({ errorCode: NOT_FOUND });
+    expect(unknown.messageResponse).toMatchObject({
+      case: "errorResponse",
+      value: { errorCode: NOT_FOUND },
+    });
   });
 });
 
@@ -264,33 +290,14 @@ describe("grpc.reflection over the server protocol", () => {
       },
     });
   });
-
-  it("serves the identical protocol under the v1alpha alias", async () => {
-    const responses = await withReflectionServer(
-      "grpc.reflection.v1alpha.ServerReflection",
-      [
-        {
-          host: "",
-          messageRequest: {
-            case: "fileContainingSymbol",
-            value: "grpc.reflection.v1alpha.ServerReflection",
-          },
-        },
-      ],
-    );
-
-    const oneof = messageResponseOf(responses[0]);
-    expect(oneof.case).toBe("fileDescriptorResponse");
-    const descriptors = (
-      oneof.value as { fileDescriptorProto: ReadonlyArray<Uint8Array> }
-    ).fileDescriptorProto;
-    expect(
-      descriptors.map(
-        (bytes) => fromBinary(FileDescriptorProtoSchema, bytes).name,
-      ),
-    ).toEqual(["grpc/reflection/v1alpha/reflection.proto"]);
-  });
 });
+
+const descriptorNames = (
+  response: GrpcReflection.ServerReflectionResponse,
+): ReadonlyArray<string> =>
+  response.messageResponse.case === "fileDescriptorResponse"
+    ? response.messageResponse.value.fileDescriptorProto.map(decodeFileName)
+    : [];
 
 const messageResponseOf = (
   response: unknown,

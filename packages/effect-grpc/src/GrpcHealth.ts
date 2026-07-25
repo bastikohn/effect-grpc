@@ -27,7 +27,7 @@ import * as HealthPb from "./internal/healthPb.js";
  * GrpcNodeServer.serveAll({
  *   host, port,
  *   services: [userService, GrpcHealth.service],
- * }).pipe(Effect.provide(GrpcHealth.layer()))
+ * }).pipe(Effect.provide(GrpcHealth.layer))
  * ```
  *
  * Applications flip statuses through the service:
@@ -43,12 +43,14 @@ import * as HealthPb from "./internal/healthPb.js";
  * `grpc.health.v1.HealthCheckResponse.ServingStatus`. `SERVICE_UNKNOWN` is
  * only reported by `Watch` for services the server does not know about.
  */
-export const ServingStatusSchema = Schema.Literals([
+const ServingStatuses = [
   "UNKNOWN",
   "SERVING",
   "NOT_SERVING",
   "SERVICE_UNKNOWN",
-]);
+] as const;
+
+export const ServingStatusSchema = Schema.Literals(ServingStatuses);
 export type ServingStatus = Schema.Schema.Type<typeof ServingStatusSchema>;
 
 export const HealthCheckRequestSchema = Schema.Struct({
@@ -65,25 +67,14 @@ export type HealthCheckResponse = Schema.Schema.Type<
   typeof HealthCheckResponseSchema
 >;
 
-const servingStatusCodes: Record<ServingStatus, HealthPb.ServingStatusCode> = {
-  UNKNOWN: 0,
-  SERVING: 1,
-  NOT_SERVING: 2,
-  SERVICE_UNKNOWN: 3,
+/** Wire enum value of a status name; unknown names fall back to `UNKNOWN`. */
+const servingStatusCode = (name: unknown): number => {
+  const code = ServingStatuses.indexOf(name as ServingStatus);
+  return code < 0 ? 0 : code;
 };
 
-const servingStatusFromCode = (code: unknown): ServingStatus => {
-  switch (code) {
-    case 1:
-      return "SERVING";
-    case 2:
-      return "NOT_SERVING";
-    case 3:
-      return "SERVICE_UNKNOWN";
-    default:
-      return "UNKNOWN";
-  }
-};
+const servingStatusFromCode = (code: unknown): ServingStatus =>
+  ServingStatuses[code as number] ?? "UNKNOWN";
 
 const readField = (message: unknown, field: string): unknown =>
   typeof message === "object" && message !== null
@@ -103,9 +94,7 @@ const fromHealthCheckResponse = (message: unknown): unknown => ({
 });
 
 const toHealthCheckResponse = (value: unknown): Record<string, unknown> => ({
-  status:
-    servingStatusCodes[readField(value, "status") as ServingStatus] ??
-    servingStatusCodes.UNKNOWN,
+  status: servingStatusCode(readField(value, "status")),
 });
 
 export const HealthGrpcRegistry = new Map<
@@ -156,8 +145,6 @@ export const HealthGrpcRegistry = new Map<
  * suppressed).
  */
 export interface GrpcHealthService {
-  /** Snapshot of every registered service status. */
-  readonly statuses: Effect.Effect<ReadonlyMap<string, ServingStatus>>;
   /**
    * Current status of `service` (defaults to `""`, the overall server).
    * Fails with `not_found` when the service is not registered.
@@ -182,73 +169,51 @@ export class GrpcHealth extends Context.Service<
   GrpcHealthService
 >()("@effect-grpc/effect-grpc/GrpcHealth") {}
 
-export interface GrpcHealthOptions {
-  /**
-   * Statuses registered when the service is built. Defaults to marking the
-   * overall server (`""`) as `SERVING`, mirroring the reference
-   * implementations (e.g. grpc-go's `health.NewServer`).
-   */
-  readonly initialStatuses?: Iterable<readonly [string, ServingStatus]>;
-}
+/**
+ * The overall server (`""`) starts as `SERVING`, mirroring the reference
+ * implementations (e.g. grpc-go's `health.NewServer`).
+ */
+export const make: Effect.Effect<GrpcHealthService> = Effect.gen(function* () {
+  const statuses = yield* SubscriptionRef.make<
+    ReadonlyMap<string, ServingStatus>
+  >(new Map([["", "SERVING"]]));
 
-export const make = (
-  options?: GrpcHealthOptions,
-): Effect.Effect<GrpcHealthService> =>
-  Effect.gen(function* () {
-    const statuses = yield* SubscriptionRef.make<
-      ReadonlyMap<string, ServingStatus>
-    >(new Map(options?.initialStatuses ?? [["", "SERVING"]]));
+  const check = (service = "") =>
+    SubscriptionRef.get(statuses).pipe(
+      Effect.flatMap((map) => {
+        const status = map.get(service);
+        return status === undefined
+          ? Effect.fail(GrpcStatusError.notFound(`unknown service: ${service}`))
+          : Effect.succeed(status);
+      }),
+    );
 
-    const check = (service = "") =>
-      SubscriptionRef.get(statuses).pipe(
-        Effect.flatMap((map) => {
-          const status = map.get(service);
-          return status === undefined
-            ? Effect.fail(
-                GrpcStatusError.notFound(`unknown service: ${service}`),
-              )
-            : Effect.succeed(status);
-        }),
-      );
+  const watch = (service = "") =>
+    SubscriptionRef.changes(statuses).pipe(
+      Stream.map((map): ServingStatus => map.get(service) ?? "SERVICE_UNKNOWN"),
+      Stream.changes,
+    );
 
-    const watch = (service = "") =>
-      SubscriptionRef.changes(statuses).pipe(
-        Stream.map(
-          (map): ServingStatus => map.get(service) ?? "SERVICE_UNKNOWN",
-        ),
-        Stream.changes,
-      );
+  const set = (service: string, status: ServingStatus) =>
+    SubscriptionRef.update(
+      statuses,
+      (map) =>
+        new Map(map).set(service, status) as ReadonlyMap<string, ServingStatus>,
+    );
 
-    const set = (service: string, status: ServingStatus) =>
-      SubscriptionRef.update(
-        statuses,
-        (map) =>
-          new Map(map).set(service, status) as ReadonlyMap<
-            string,
-            ServingStatus
-          >,
-      );
+  const clear = (service: string) =>
+    SubscriptionRef.update(statuses, (map) => {
+      if (!map.has(service)) return map;
+      const next = new Map(map);
+      next.delete(service);
+      return next;
+    });
 
-    const clear = (service: string) =>
-      SubscriptionRef.update(statuses, (map) => {
-        if (!map.has(service)) return map;
-        const next = new Map(map);
-        next.delete(service);
-        return next;
-      });
-
-    return {
-      statuses: SubscriptionRef.get(statuses),
-      check,
-      watch,
-      set,
-      clear,
-    } satisfies GrpcHealthService;
-  });
+  return { check, watch, set, clear } satisfies GrpcHealthService;
+});
 
 /** Provides {@link GrpcHealth} backed by an in-memory status map. */
-export const layer = (options?: GrpcHealthOptions): Layer.Layer<GrpcHealth> =>
-  Layer.effect(GrpcHealth, make(options));
+export const layer: Layer.Layer<GrpcHealth> = Layer.effect(GrpcHealth, make);
 
 /**
  * Handlers for the `grpc.health.v1.Health` RPCs, reading statuses from

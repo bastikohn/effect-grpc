@@ -16,8 +16,7 @@ const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(packageRoot, "../..");
 const fixturesRoot = join(packageRoot, "test/fixtures/proto-features");
 const generatedRoot = join(packageRoot, "test/.generated/proto-features");
-const defaultPluginOptions =
-  "target=ts,import_extension=js,errors=grpc-status,methods=unary,server-streaming";
+const defaultPluginOptions = "target=ts,import_extension=js";
 
 export interface GeneratedProtoFeature {
   readonly content: string;

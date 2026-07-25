@@ -13,23 +13,20 @@ const SERVICE_UNKNOWN = 3;
 
 describe("GrpcHealth service", () => {
   it("marks the overall server as serving by default", async () => {
-    const result = await Effect.runPromise(
+    const overall = await Effect.runPromise(
       Effect.gen(function* () {
-        const health = yield* GrpcHealth.make();
-        const overall = yield* health.check();
-        const snapshot = yield* health.statuses;
-        return { overall, snapshot };
+        const health = yield* GrpcHealth.make;
+        return yield* health.check();
       }),
     );
 
-    expect(result.overall).toBe("SERVING");
-    expect(result.snapshot).toEqual(new Map([["", "SERVING"]]));
+    expect(overall).toBe("SERVING");
   });
 
   it("unregisters services on clear", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
-        const health = yield* GrpcHealth.make();
+        const health = yield* GrpcHealth.make;
         yield* health.set("demo.v1.UserService", "SERVING");
         yield* health.clear("demo.v1.UserService");
         const error = yield* Effect.flip(health.check("demo.v1.UserService"));
@@ -155,14 +152,13 @@ interface HealthHarness {
  */
 const withHealthServer = <A>(
   test: (harness: HealthHarness) => Effect.Effect<A>,
-  options?: GrpcHealth.GrpcHealthOptions,
 ): Promise<A> =>
   Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
         const context = yield* Layer.build(
           GrpcHealth.HealthHandlersLayer.pipe(
-            Layer.provideMerge(GrpcHealth.layer(options)),
+            Layer.provideMerge(GrpcHealth.layer),
           ),
         );
         const { routes } = yield* GrpcServerProtocol.make({

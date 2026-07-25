@@ -133,10 +133,7 @@ describe("public API", () => {
         GrpcHealth.service,
       ],
     });
-    expect(GrpcHealth.layer()).type.toBe<Layer.Layer<GrpcHealth.GrpcHealth>>();
-    expect(GrpcHealth.make).type.toBeCallableWith({
-      initialStatuses: [["", "SERVING"]],
-    });
+    expect(GrpcHealth.layer).type.toBe<Layer.Layer<GrpcHealth.GrpcHealth>>();
   });
 
   it("pins the status error to failure codes and one metadata channel", () => {
@@ -178,7 +175,7 @@ describe("public API", () => {
       services: [
         {
           registry: UserServiceGrpcRegistry,
-          handlers: GrpcHealth.layer(),
+          handlers: GrpcHealth.layer,
         },
       ],
     });
@@ -245,7 +242,7 @@ describe("public API", () => {
       expect(health.watch("demo.v1.UserService")).type.toBe<
         Stream.Stream<GrpcHealth.ServingStatus>
       >();
-    }).pipe(Effect.provide(GrpcHealth.layer()));
+    }).pipe(Effect.provide(GrpcHealth.layer));
 
     Effect.gen(function* () {
       const client = yield* GrpcHealth.HealthClient;
@@ -274,14 +271,20 @@ describe("public API", () => {
     const index = GrpcReflection.makeIndex([UserServiceGrpcRegistry]);
     const response = GrpcReflection.respond(index, {
       host: "localhost",
-      listServices: "*",
+      messageRequest: { case: "listServices", value: "*" },
     });
     expect(response).type.toBe<GrpcReflection.ServerReflectionResponse>();
 
     Effect.gen(function* () {
       const client = yield* GrpcReflection.ReflectionClient;
       const responses = client.serverReflectionInfo(
-        Stream.make({ host: "", fileContainingSymbol: "demo.v1.UserService" }),
+        Stream.make({
+          host: "",
+          messageRequest: {
+            case: "fileContainingSymbol",
+            value: "demo.v1.UserService",
+          },
+        }),
       );
 
       expect(responses).type.toBe<

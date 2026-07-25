@@ -14,11 +14,6 @@ import { createEcmaScriptPlugin } from "@bufbuild/protoplugin";
 import { generateFile } from "./generate.js";
 import { effectFileName, grpcEmptyName, grpcWellKnownName } from "./naming.js";
 import {
-  defaultOptions,
-  parseOptions,
-  type GeneratorOptions,
-} from "./options.js";
-import {
   isWellKnownType,
   methodKindModel,
   scalarKind,
@@ -42,11 +37,13 @@ import { wellKnownKind, wellKnownProtobufName } from "./wellKnown.js";
 export const plugin = createEcmaScriptPlugin({
   name: "protoc-gen-effect-grpc",
   version: "0.1.0-alpha.0",
-  parseOptions,
   generateTs(schema) {
-    const options = { ...defaultOptions, ...schema.options };
+    // protoplugin defaults `import_extension` to "none", but generated ESM
+    // imports need an extension, so anything but an explicit "ts" emits ".js".
+    const importExtension =
+      schema.options.importExtension === "ts" ? "ts" : "js";
     for (const file of schema.files) {
-      const model = modelFromFile(file, options);
+      const model = modelFromFile(file);
       if (
         model.enums.length === 0 &&
         model.messages.length === 0 &&
@@ -57,7 +54,7 @@ export const plugin = createEcmaScriptPlugin({
       const generated = schema.generateFile(
         effectFileName(`${file.name}.proto`),
       );
-      for (const line of generateFile(model).split("\n")) {
+      for (const line of generateFile(model, importExtension).split("\n")) {
         generated.print(line);
       }
     }
@@ -90,17 +87,13 @@ const allEnums = (file: DescFile): ReadonlyArray<DescEnum> => [
   ...allMessages(file).flatMap((message) => message.nestedEnums),
 ];
 
-const modelFromFile = (
-  file: DescFile,
-  options: GeneratorOptions,
-): GeneratorFile => ({
+const modelFromFile = (file: DescFile): GeneratorFile => ({
   protoFileName: `${file.name}.proto`,
-  importExtension: options.importExtension,
   imports: importsFromFile(file),
   enums: allEnums(file).map(enumModel),
   messages: allMessages(file).map(messageModel),
   services: file.services
-    .map((service) => serviceModel(service, options))
+    .map(serviceModel)
     .filter((service) => service.methods.length > 0),
 });
 
@@ -417,23 +410,16 @@ const methodTypeModel = (
   return { name: declName(message) };
 };
 
-const serviceModel = (
-  service: DescService,
-  options: GeneratorOptions,
-): ServiceModel => ({
+const serviceModel = (service: DescService): ServiceModel => ({
   name: service.name,
   typeName: service.typeName,
-  methods: service.methods.flatMap((method): ReadonlyArray<MethodModel> => {
-    const kind = methodKindModel(method.methodKind);
-    if (!options.methods.has(kind)) return [];
-    return [
-      {
-        name: method.name,
-        localName: method.localName,
-        kind,
-        inputType: methodTypeModel(service, method, method.input),
-        outputType: methodTypeModel(service, method, method.output),
-      },
-    ];
-  }),
+  methods: service.methods.map(
+    (method): MethodModel => ({
+      name: method.name,
+      localName: method.localName,
+      kind: methodKindModel(method.methodKind),
+      inputType: methodTypeModel(service, method, method.input),
+      outputType: methodTypeModel(service, method, method.output),
+    }),
+  ),
 });

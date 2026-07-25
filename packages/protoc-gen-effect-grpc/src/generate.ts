@@ -6,9 +6,12 @@ import { generateServer } from "./generateServer.js";
 import { effectImportPath, pbImportPath } from "./naming.js";
 import type { GeneratorFile } from "./types.js";
 
-export const generateFile = (file: GeneratorFile): string => {
+export const generateFile = (
+  file: GeneratorFile,
+  importExtension: "js" | "ts" = "js",
+): string => {
   const usage = analyzeFileUsage(file);
-  const pbImport = pbImportPath(file.protoFileName, file.importExtension);
+  const pbImport = pbImportPath(file.protoFileName, importExtension);
   const descriptorImports = file.services.map((service) => service.name);
   const effectImports = [
     ...(usage.hasServices ? ["Context", "Effect", "Layer"] : []),
@@ -67,7 +70,7 @@ export const generateFile = (file: GeneratorFile): string => {
         `  to${message},`,
         ...(usage.usedImportedTypes.has(message) ? [`  type ${message},`] : []),
       ]),
-      `} from "${effectImportPath(file.protoFileName, imported.protoFileName, file.importExtension)}";`,
+      `} from "${effectImportPath(file.protoFileName, imported.protoFileName, importExtension)}";`,
     ]),
     "",
     ...generateSchemas(file, usage),

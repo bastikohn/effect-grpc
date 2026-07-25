@@ -34,8 +34,7 @@ generated code, and package smoke together.
 The generator currently supports:
 
 - singular, `optional`, and repeated proto3 scalar fields (all scalar types)
-- 64-bit integer scalar fields as `bigint` (the default; `int64=bigint` is
-  still accepted as an explicit option)
+- 64-bit integer scalar fields as `bigint`
 - singular and repeated message fields, including nested messages and messages
   imported from other files and other protobuf packages
 - singular, `optional`, repeated, nested, and imported enum fields as numeric

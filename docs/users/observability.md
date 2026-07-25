@@ -103,35 +103,12 @@ earlier semconv versions are deprecated and deliberately not emitted.
   `traceparent` metadata entry always wins, and noop spans (tracing disabled)
   inject nothing. The server parses incoming `traceparent` (W3C first, then
   B3) and parents its span to the resulting `ExternalSpan`.
-- **`tracestate`** — Effect's tracer model has no native `tracestate` field,
-  so the library threads it through the request context under the exported
-  `GrpcTracing.TraceState` reference: the server rehydrates an incoming
-  `tracestate` header into the handler's context — only when a valid **W3C**
-  `traceparent` accompanies it; per W3C trace context, a `tracestate` on a
-  request carrying only B3 headers is discarded (the span is still parented
-  via B3) — and the client resolves the outgoing header in order —
-  caller-provided `tracestate` metadata first, then a `TraceState` span
-  annotation found in the span ancestry, then the ambient reference from the
-  calling fiber's context. Net effect: `tracestate` passes through services
-  built with this library (server in, client out) for all four method kinds.
-  Note that exporters (e.g. `@effect/opentelemetry`) do not read this value,
-  so it is propagated but not attached to exported span data.
+- **`tracestate`** is not propagated: Effect's tracer model has no
+  `tracestate` field to carry it, and exporters would not read it. Forward it
+  explicitly as metadata if you need it.
 - **W3C baggage** is not propagated: Effect's tracer model has no baggage
   concept to source it from or deliver it into. Forward baggage explicitly as
   metadata if you need it.
-
-To read the raw `tracestate` in a handler, read the reference from the
-context:
-
-```ts
-import { Effect } from "effect";
-import { GrpcTracing } from "@effect-grpc/effect-grpc";
-
-Effect.gen(function* () {
-  // `string | undefined` — undefined when the caller sent no tracestate.
-  const state = yield* Effect.service(GrpcTracing.TraceState);
-});
-```
 
 ## Exporting to OpenTelemetry
 

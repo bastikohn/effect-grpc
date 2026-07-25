@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Hand-committed descriptors of the standard gRPC Server Reflection Protocol
+// Hand-committed descriptor of the standard gRPC Server Reflection Protocol
 // (https://github.com/grpc/grpc/blob/master/doc/server-reflection.md), produced
 // by `protoc-gen-es` from the canonical
-// `grpc/reflection/{v1,v1alpha}/reflection.proto` (Copyright 2016 The gRPC
-// Authors, Apache-2.0). The protocol is frozen, so the descriptors are vendored
-// instead of generated at build time.
+// `grpc/reflection/v1/reflection.proto` (Copyright 2016 The gRPC Authors,
+// Apache-2.0). The protocol is frozen, so the descriptor is vendored instead
+// of generated at build time.
 //
-// Only the service descriptors are needed: the connect router and the wire
+// Only the service descriptor is needed: the connect router and the wire
 // codecs resolve against the `FileDescriptorProto` below, and this package
 // models the reflection messages with Effect `Schema` in `GrpcReflection.ts`.
 
@@ -34,25 +34,9 @@ const file_grpc_reflection_v1_reflection = fileDesc(
 );
 
 /**
- * Describes the file grpc/reflection/v1alpha/reflection.proto.
- */
-const file_grpc_reflection_v1alpha_reflection = fileDesc(
-  "CihncnBjL3JlZmxlY3Rpb24vdjFhbHBoYS9yZWZsZWN0aW9uLnByb3RvEhdncnBjLnJlZmxlY3Rpb24udjFhbHBoYSKKAgoXU2VydmVyUmVmbGVjdGlvblJlcXVlc3QSDAoEaG9zdBgBIAEoCRIaChBmaWxlX2J5X2ZpbGVuYW1lGAMgASgJSAASIAoWZmlsZV9jb250YWluaW5nX3N5bWJvbBgEIAEoCUgAEk4KGWZpbGVfY29udGFpbmluZ19leHRlbnNpb24YBSABKAsyKS5ncnBjLnJlZmxlY3Rpb24udjFhbHBoYS5FeHRlbnNpb25SZXF1ZXN0SAASJwodYWxsX2V4dGVuc2lvbl9udW1iZXJzX29mX3R5cGUYBiABKAlIABIXCg1saXN0X3NlcnZpY2VzGAcgASgJSABCEQoPbWVzc2FnZV9yZXF1ZXN0IkUKEEV4dGVuc2lvblJlcXVlc3QSFwoPY29udGFpbmluZ190eXBlGAEgASgJEhgKEGV4dGVuc2lvbl9udW1iZXIYAiABKAUi0QMKGFNlcnZlclJlZmxlY3Rpb25SZXNwb25zZRISCgp2YWxpZF9ob3N0GAEgASgJEkoKEG9yaWdpbmFsX3JlcXVlc3QYAiABKAsyMC5ncnBjLnJlZmxlY3Rpb24udjFhbHBoYS5TZXJ2ZXJSZWZsZWN0aW9uUmVxdWVzdBJTChhmaWxlX2Rlc2NyaXB0b3JfcmVzcG9uc2UYBCABKAsyLy5ncnBjLnJlZmxlY3Rpb24udjFhbHBoYS5GaWxlRGVzY3JpcHRvclJlc3BvbnNlSAASWgoeYWxsX2V4dGVuc2lvbl9udW1iZXJzX3Jlc3BvbnNlGAUgASgLMjAuZ3JwYy5yZWZsZWN0aW9uLnYxYWxwaGEuRXh0ZW5zaW9uTnVtYmVyUmVzcG9uc2VIABJOChZsaXN0X3NlcnZpY2VzX3Jlc3BvbnNlGAYgASgLMiwuZ3JwYy5yZWZsZWN0aW9uLnYxYWxwaGEuTGlzdFNlcnZpY2VSZXNwb25zZUgAEkAKDmVycm9yX3Jlc3BvbnNlGAcgASgLMiYuZ3JwYy5yZWZsZWN0aW9uLnYxYWxwaGEuRXJyb3JSZXNwb25zZUgAQhIKEG1lc3NhZ2VfcmVzcG9uc2UiNwoWRmlsZURlc2NyaXB0b3JSZXNwb25zZRIdChVmaWxlX2Rlc2NyaXB0b3JfcHJvdG8YASADKAwiSwoXRXh0ZW5zaW9uTnVtYmVyUmVzcG9uc2USFgoOYmFzZV90eXBlX25hbWUYASABKAkSGAoQZXh0ZW5zaW9uX251bWJlchgCIAMoBSJQChNMaXN0U2VydmljZVJlc3BvbnNlEjkKB3NlcnZpY2UYASADKAsyKC5ncnBjLnJlZmxlY3Rpb24udjFhbHBoYS5TZXJ2aWNlUmVzcG9uc2UiHwoPU2VydmljZVJlc3BvbnNlEgwKBG5hbWUYASABKAkiOgoNRXJyb3JSZXNwb25zZRISCgplcnJvcl9jb2RlGAEgASgFEhUKDWVycm9yX21lc3NhZ2UYAiABKAkykwEKEFNlcnZlclJlZmxlY3Rpb24SfwoUU2VydmVyUmVmbGVjdGlvbkluZm8SMC5ncnBjLnJlZmxlY3Rpb24udjFhbHBoYS5TZXJ2ZXJSZWZsZWN0aW9uUmVxdWVzdBoxLmdycGMucmVmbGVjdGlvbi52MWFscGhhLlNlcnZlclJlZmxlY3Rpb25SZXNwb25zZSgBMAFCcAoaaW8uZ3JwYy5yZWZsZWN0aW9uLnYxYWxwaGFCFVNlcnZlclJlZmxlY3Rpb25Qcm90b1ABWjlnb29nbGUuZ29sYW5nLm9yZy9ncnBjL3JlZmxlY3Rpb24vZ3JwY19yZWZsZWN0aW9uX3YxYWxwaGFiBnByb3RvMw",
-);
-
-/**
  * Describes the service grpc.reflection.v1.ServerReflection.
  */
 export const ServerReflectionV1: DescService =
   file_grpc_reflection_v1_reflection.services.find(
     (service) => service.typeName === "grpc.reflection.v1.ServerReflection",
-  )!;
-
-/**
- * Describes the service grpc.reflection.v1alpha.ServerReflection.
- */
-export const ServerReflectionV1Alpha: DescService =
-  file_grpc_reflection_v1alpha_reflection.services.find(
-    (service) =>
-      service.typeName === "grpc.reflection.v1alpha.ServerReflection",
   )!;

@@ -21,7 +21,7 @@ import {
   UserServiceClient,
   UserServiceClientLayer,
   UserServiceGrpcRegistry,
-  UserServiceHandlersLayer,
+  UserServiceHandlers,
   type UserServiceClientError,
   type UserServiceImplementation,
 } from "@effect-grpc/simple-proto/generated/demo/v1/user_service_effect_grpc";
@@ -118,7 +118,7 @@ describe("public API", () => {
       services: [
         {
           registry: UserServiceGrpcRegistry,
-          handlers: UserServiceHandlersLayer(implementation),
+          handlers: UserServiceHandlers(implementation),
         },
       ],
     });
@@ -128,7 +128,7 @@ describe("public API", () => {
       services: [
         {
           registry: UserServiceGrpcRegistry,
-          handlers: UserServiceHandlersLayer(implementation),
+          handlers: UserServiceHandlers(implementation),
         },
         GrpcHealth.service,
       ],
@@ -165,9 +165,9 @@ describe("public API", () => {
   });
 
   it("pins the serveAll handlers seam and the protocol constructor", () => {
-    // Regression pin: `ServeAllService.handlers` is a `GrpcHandlers` layer,
-    // not `Layer<any>` — a wrong layer (e.g. the health *state* layer instead
-    // of `HealthHandlersLayer`) used to typecheck and then silently answer
+    // Regression pin: `ServeAllService.handlers` is a `GrpcHandlers` effect,
+    // not `Effect<any>` — a wrong value (e.g. the health *state* layer
+    // instead of `HealthHandlers`) used to typecheck and then silently answer
     // every method `unimplemented`.
     expect(GrpcNodeServer.serveAll).type.not.toBeCallableWith({
       host: "127.0.0.1",
@@ -198,11 +198,13 @@ describe("public API", () => {
 
   it("types the method registry contract", () => {
     expect(GrpcMethodRegistry.lookup(registry, "tag", "unary")).type.toBe<
-      GrpcMethodRegistry.GrpcUnaryMethodEntry | undefined
+      GrpcMethodRegistry.GrpcMethodEntry<"unary"> | undefined
     >();
     expect(
       GrpcMethodRegistry.lookup(registry, "tag", "bidi-streaming"),
-    ).type.toBe<GrpcMethodRegistry.GrpcBidiStreamingMethodEntry | undefined>();
+    ).type.toBe<
+      GrpcMethodRegistry.GrpcMethodEntry<"bidi-streaming"> | undefined
+    >();
 
     expect(
       GrpcMethodRegistry.merge([registry, registry]),
@@ -258,7 +260,7 @@ describe("public API", () => {
     const services = [
       {
         registry: UserServiceGrpcRegistry,
-        handlers: UserServiceHandlersLayer(implementation),
+        handlers: UserServiceHandlers(implementation),
       },
       GrpcHealth.service,
     ] as const;
@@ -297,11 +299,11 @@ describe("public API", () => {
   });
 
   it("types generated clients and handlers", () => {
-    // Regression pin: the generated handlers layer publishes the unified
+    // Regression pin: the generated handlers effect publishes the unified
     // 4-kind handler map — the Effect RPC server path
     // (`Rpc.ToHandler`/`RpcGroup`) is retired.
-    expect(UserServiceHandlersLayer(implementation)).type.toBe<
-      Layer.Layer<GrpcServerProtocol.GrpcHandlers>
+    expect(UserServiceHandlers(implementation)).type.toBe<
+      Effect.Effect<GrpcServerProtocol.GrpcHandlers>
     >();
 
     // Regression pin: `GrpcServerContext` is narrowed to metadata — the

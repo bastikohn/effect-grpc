@@ -56,9 +56,6 @@ const generateConverters = (file: GeneratorFile, usage: FileUsage) => {
     ...(!usage.readsFields
       ? []
       : [
-          "const readField = (message: unknown, field: string): unknown =>",
-          `  typeof message === "object" && message !== null ? (message as Record<string, unknown>)[field] : undefined;`,
-          "",
           // Effect Schema treats an absent optional field as a missing *key*, not
           // a present `undefined` value: decoding `{ field: undefined }` against an
           // `optional` field fails. Strip undefined-valued keys so converted
@@ -108,33 +105,33 @@ const generateConverters = (file: GeneratorFile, usage: FileUsage) => {
 
 const fromField = (field: FieldModel): string => {
   if (field.kind === "message") {
-    const value = `readField(message, "${field.name}")`;
+    const value = `CodegenSupport.readField(message, "${field.name}")`;
     return `${value} == null ? undefined : from${field.messageName}(${value})`;
   }
   if (field.kind === "enum") {
-    return `readField(message, "${field.name}") as ${field.enumName}${field.optional ? " | undefined" : ""}`;
+    return `CodegenSupport.readField(message, "${field.name}") as ${field.enumName}${field.optional ? " | undefined" : ""}`;
   }
   if (field.kind === "well-known") {
-    const value = `readField(message, "${field.name}")`;
+    const value = `CodegenSupport.readField(message, "${field.name}")`;
     return `${value} == null ? undefined : from${wellKnownConverterName(field.type)}(${value})`;
   }
   if (field.kind === "scalar") {
-    const value = `readField(message, "${field.name}")`;
+    const value = `CodegenSupport.readField(message, "${field.name}")`;
     return field.optional
       ? `${value} == null ? undefined : ${fromValue(value, field)}`
       : fromValue(value, field);
   }
   if (field.kind === "list") {
-    return `((readField(message, "${field.name}") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => ${fromValue("value", field.item)})`;
+    return `((CodegenSupport.readField(message, "${field.name}") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => ${fromValue("value", field.item)})`;
   }
   if (field.kind === "map") {
-    return `Object.fromEntries(Object.entries((readField(message, "${field.name}") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [${fromMapKey("key", field.key.type)}, ${fromValue("value", field.value)}]))`;
+    return `Object.fromEntries(Object.entries((CodegenSupport.readField(message, "${field.name}") as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => [${fromMapKey("key", field.key.type)}, ${fromValue("value", field.value)}]))`;
   }
-  return `from${oneofConverterName(field)}(readField(message, "${field.name}"))`;
+  return `from${oneofConverterName(field)}(CodegenSupport.readField(message, "${field.name}"))`;
 };
 
 const toField = (field: FieldModel): string => {
-  const value = `readField(message, "${field.name}")`;
+  const value = `CodegenSupport.readField(message, "${field.name}")`;
   if (field.kind === "message") {
     return `${value} == null ? undefined : to${field.messageName}(${value})`;
   }

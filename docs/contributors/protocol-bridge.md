@@ -8,17 +8,17 @@ interruption to call cancellation with an `AbortController`.
 layer — there is no client-side `RpcClient.Protocol` anymore.
 
 On the server side, `GrpcServerProtocol.GrpcHandlers` is the single seam: a
-map from method tag to one handler per call shape. Generated `*HandlersLayer`
-functions publish their handlers through the `GrpcHandlers` context key inside
-the handlers layer; `GrpcNodeServer.serveAll` builds each layer, collects the
+map from method tag to one handler per call shape. Generated `*Handlers`
+functions return that map as an `Effect` that captures the build-time context;
+`GrpcNodeServer.serveAll` runs each one, merges the
 maps, and `GrpcServerProtocol.make` registers connect routes for every
 registry entry. Methods without a registered handler fail with
 `unimplemented`. The `GrpcMethodRegistry` is the sole codec authority: request
 messages are decoded (`invalid_argument` on failure) and response values are
 encoded (`internal` on failure) per message around the handler.
 
-Execution runs through two templates behind four thin connect adapters
-(connect imposes four handler signatures — Promise vs async-generator):
+Execution runs through two templates, one per connect response shape (Promise
+vs async-generator); each picks its request source by call kind:
 
 - Effect-shaped calls (unary, client-streaming) run the handler effect with
   the connect `signal` bound to the running fiber, inside one server span.

@@ -14,17 +14,12 @@ export type GrpcMethodKind =
   | "client-streaming"
   | "bidi-streaming";
 
-export type GrpcMethodEntry =
-  | GrpcUnaryMethodEntry
-  | GrpcServerStreamingMethodEntry
-  | GrpcClientStreamingMethodEntry
-  | GrpcBidiStreamingMethodEntry;
-
-export interface GrpcMethodEntryBase<
+export interface GrpcMethodEntry<
+  Kind extends GrpcMethodKind = GrpcMethodKind,
   Request extends DescMessage = DescMessage,
   Response extends DescMessage = DescMessage,
 > {
-  readonly kind: GrpcMethodKind;
+  readonly kind: Kind;
   readonly tag: string;
   readonly service: DescService;
   readonly localName: string;
@@ -40,34 +35,6 @@ export interface GrpcMethodEntryBase<
   readonly fromGrpcResponse: (message: MessageShape<Response>) => unknown;
 }
 
-export interface GrpcUnaryMethodEntry<
-  Request extends DescMessage = DescMessage,
-  Response extends DescMessage = DescMessage,
-> extends GrpcMethodEntryBase<Request, Response> {
-  readonly kind: "unary";
-}
-
-export interface GrpcServerStreamingMethodEntry<
-  Request extends DescMessage = DescMessage,
-  Response extends DescMessage = DescMessage,
-> extends GrpcMethodEntryBase<Request, Response> {
-  readonly kind: "server-streaming";
-}
-
-export interface GrpcClientStreamingMethodEntry<
-  Request extends DescMessage = DescMessage,
-  Response extends DescMessage = DescMessage,
-> extends GrpcMethodEntryBase<Request, Response> {
-  readonly kind: "client-streaming";
-}
-
-export interface GrpcBidiStreamingMethodEntry<
-  Request extends DescMessage = DescMessage,
-  Response extends DescMessage = DescMessage,
-> extends GrpcMethodEntryBase<Request, Response> {
-  readonly kind: "bidi-streaming";
-}
-
 export type GrpcMethodRegistry = ReadonlyMap<string, GrpcMethodEntry>;
 
 /**
@@ -78,10 +45,10 @@ export const lookup = <K extends GrpcMethodKind>(
   registry: GrpcMethodRegistry,
   tag: string,
   kind: K,
-): Extract<GrpcMethodEntry, { readonly kind: K }> | undefined => {
+): GrpcMethodEntry<K> | undefined => {
   const entry = registry.get(tag);
   return entry && entry.kind === kind
-    ? (entry as Extract<GrpcMethodEntry, { readonly kind: K }>)
+    ? (entry as GrpcMethodEntry<K>)
     : undefined;
 };
 

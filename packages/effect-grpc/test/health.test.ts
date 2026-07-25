@@ -147,8 +147,8 @@ interface HealthHarness {
 }
 
 /**
- * Runs the real `Health` handlers behind the server protocol: handlers layer,
- * handlers map, and connect route implementation, without a TCP listener.
+ * Runs the real `Health` handlers behind the server protocol: handlers
+ * effect, handlers map, and connect route implementation, without a listener.
  */
 const withHealthServer = <A>(
   test: (harness: HealthHarness) => Effect.Effect<A>,
@@ -156,14 +156,12 @@ const withHealthServer = <A>(
   Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
-        const context = yield* Layer.build(
-          GrpcHealth.HealthHandlersLayer.pipe(
-            Layer.provideMerge(GrpcHealth.layer),
-          ),
-        );
+        const context = yield* Layer.build(GrpcHealth.layer);
         const { routes } = yield* GrpcServerProtocol.make({
           registry: GrpcHealth.HealthGrpcRegistry,
-          handlers: Context.get(context, GrpcServerProtocol.GrpcHandlers),
+          handlers: yield* GrpcHealth.HealthHandlers.pipe(
+            Effect.provide(context),
+          ),
         });
 
         const implementation = captureImplementation(routes);

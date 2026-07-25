@@ -7,7 +7,6 @@ import {
   Effect,
   Exit,
   Fiber,
-  Layer,
   Metric,
   Option,
   Stream,
@@ -333,6 +332,40 @@ describe("client telemetry", () => {
       "server.address": "api.example.com",
       "server.port": String(port),
     });
+  });
+
+  // `serverAddress` is a telemetry-only override, unconstrained by scheme, and
+  // `layerFromTransport` never sees a `baseUrl` at all — so the address can be
+  // a non-special URL, whose `hostname` is `""`. Reporting that blank would
+  // hand exporters a present-but-empty `server.address`.
+  it("reports the whole URL as server.address for a scheme without a hostname", async () => {
+    const telemetry = makeTestTelemetry();
+    const { transport } = fakeTransport({ unary: () => ({ ok: true }) });
+
+    const metrics = await Effect.runPromise(
+      telemetry.provide(
+        Effect.gen(function* () {
+          yield* callInvokerUnary(unaryEntry.tag);
+          return yield* Metric.snapshot;
+        }).pipe(
+          Effect.provide(
+            clientLayer(transport, new URL("unix:/var/run/grpc.sock")),
+          ),
+        ),
+      ),
+    );
+
+    const span = telemetry.expectSpan(unaryEntry.tag);
+    expect(span.attributes.get("server.address")).toBe(
+      "unix:/var/run/grpc.sock",
+    );
+    // No default port for a scheme `URL` does not special-case.
+    expect(span.attributes.get("server.port")).toBeUndefined();
+
+    const duration = expectDuration(metrics, "rpc.client.call.duration", {
+      "server.address": "unix:/var/run/grpc.sock",
+    });
+    expect(duration.attributes?.["server.port"]).toBeUndefined();
   });
 
   it("respects a caller-provided traceparent", async () => {
@@ -852,52 +885,49 @@ describe("server telemetry", () => {
     expect(duration.attributes?.["error.type"]).toBeUndefined();
   });
 
-  // Regression pin for `handlersLayer`: the layer captures the whole
-  // build-time context, and before the fix it was provided *over* the
-  // per-call context — a handler built under a startup span then observed
-  // that (already ended) span instead of the gRPC server span, breaking
+  // Regression pin for `handlersEffect`: it captures the whole build-time
+  // context, and before the fix that was provided *over* the per-call
+  // context — a handler built under a startup span then observed that
+  // (already ended) span instead of the gRPC server span, breaking
   // child-span parenting and incoming trace propagation.
-  it("keeps request-local tracing over build-time context captured by handlersLayer", async () => {
+  it("keeps request-local tracing over build-time context captured by handlersEffect", async () => {
     const telemetry = makeTestTelemetry();
 
     const result = await Effect.runPromise(
       telemetry.provide(
         Effect.gen(function* () {
-          // Build the handlers layer the way `serveAll` does during startup:
+          // Build the handlers the way `serveAll` does during startup:
           // under an ambient (bootstrap) span, with a build-time dependency.
-          const handlersContext = yield* Layer.build(
-            GrpcServerProtocol.handlersLayer({
-              [unaryEntry.tag]: {
-                kind: "unary",
-                handler: () =>
-                  Effect.gen(function* () {
-                    const dep = yield* Effect.service(BuildDep);
-                    yield* Effect.void.pipe(
-                      Effect.withSpan("handler-child-unary"),
-                    );
-                    return { origin: dep.origin };
-                  }),
-              },
-              [serverStreamingEntry.tag]: {
-                kind: "server-streaming",
-                handler: () =>
-                  Stream.fromEffect(
-                    Effect.void.pipe(
-                      Effect.withSpan("handler-child-stream"),
-                      Effect.as({ ok: true }),
-                    ),
+          const handlers = yield* GrpcServerProtocol.handlersEffect({
+            [unaryEntry.tag]: {
+              kind: "unary",
+              handler: () =>
+                Effect.gen(function* () {
+                  const dep = yield* Effect.service(BuildDep);
+                  yield* Effect.void.pipe(
+                    Effect.withSpan("handler-child-unary"),
+                  );
+                  return { origin: dep.origin };
+                }),
+            },
+            [serverStreamingEntry.tag]: {
+              kind: "server-streaming",
+              handler: () =>
+                Stream.fromEffect(
+                  Effect.void.pipe(
+                    Effect.withSpan("handler-child-stream"),
+                    Effect.as({ ok: true }),
                   ),
-              },
-            }),
-          ).pipe(
-            Effect.scoped,
+                ),
+            },
+          }).pipe(
             Effect.withSpan("bootstrap"),
             Effect.provideService(BuildDep, { origin: "build" }),
           );
 
           const implementation = yield* serverImplementation(
             [unaryEntry, serverStreamingEntry],
-            Context.get(handlersContext, GrpcServerProtocol.GrpcHandlers),
+            handlers,
           );
 
           const unaryResponse = yield* Effect.promise(() =>
@@ -1279,7 +1309,7 @@ const clientLayer = (
     serverAddress,
   });
 
-/** Build-time handler dependency for the `handlersLayer` regression test. */
+/** Build-time handler dependency for the `handlersEffect` regression test. */
 const BuildDep = Context.Service<{ readonly origin: string }>(
   "effect-grpc-test/BuildDep",
 );

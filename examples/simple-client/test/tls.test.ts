@@ -9,7 +9,7 @@ import {
   UserServiceClient,
   UserServiceClientLayer,
   UserServiceGrpcRegistry,
-  UserServiceHandlersLayer,
+  UserServiceHandlers,
   type UserServiceImplementation,
 } from "@effect-grpc/simple-proto/generated/demo/v1/user_service_effect_grpc";
 
@@ -148,7 +148,7 @@ const withServer = <A, E, R>(
         services: [
           {
             registry: UserServiceGrpcRegistry,
-            handlers: UserServiceHandlersLayer(implementation),
+            handlers: UserServiceHandlers(implementation),
           },
         ],
       }).pipe(Effect.forkScoped);

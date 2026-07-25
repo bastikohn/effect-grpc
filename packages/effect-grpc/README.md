@@ -35,7 +35,7 @@ import { Effect } from "effect";
 import { GrpcNodeServer } from "@effect-grpc/effect-grpc";
 import {
   UserServiceGrpcRegistry,
-  UserServiceHandlersLayer,
+  UserServiceHandlers,
 } from "./generated/demo/v1/user_service_effect_grpc.js";
 
 const program = Effect.scoped(
@@ -45,7 +45,7 @@ const program = Effect.scoped(
     services: [
       {
         registry: UserServiceGrpcRegistry,
-        handlers: UserServiceHandlersLayer({
+        handlers: UserServiceHandlers({
           getUser: (request) =>
             Effect.succeed({ user: { id: request.id, name: "Ada" } }),
         }),

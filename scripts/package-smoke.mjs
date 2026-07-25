@@ -173,7 +173,7 @@ import { plugin } from "@effect-grpc/protoc-gen-effect-grpc";
 import {
   UserServiceClientLayer,
   UserServiceGrpcRegistry,
-  UserServiceHandlersLayer,
+  UserServiceHandlers,
   type UserServiceImplementation
 } from "./src/generated/demo/v1/user_service_effect_grpc.js";
 
@@ -187,7 +187,7 @@ const implementation: UserServiceImplementation = {
     Effect.map((users) => ({ user: users[0] }))
   )
 };
-const handlers = UserServiceHandlersLayer(implementation);
+const handlers = UserServiceHandlers(implementation);
 const clientLayer = UserServiceClientLayer.pipe(
   Layer.provide(
     GrpcClientProtocol.layer({
@@ -247,7 +247,7 @@ assert(runtimePackage.name === "@effect-grpc/effect-grpc", "runtime package.json
 assert(codegenPackage.name === "@effect-grpc/protoc-gen-effect-grpc", "codegen package.json import failed");
 assertWorkspaceFree(runtimePackage);
 assertWorkspaceFree(codegenPackage);
-await assertImportFails("@effect-grpc/effect-grpc/internal/metadata");
+await assertImportFails("@effect-grpc/effect-grpc/internal/invoker");
 await assertImportFails("@effect-grpc/protoc-gen-effect-grpc/generate");
 await assertImportFails("@effect-grpc/protoc-gen-effect-grpc/internal/plugin");
 `,

@@ -115,14 +115,14 @@ describe("generateFile", () => {
   // The snapshot below pins the whole emission; the assertions kept here name
   // the two decisions a reader cannot infer from it — the annotated
   // `Schema.suspend` recursive edge, and that the server path routes through
-  // `handlersLayer` rather than Effect RPC.
+  // `handlersEffect` rather than Effect RPC.
   it("generates schemas, registry, client, and server glue", () => {
     const output = generateFile(demoFile);
 
     expect(output).toContain(
       "user: Schema.optional(Schema.suspend((): typeof UserSchema => UserSchema))",
     );
-    expect(output).toContain("GrpcServerProtocol.handlersLayer<R>({");
+    expect(output).toContain("GrpcServerProtocol.handlersEffect<R>({");
     expect(output).not.toContain("Rpc.make(");
     expect(output).not.toContain("RpcGroup");
     expect(output).not.toContain("effect/unstable/rpc");
@@ -382,7 +382,7 @@ describe("generateFile", () => {
 
     // Generated code no longer touches `effect/unstable/rpc` at all: the
     // client depends on the `GrpcInvoker` seam and the server publishes its
-    // handlers through `GrpcServerProtocol.handlersLayer`.
+    // handlers through `GrpcServerProtocol.handlersEffect`.
     expect(output).not.toContain("effect/unstable/rpc");
     expect(output).toContain("const invoker = yield* GrpcInvoker.GrpcInvoker;");
     expect(output).not.toContain("RpcClient");
@@ -641,7 +641,7 @@ describe("streaming methods", () => {
       'invoker.bidiStream("demo.v1.UserService/ChatUsers"',
     );
     expect(content).not.toContain("effect/unstable/rpc");
-    expect(content).toContain("GrpcServerProtocol.handlersLayer");
+    expect(content).toContain("GrpcServerProtocol.handlersEffect");
   });
 });
 

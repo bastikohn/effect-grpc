@@ -1,13 +1,17 @@
 import type { ConnectRouter, HandlerContext } from "@connectrpc/connect";
-import { Deferred, Effect, Ref, Schema, Stream } from "effect";
+import { Context, Deferred, Effect, Layer, Ref, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 
 import * as GrpcClientProtocol from "../src/GrpcClientProtocol.js";
+import * as GrpcHealth from "../src/GrpcHealth.js";
+import * as GrpcInvoker from "../src/GrpcInvoker.js";
 import type { GrpcMethodEntry } from "../src/GrpcMethodRegistry.js";
+import * as GrpcNodeServer from "../src/GrpcNodeServer.js";
 import * as GrpcServerProtocol from "../src/GrpcServerProtocol.js";
 import * as GrpcStatusError from "../src/GrpcStatusError.js";
 import {
   captureImplementation,
+  freePort,
   handlerContext,
   methodEntries,
 } from "./support/serverHarness.js";
@@ -665,6 +669,127 @@ describe("GrpcServerProtocol streaming bridge", () => {
       code: "invalid_argument",
       message: "Invalid gRPC request payload",
     });
+  });
+});
+
+/**
+ * Where handler dependencies are provided decides whether they are still
+ * alive when a request arrives. `handlersEffect` completes as soon as it has
+ * read the context, so providing to it is *not* the migration from the old
+ * `handlersLayer`; providing to the whole server program is.
+ */
+describe("handlersEffect dependency scoping", () => {
+  const CHECK = "grpc.health.v1.Health/Check";
+
+  interface Pool {
+    released: boolean;
+  }
+  const Pool = Context.Service<Pool>("effect-grpc-test/Pool");
+
+  /** A scoped dependency that records its lifecycle in `events`. */
+  const poolLayer = (events: Array<string>) =>
+    Layer.effect(
+      Pool,
+      Effect.acquireRelease(
+        Effect.sync((): Pool => {
+          events.push("acquire");
+          return { released: false };
+        }),
+        (pool) =>
+          Effect.sync(() => {
+            pool.released = true;
+            events.push("release");
+          }),
+      ),
+    );
+
+  /** One unary handler reporting whether the dependency is live at call time. */
+  const poolHandlers = (tag: string) =>
+    GrpcServerProtocol.handlersEffect({
+      [tag]: {
+        kind: "unary",
+        handler: () =>
+          Effect.map(Effect.service(Pool), (pool) => ({
+            status: pool.released ? "NOT_SERVING" : "SERVING",
+          })),
+      },
+    });
+
+  it("keeps a dependency provided to the whole server program live until shutdown", async () => {
+    const events: Array<string> = [];
+
+    const result = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const port = yield* freePort;
+          // The documented wiring: `R` propagates through `serveAll`, and the
+          // layer is provided to the server program, whose scope is the
+          // server's lifetime.
+          yield* Effect.forkScoped(
+            GrpcNodeServer.serveAll({
+              host: "127.0.0.1",
+              port,
+              services: [
+                {
+                  registry: GrpcHealth.HealthGrpcRegistry,
+                  handlers: poolHandlers(CHECK),
+                },
+              ],
+            }).pipe(Effect.provide(poolLayer(events))),
+          );
+          yield* Effect.sleep("50 millis");
+
+          const response = yield* GrpcInvoker.GrpcInvoker.pipe(
+            Effect.flatMap((invoker) => invoker.unary(CHECK, { service: "" })),
+            Effect.provide(
+              GrpcClientProtocol.layer({
+                baseUrl: `http://127.0.0.1:${port}`,
+                registry: GrpcHealth.HealthGrpcRegistry,
+              }),
+            ),
+          );
+          return { response, duringCall: [...events] };
+        }),
+      ),
+    );
+
+    // The handler ran against a live resource, acquired exactly once.
+    expect(result.response).toEqual({ status: "SERVING" });
+    expect(result.duringCall).toEqual(["acquire"]);
+    // ... and the finalizer ran only once the server's scope closed.
+    expect(events).toEqual(["acquire", "release"]);
+  });
+
+  // The hazard the changeset and `handlersEffect`'s doc comment warn about,
+  // pinned so it cannot silently become the recommended path again.
+  it("releases a dependency provided to the handlers effect before the first call", async () => {
+    const events: Array<string> = [];
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const built = yield* poolHandlers(unaryEntry.tag).pipe(
+          Effect.provide(poolLayer(events)),
+        );
+        const afterBuild = [...events];
+
+        const { routes } = yield* GrpcServerProtocol.make({
+          registry: new Map([[unaryEntry.tag, unaryEntry]]),
+          handlers: built,
+        });
+        const implementation = captureUnaryImplementation(routes);
+        const response = yield* Effect.promise(() =>
+          implementation.get({}, handlerContext()),
+        );
+        return { afterBuild, response };
+      }),
+    );
+
+    // `Effect.provide` closed the layer's scope the instant the handlers map
+    // was built — before the server was even wired up.
+    expect(result.afterBuild).toEqual(["acquire", "release"]);
+    // So every request runs against a finalized resource, with no error at
+    // the seam to say so.
+    expect(result.response).toEqual({ status: "NOT_SERVING" });
   });
 });
 

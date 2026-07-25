@@ -1,7 +1,4 @@
-import {
-  serviceHandlersLayerName,
-  serviceImplementationName,
-} from "./naming.js";
+import { serviceHandlersName, serviceImplementationName } from "./naming.js";
 import type { GeneratorFile, MethodModel } from "./types.js";
 
 export const generateServer = (file: GeneratorFile) =>
@@ -13,10 +10,10 @@ export const generateServer = (file: GeneratorFile) =>
     ),
     "}",
     "",
-    `export const ${serviceHandlersLayerName(service.name)} = <R>(`,
+    `export const ${serviceHandlersName(service.name)} = <R>(`,
     `  implementation: ${serviceImplementationName(service.name)}<R>,`,
-    `): Layer.Layer<GrpcServerProtocol.GrpcHandlers, never, R> =>`,
-    "  GrpcServerProtocol.handlersLayer<R>({",
+    `): Effect.Effect<GrpcServerProtocol.GrpcHandlers, never, R> =>`,
+    "  GrpcServerProtocol.handlersEffect<R>({",
     ...service.methods.flatMap((method) => [
       `    "${service.typeName}/${method.name}": {`,
       `      kind: "${method.kind}",`,

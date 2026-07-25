@@ -4,7 +4,7 @@ import { Effect, Stream } from "effect";
 import { GrpcNodeServer } from "@effect-grpc/effect-grpc";
 import {
   FeatureShowcaseServiceGrpcRegistry,
-  FeatureShowcaseServiceHandlersLayer,
+  FeatureShowcaseServiceHandlers,
   type FeatureShowcaseServiceImplementation,
 } from "@effect-grpc/features-proto/generated/features/v1/showcase_effect_grpc";
 
@@ -53,7 +53,7 @@ const program = Effect.scoped(
     services: [
       {
         registry: FeatureShowcaseServiceGrpcRegistry,
-        handlers: FeatureShowcaseServiceHandlersLayer(implementation),
+        handlers: FeatureShowcaseServiceHandlers(implementation),
       },
     ],
   }),

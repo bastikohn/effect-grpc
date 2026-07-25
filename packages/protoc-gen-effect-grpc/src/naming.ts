@@ -40,8 +40,8 @@ export const serviceClientLayerName = (serviceName: string) =>
 export const serviceImplementationName = (serviceName: string) =>
   `${serviceName}Implementation`;
 
-export const serviceHandlersLayerName = (serviceName: string) =>
-  `${serviceName}HandlersLayer`;
+export const serviceHandlersName = (serviceName: string) =>
+  `${serviceName}Handlers`;
 
 export const serviceRegistryName = (serviceName: string) =>
   `${serviceName}GrpcRegistry`;

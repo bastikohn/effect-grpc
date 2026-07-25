@@ -1,33 +1,30 @@
 import { ConnectError } from "@connectrpc/connect";
-import { Schema } from "effect";
+import { Data } from "effect";
 
 import * as GrpcMetadata from "./GrpcMetadata.js";
 import * as GrpcStatusCode from "./GrpcStatusCode.js";
 
-export class GrpcStatusError extends Schema.TaggedErrorClass<GrpcStatusError>()(
-  "GrpcStatusError",
-  {
-    code: GrpcStatusCode.errorSchema,
-    message: Schema.String,
-    /**
-     * The single metadata channel an error has: under the gRPC protocol these
-     * entries are written to — and read back from — the response trailers,
-     * because a failed call carries its status there.
-     *
-     * Unlike call metadata, it is neither validated nor normalized:
-     * {@link toConnectError} encodes it best-effort, so an entry that
-     * contradicts its key's `-bin` suffix silently changes type in transit — a
-     * `Uint8Array` under an ASCII key arrives as its base64 string, a string
-     * under a `-bin` key arrives as decoded bytes. Validating here would mean
-     * throwing while serializing an error, which would swallow the original
-     * failure. Follow the `-bin` convention (see
-     * {@link GrpcMetadata.isBinaryKey}) and it round-trips.
-     */
-    metadata: GrpcMetadata.schema,
-    details: Schema.Array(Schema.Unknown),
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+export class GrpcStatusError extends Data.TaggedError("GrpcStatusError")<{
+  readonly code: GrpcStatusCode.GrpcErrorStatusCode;
+  readonly message: string;
+  /**
+   * The single metadata channel an error has: under the gRPC protocol these
+   * entries are written to — and read back from — the response trailers,
+   * because a failed call carries its status there.
+   *
+   * Unlike call metadata, it is neither validated nor normalized:
+   * {@link toConnectError} encodes it best-effort, so an entry that
+   * contradicts its key's `-bin` suffix silently changes type in transit — a
+   * `Uint8Array` under an ASCII key arrives as its base64 string, a string
+   * under a `-bin` key arrives as decoded bytes. Validating here would mean
+   * throwing while serializing an error, which would swallow the original
+   * failure. Follow the `-bin` convention (see
+   * {@link GrpcMetadata.isBinaryKey}) and it round-trips.
+   */
+  readonly metadata: GrpcMetadata.GrpcMetadata;
+  readonly details: ReadonlyArray<unknown>;
+  readonly cause?: unknown;
+}> {}
 
 export const make = (options: {
   readonly code: GrpcStatusCode.GrpcErrorStatusCode;
@@ -42,13 +39,6 @@ export const make = (options: {
     metadata: options.metadata ?? GrpcMetadata.empty,
     details: options.details ?? [],
     ...(options.cause === undefined ? {} : { cause: options.cause }),
-  });
-
-export const unknown = (cause: unknown) =>
-  make({
-    code: "unknown",
-    message: cause instanceof Error ? cause.message : String(cause),
-    cause,
   });
 
 export const internal = (message: string, cause?: unknown) =>

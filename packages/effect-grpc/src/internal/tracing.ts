@@ -6,13 +6,6 @@ import * as HttpTraceContext from "effect/unstable/http/HttpTraceContext";
 import type { GrpcMethodEntry } from "../GrpcMethodRegistry.js";
 import type { GrpcStatusCode } from "../GrpcStatusCode.js";
 import * as GrpcStatusError from "../GrpcStatusError.js";
-import * as GrpcMetrics from "./metrics.js";
-
-export interface TraceContextFields {
-  readonly traceId: string;
-  readonly spanId: string;
-  readonly sampled: boolean;
-}
 
 /** Span name per OTel RPC semconv: the full RPC path `$service/$method`. */
 export const spanName = (entry: GrpcMethodEntry): string => entry.tag;
@@ -24,7 +17,7 @@ export const clientSpanOptions = (
   kind: "client",
   attributes: {
     ...rpcAttributes(entry),
-    ...(serverAddress ? serverSpanAttributes(serverAddress) : {}),
+    ...(serverAddress ? serverAttributes(serverAddress, (port) => port) : {}),
   },
 });
 
@@ -37,13 +30,7 @@ export const serverSpanOptions = (
   attributes: rpcAttributes(entry),
 });
 
-export const traceFields = (span: TraceContextFields): TraceContextFields => ({
-  traceId: span.traceId,
-  spanId: span.spanId,
-  sampled: span.sampled,
-});
-
-export const traceparent = (span: TraceContextFields): string =>
+export const traceparent = (span: Tracer.AnySpan): string =>
   `00-${span.traceId}-${span.spanId}-${span.sampled ? "01" : "00"}`;
 
 /** Decodes incoming propagation headers into the parent `ExternalSpan`. */
@@ -60,6 +47,40 @@ export const externalSpanFromHeaders = (
  */
 export type StatusRecorder = (code: GrpcStatusCode) => void;
 
+/**
+ * OpenTelemetry-recommended histogram bucket boundaries for RPC durations
+ * measured in seconds. The `unit` attribute is read by Effect's OTLP exporter
+ * to set the metric unit (and skipped as a label by the Prometheus exporter).
+ */
+const durationOptions = {
+  boundaries: [
+    0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10,
+  ],
+  attributes: { unit: "s" },
+};
+
+/**
+ * `rpc.client.call.duration`: duration of outbound gRPC calls in seconds,
+ * from call start to final status. Tagged with `rpc.system.name`,
+ * `rpc.method`, `rpc.response.status_code`, `error.type` on failure, and
+ * `server.address`/`server.port` where available.
+ */
+const clientDuration = Metric.histogram("rpc.client.call.duration", {
+  description: "Duration of outbound gRPC calls, in seconds.",
+  ...durationOptions,
+});
+
+/**
+ * `rpc.server.call.duration`: duration of inbound gRPC calls in seconds,
+ * from call start to final status. Tagged with `rpc.system.name`,
+ * `rpc.method`, `rpc.response.status_code`, and `error.type` for
+ * server-fault codes only (see {@link isServerError}).
+ */
+const serverDuration = Metric.histogram("rpc.server.call.duration", {
+  description: "Duration of inbound gRPC calls, in seconds.",
+  ...durationOptions,
+});
+
 export const clientCallRecorder = (options: {
   readonly entry: GrpcMethodEntry;
   readonly span: Tracer.Span;
@@ -68,11 +89,11 @@ export const clientCallRecorder = (options: {
 }): StatusRecorder =>
   callRecorder(
     options.span,
-    GrpcMetrics.clientDuration,
+    clientDuration,
     {
       ...rpcAttributes(options.entry),
       ...(options.serverAddress
-        ? serverMetricAttributes(options.serverAddress)
+        ? serverAttributes(options.serverAddress, String)
         : {}),
     },
     options.context,
@@ -86,7 +107,7 @@ export const serverCallRecorder = (options: {
 }): StatusRecorder =>
   callRecorder(
     options.span,
-    GrpcMetrics.serverDuration,
+    serverDuration,
     rpcAttributes(options.entry),
     options.context,
     serverStatusAttributes,
@@ -152,9 +173,7 @@ const serverErrorCodes: ReadonlySet<GrpcStatusCode> = new Set([
 export const isServerError = (code: GrpcStatusCode): boolean =>
   serverErrorCodes.has(code);
 
-export const clientStatusAttributes = (
-  code: GrpcStatusCode,
-): Record<string, string> =>
+const clientStatusAttributes = (code: GrpcStatusCode): Record<string, string> =>
   code === "ok"
     ? { "rpc.response.status_code": statusCodeString(code) }
     : {
@@ -162,9 +181,7 @@ export const clientStatusAttributes = (
         "error.type": statusCodeString(code),
       };
 
-export const serverStatusAttributes = (
-  code: GrpcStatusCode,
-): Record<string, string> =>
+const serverStatusAttributes = (code: GrpcStatusCode): Record<string, string> =>
   isServerError(code)
     ? {
         "rpc.response.status_code": statusCodeString(code),
@@ -173,8 +190,7 @@ export const serverStatusAttributes = (
     : { "rpc.response.status_code": statusCodeString(code) };
 
 /** gRPC status code name per OTel semconv, e.g. `"OK"`, `"NOT_FOUND"`. */
-export const statusCodeString = (code: GrpcStatusCode): string =>
-  code.toUpperCase();
+const statusCodeString = (code: GrpcStatusCode): string => code.toUpperCase();
 
 const rpcAttributes = (entry: GrpcMethodEntry): Record<string, string> => ({
   "rpc.system.name": "grpc",
@@ -182,30 +198,32 @@ const rpcAttributes = (entry: GrpcMethodEntry): Record<string, string> => ({
   "rpc.method": entry.tag,
 });
 
-const serverSpanAttributes = (
+/**
+ * semconv's `server.*` attributes for the target. `port` renders the port:
+ * semconv types it as an integer, which spans carry as such, but Effect's
+ * metric attributes are string-only.
+ */
+const serverAttributes = <P extends string | number>(
   baseUrl: URL,
-): Record<string, string | number> => {
-  const port = serverPort(baseUrl);
+  port: (value: number) => P,
+): Record<string, string | P> => {
+  const value = serverPort(baseUrl);
   return {
     "server.address": serverAddress(baseUrl),
-    ...(port === undefined ? {} : { "server.port": port }),
+    ...(value === undefined ? {} : { "server.port": port(value) }),
   };
 };
 
 /**
- * The span attributes above, as metric tags. Effect's metric attributes are
- * string-only, so semconv's integer `server.port` is stringified here.
+ * The target's address. `hostname` is non-empty for the `http:`/`https:` URLs
+ * `createGrpcTransport` builds, but a `serverAddress` override — and the
+ * `layerConnect` path, where the caller brings its own `Transport` — is
+ * unconstrained by scheme: `new URL("unix:/var/run/grpc.sock").hostname` is
+ * `""`, which would emit the attribute present but blank. Fall back to the
+ * whole URL so a non-special scheme still reports something addressable.
  */
-const serverMetricAttributes = (baseUrl: URL): Record<string, string> => {
-  const port = serverPort(baseUrl);
-  return {
-    "server.address": serverAddress(baseUrl),
-    ...(port === undefined ? {} : { "server.port": String(port) }),
-  };
-};
-
 const serverAddress = (baseUrl: URL): string =>
-  baseUrl.hostname || baseUrl.host || normalizeUrl(baseUrl);
+  baseUrl.hostname || baseUrl.host || baseUrl.toString().replace(/\/$/, "");
 
 /** Ports WHATWG `URL` normalizes away — see {@link serverPort}. */
 const defaultPorts = new Map([
@@ -225,6 +243,3 @@ const serverPort = (baseUrl: URL): number | undefined =>
   baseUrl.port === ""
     ? defaultPorts.get(baseUrl.protocol)
     : Number(baseUrl.port);
-
-const normalizeUrl = (baseUrl: URL): string =>
-  baseUrl.toString().replace(/\/$/, "");

@@ -4,22 +4,14 @@ import {
   type ConnectRouter,
   type HandlerContext,
 } from "@connectrpc/connect";
-import {
-  Cause,
-  Context,
-  Effect,
-  Exit,
-  Layer,
-  Option,
-  Scope,
-  Stream,
-} from "effect";
+import { Cause, Context, Effect, Exit, Option, Scope, Stream } from "effect";
 import * as Tracer from "effect/Tracer";
 
-import * as CodegenSupport from "./CodegenSupport.js";
 import type { GrpcServerContext } from "./CodegenSupport.js";
+import * as GrpcMetadata from "./GrpcMetadata.js";
 import type {
   GrpcMethodEntry,
+  GrpcMethodKind,
   GrpcMethodRegistry,
 } from "./GrpcMethodRegistry.js";
 import * as GrpcStatusError from "./GrpcStatusError.js";
@@ -80,35 +72,32 @@ export type GrpcHandler<R = never> =
 export type GrpcHandlers = ReadonlyMap<string, GrpcHandler>;
 
 /**
- * Carries the handlers of a generated service inside its handlers layer, so
- * `GrpcNodeServer.serveAll` can collect them without changing the
- * user-facing service wiring.
+ * Builds what generated `*Handlers` functions return. Captures the context so
+ * handler requirements `R` are resolved where the effect runs; request-local
+ * services provided per call (the server span) take precedence over the
+ * capture.
+ *
+ * **Do not provide handler dependencies to this effect.** It completes as soon
+ * as it has read the context, so `Effect.provide(handlersEffect(...), deps)`
+ * builds `deps` in a scope that closes immediately: a scoped dependency is
+ * acquired, released, and only then handed to `serveAll`, and every request
+ * then runs against a finalized resource with no error at the seam. Leave `R`
+ * unprovided so the requirement propagates through `GrpcNodeServer.serveAll`,
+ * and provide it to the whole server program — whose scope is the server's
+ * lifetime — instead.
  */
-export const GrpcHandlers = Context.Service<GrpcHandlers>(
-  "@effect-grpc/effect-grpc/GrpcHandlers",
-);
-
-/**
- * Builds the layer generated `*HandlersLayer` functions use to publish their
- * handlers. Captures the context so handler requirements `R` are resolved
- * where the layer is built; request-local services provided per call (the
- * server span) take precedence over the capture.
- */
-export const handlersLayer = <R = never>(
+export const handlersEffect = <R = never>(
   handlers: Record<string, GrpcHandler<R>>,
-): Layer.Layer<GrpcHandlers, never, R> =>
-  Layer.effect(
-    GrpcHandlers,
-    Effect.gen(function* () {
-      const context = yield* Effect.context<R>();
-      return new Map(
-        Object.entries(handlers).map(([tag, handler]) => [
-          tag,
-          bindHandler(handler, context),
-        ]),
-      );
-    }),
-  );
+): Effect.Effect<GrpcHandlers, never, R> =>
+  Effect.gen(function* () {
+    const context = yield* Effect.context<R>();
+    return new Map(
+      Object.entries(handlers).map(([tag, handler]) => [
+        tag,
+        bindHandler(handler, context),
+      ]),
+    );
+  });
 
 const bindHandler = <R>(
   entry: GrpcHandler<R>,
@@ -117,36 +106,24 @@ const bindHandler = <R>(
   // The captured context carries the whole ambient build-time context, not
   // just `R` — merge it *beneath* the per-call context so request-local
   // services (the server span) stay authoritative over whatever happened to
-  // be in scope while the layer was built.
+  // be in scope where the handlers effect ran.
   const merge = (callContext: Context.Context<never>) =>
     Context.merge(context, callContext);
-  switch (entry.kind) {
-    case "unary":
-      return {
-        kind: entry.kind,
-        handler: (request, serverContext) =>
-          Effect.updateContext(entry.handler(request, serverContext), merge),
-      };
-    case "server-streaming":
-      return {
-        kind: entry.kind,
-        handler: (request, serverContext) =>
-          Stream.updateContext(entry.handler(request, serverContext), merge),
-      };
-    case "client-streaming":
-      return {
-        kind: entry.kind,
-        handler: (requests, serverContext) =>
-          Effect.updateContext(entry.handler(requests, serverContext), merge),
-      };
-    case "bidi-streaming":
-      return {
-        kind: entry.kind,
-        handler: (requests, serverContext) =>
-          Stream.updateContext(entry.handler(requests, serverContext), merge),
-      };
-  }
+  // The two `updateContext` overloads have the same shape; which one applies
+  // is decided by whether the kind returns an `Effect` or a `Stream`.
+  const update = (
+    isEffectKind(entry.kind) ? Effect.updateContext : Stream.updateContext
+  ) as (self: unknown, f: typeof merge) => unknown;
+  return {
+    kind: entry.kind,
+    handler: (request: never, serverContext: GrpcServerContext) =>
+      update(entry.handler(request, serverContext), merge),
+  } as GrpcHandler;
 };
+
+/** Whether a call kind is carried by an `Effect` rather than a `Stream`. */
+const isEffectKind = (kind: GrpcMethodKind): boolean =>
+  kind === "unary" || kind === "client-streaming";
 
 export interface GrpcServerProtocolResult {
   readonly routes: (router: ConnectRouter) => ConnectRouter;
@@ -189,7 +166,7 @@ export const make = (
             const recordStatus = serverRecorder(entry, span);
             record = recordStatus;
             const result = yield* Effect.raceFirst(
-              body(CodegenSupport.serverContext(headers)),
+              body({ metadata: GrpcMetadata.fromHeaders(headers) }),
               abortFailure(handlerContext.signal),
             ).pipe(Effect.exit);
             if (result._tag === "Failure") {
@@ -265,7 +242,7 @@ export const make = (
       // stream's cause channel, where the pump normalizes it (-> INTERNAL)
       // and the `finally` below still closes the span scope.
       const responses = Stream.suspend(() =>
-        body(CodegenSupport.serverContext(headers)),
+        body({ metadata: GrpcMetadata.fromHeaders(headers) }),
       );
       // The pump spawns the handler fiber with this context, so the scoped
       // span parents the handler's spans.
@@ -330,18 +307,18 @@ export const make = (
       }
     };
 
-    // The four connect adapters below stay separate because connect imposes
-    // four handler signatures (Promise vs async-generator, message vs
-    // iterable); each one is a thin binding of an entry and its handler onto
-    // one of the two execution templates.
+    // connect imposes four handler signatures, but the only real axis is how
+    // the response is shaped (Promise vs async-generator); the request axis
+    // is folded into {@link handlerInput}, which yields either the decoded
+    // message or the decoded request stream.
 
-    const unaryImplementation =
-      (entry: GrpcMethodEntry, handler: GrpcUnaryHandler) =>
+    const effectImplementation =
+      (entry: GrpcMethodEntry, handler: GrpcHandler) =>
       (request: unknown, handlerContext: HandlerContext) =>
         handleEffectCall(entry, handlerContext, (serverContext) =>
-          MethodRegistry.decodeRequest(entry, request).pipe(
-            Effect.flatMap((decoded) =>
-              handler.handler(decoded, serverContext),
+          handlerInput(entry, request, handlerContext.signal).pipe(
+            Effect.flatMap((input) =>
+              (handler.handler as EffectHandler)(input, serverContext),
             ),
             Effect.flatMap((value) =>
               MethodRegistry.encodeResponse(entry, value),
@@ -349,13 +326,15 @@ export const make = (
           ),
         );
 
-    const serverStreamingImplementation =
-      (entry: GrpcMethodEntry, handler: GrpcServerStreamingHandler) =>
+    const streamImplementation =
+      (entry: GrpcMethodEntry, handler: GrpcHandler) =>
       (request: unknown, handlerContext: HandlerContext) =>
         handleStreamCall(entry, handlerContext, (serverContext) =>
           Stream.unwrap(
-            MethodRegistry.decodeRequest(entry, request).pipe(
-              Effect.map((decoded) => handler.handler(decoded, serverContext)),
+            handlerInput(entry, request, handlerContext.signal).pipe(
+              Effect.map((input) =>
+                (handler.handler as StreamHandler)(input, serverContext),
+              ),
             ),
           ).pipe(
             Stream.mapEffect((value) =>
@@ -364,53 +343,14 @@ export const make = (
           ),
         );
 
-    const clientStreamingImplementation =
-      (entry: GrpcMethodEntry, handler: GrpcClientStreamingHandler) =>
-      (requests: AsyncIterable<unknown>, handlerContext: HandlerContext) =>
-        handleEffectCall(entry, handlerContext, (serverContext) =>
-          handler
-            .handler(
-              decodedRequestStream(entry, requests, handlerContext.signal),
-              serverContext,
-            )
-            .pipe(
-              Effect.flatMap((value) =>
-                MethodRegistry.encodeResponse(entry, value),
-              ),
-            ),
-        );
-
-    const bidiStreamingImplementation =
-      (entry: GrpcMethodEntry, handler: GrpcBidiStreamingHandler) =>
-      (requests: AsyncIterable<unknown>, handlerContext: HandlerContext) =>
-        handleStreamCall(entry, handlerContext, (serverContext) =>
-          handler
-            .handler(
-              decodedRequestStream(entry, requests, handlerContext.signal),
-              serverContext,
-            )
-            .pipe(
-              Stream.mapEffect((value) =>
-                MethodRegistry.encodeResponse(entry, value),
-              ),
-            ),
-        );
-
     const methodImplementation = (entry: GrpcMethodEntry) => {
       const handler = handlers.get(entry.tag);
       if (!handler || handler.kind !== entry.kind) {
         return missingImplementation(entry);
       }
-      switch (handler.kind) {
-        case "unary":
-          return unaryImplementation(entry, handler);
-        case "server-streaming":
-          return serverStreamingImplementation(entry, handler);
-        case "client-streaming":
-          return clientStreamingImplementation(entry, handler);
-        case "bidi-streaming":
-          return bidiStreamingImplementation(entry, handler);
-      }
+      return isEffectKind(handler.kind)
+        ? effectImplementation(entry, handler)
+        : streamImplementation(entry, handler);
     };
 
     const routes = (router: ConnectRouter) => {
@@ -439,6 +379,31 @@ const emptyHandlers: GrpcHandlers = new Map();
 type ServerCallOutcome =
   | { readonly ok: true; readonly value: unknown }
   | { readonly ok: false; readonly error: GrpcStatusError.GrpcStatusError };
+
+type EffectHandler = (
+  input: unknown,
+  context: GrpcServerContext,
+) => Effect.Effect<unknown, GrpcStatusError.GrpcStatusError>;
+
+type StreamHandler = (
+  input: unknown,
+  context: GrpcServerContext,
+) => Stream.Stream<unknown, GrpcStatusError.GrpcStatusError>;
+
+/**
+ * The value a handler is called with: message-request kinds get the decoded
+ * request, stream-request kinds the decoded request stream.
+ */
+const handlerInput = (
+  entry: GrpcMethodEntry,
+  request: unknown,
+  signal: AbortSignal,
+): Effect.Effect<unknown, GrpcStatusError.GrpcStatusError> =>
+  entry.kind === "unary" || entry.kind === "server-streaming"
+    ? MethodRegistry.decodeRequest(entry, request)
+    : Effect.succeed(
+        decodedRequestStream(entry, request as AsyncIterable<unknown>, signal),
+      );
 
 const decodedRequestStream = (
   entry: GrpcMethodEntry,

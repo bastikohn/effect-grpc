@@ -3,7 +3,7 @@ import { fileDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import { base64Encode } from "@bufbuild/protobuf/wire";
 import { FileDescriptorProtoSchema } from "@bufbuild/protobuf/wkt";
 import type { ConnectRouter, HandlerContext } from "@connectrpc/connect";
-import { Context, Effect, Layer } from "effect";
+import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 
 import * as GrpcHealth from "../src/GrpcHealth.js";
@@ -308,7 +308,7 @@ const messageResponseOf = (
 
 /**
  * Runs the real reflection handlers behind the server protocol — streaming
- * handlers layer, registry converters, and connect route implementation,
+ * handlers effect, registry converters, and connect route implementation,
  * without a TCP listener — and collects the responses to `requests`.
  */
 const withReflectionServer = (
@@ -319,13 +319,12 @@ const withReflectionServer = (
     Effect.scoped(
       Effect.gen(function* () {
         const reflection = GrpcReflection.service([GrpcHealth.service]);
-        const context = yield* Layer.build(reflection.handlers);
         const { routes } = yield* GrpcServerProtocol.make({
           registry: new Map([
             ...GrpcHealth.HealthGrpcRegistry,
             ...reflection.registry,
           ]),
-          handlers: Context.get(context, GrpcServerProtocol.GrpcHandlers),
+          handlers: yield* reflection.handlers,
         });
 
         const implementation = captureImplementations(routes)[serviceTypeName];

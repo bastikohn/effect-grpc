@@ -10,7 +10,7 @@ import {
 } from "@effect-grpc/effect-grpc";
 import {
   UserServiceGrpcRegistry,
-  UserServiceHandlersLayer,
+  UserServiceHandlers,
   type UserServiceImplementation,
 } from "@effect-grpc/simple-proto/generated/demo/v1/user_service_effect_grpc";
 
@@ -127,7 +127,7 @@ const withHealthServer = <A, E>(
         services: [
           {
             registry: UserServiceGrpcRegistry,
-            handlers: UserServiceHandlersLayer(implementation),
+            handlers: UserServiceHandlers(implementation),
           },
           GrpcHealth.service,
         ],

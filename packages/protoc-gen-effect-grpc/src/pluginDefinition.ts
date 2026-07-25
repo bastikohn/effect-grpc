@@ -45,7 +45,6 @@ export const plugin = createEcmaScriptPlugin({
   parseOptions,
   generateTs(schema) {
     const options = { ...defaultOptions, ...schema.options };
-    detectImportCycles(schema.allFiles);
     for (const file of schema.files) {
       const model = modelFromFile(file, options);
       if (
@@ -64,41 +63,6 @@ export const plugin = createEcmaScriptPlugin({
     }
   },
 });
-
-export const detectImportCycles = (files: ReadonlyArray<DescFile>) => {
-  const byName = new Map(files.map((file) => [protoFileName(file), file]));
-  const visiting: Array<string> = [];
-  const visited = new Set<string>();
-
-  const visit = (file: DescFile) => {
-    const name = protoFileName(file);
-    const active = visiting.indexOf(name);
-    if (active >= 0) {
-      throw new Error(
-        `Unsupported protobuf imports: import cycle detected: ${[
-          ...visiting.slice(active),
-          name,
-        ].join(" -> ")}`,
-      );
-    }
-    if (visited.has(name)) return;
-
-    visiting.push(name);
-    for (const dependency of file.proto.dependency) {
-      const dependencyFile = byName.get(dependency);
-      if (dependencyFile) visit(dependencyFile);
-    }
-    visiting.pop();
-    visited.add(name);
-  };
-
-  for (const file of files) {
-    visit(file);
-  }
-};
-
-const protoFileName = (file: DescFile) =>
-  file.proto.name || `${file.name}.proto`;
 
 // Generated declaration name matching protoc-gen-es: nested types use the
 // parent chain joined with underscores (e.g. `Outer_Inner`).
@@ -131,7 +95,6 @@ const modelFromFile = (
   options: GeneratorOptions,
 ): GeneratorFile => ({
   protoFileName: `${file.name}.proto`,
-  packageName: file.proto.package,
   importExtension: options.importExtension,
   imports: importsFromFile(file),
   enums: allEnums(file).map(enumModel),

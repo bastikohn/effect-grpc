@@ -24,8 +24,6 @@ export interface FileUsage {
   readonly usesGrpcEmpty: boolean;
   /** A bytes conversion is emitted somewhere (needs `node:buffer`). */
   readonly usesBase64Bytes: boolean;
-  /** Well-known kinds used by message fields (incl. list/map/oneof values). */
-  readonly wellKnownFields: ReadonlySet<WellKnownKind>;
   /** Well-known kinds used as method input/output types. */
   readonly wellKnownMethods: ReadonlySet<WellKnownKind>;
   /** Union of well-known kinds used as a field OR as a method type. */
@@ -43,8 +41,6 @@ export interface FileUsage {
    * import behind.
    */
   readonly usedImportedTypes: ReadonlySet<string>;
-  /** Messages in dependency order for schema emission. */
-  readonly orderedMessages: ReadonlyArray<MessageModel>;
   /** `A->B` edges that participate in a cycle and need `Schema.suspend`. */
   readonly recursiveEdges: ReadonlySet<string>;
 }
@@ -144,7 +140,6 @@ export const analyzeFileUsage = (file: GeneratorFile): FileUsage => {
     usesGrpcEmpty,
     usesBase64Bytes:
       usesBytesScalar || usesWellKnown("bytes-value") || usesWellKnown("any"),
-    wellKnownFields,
     wellKnownMethods,
     wellKnownUsed,
     boxedWrappers,
@@ -155,7 +150,6 @@ export const analyzeFileUsage = (file: GeneratorFile): FileUsage => {
         ...imported.messages.filter((name) => methodTypeNames.has(name)),
       ]),
     ),
-    orderedMessages: orderMessages(file.messages),
     recursiveEdges: findRecursiveEdges(file.messages),
   };
 };
@@ -190,27 +184,6 @@ const fieldValueOccurrences = (
         boxed: true,
       }));
   }
-};
-
-const orderMessages = (messages: ReadonlyArray<MessageModel>) => {
-  const byName = new Map(messages.map((message) => [message.name, message]));
-  const visited = new Set<string>();
-  const ordered: Array<MessageModel> = [];
-
-  const visit = (message: MessageModel) => {
-    if (visited.has(message.name)) return;
-    visited.add(message.name);
-    for (const dependency of messageDependencies(message)) {
-      const dependencyMessage = byName.get(dependency);
-      if (dependencyMessage) visit(dependencyMessage);
-    }
-    ordered.push(message);
-  };
-
-  for (const message of messages) {
-    visit(message);
-  }
-  return ordered;
 };
 
 const messageDependencies = (message: MessageModel) =>

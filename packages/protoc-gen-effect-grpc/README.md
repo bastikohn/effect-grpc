@@ -14,11 +14,6 @@ All four gRPC method kinds are generated. Clients invoke every kind through
 the `GrpcInvoker` seam; server handlers for every kind are published into the
 unified `GrpcServerProtocol.GrpcHandlers` map.
 
-If you don't already use [Buf](https://buf.build) or protoc, consider
-[`@effect-grpc/codegen`](https://www.npmjs.com/package/@effect-grpc/codegen)
-instead — a self-contained CLI that runs protobuf-es and this generator in a
-single `npx` command.
-
 ## Install
 
 ```sh

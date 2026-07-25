@@ -1,7 +1,6 @@
 ---
 "@effect-grpc/effect-grpc": minor
 "@effect-grpc/protoc-gen-effect-grpc": minor
-"@effect-grpc/codegen": minor
 ---
 
 Add client-streaming and bidi-streaming support via a direct streaming bridge.

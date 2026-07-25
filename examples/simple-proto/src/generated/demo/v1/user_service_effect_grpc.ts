@@ -11,12 +11,6 @@ export const GetUserRequestSchema = Schema.Struct({
 });
 export type GetUserRequest = Schema.Schema.Type<typeof GetUserRequestSchema>;
 
-export const UserSchema = Schema.Struct({
-  id: Schema.String,
-  name: Schema.String,
-});
-export type User = Schema.Schema.Type<typeof UserSchema>;
-
 export const GetUserResponseSchema = Schema.Struct({
   user: Schema.optional(Schema.suspend((): typeof UserSchema => UserSchema)),
 });
@@ -27,6 +21,12 @@ export const WatchUsersRequestSchema = Schema.Struct({
   count: Schema.Number,
 });
 export type WatchUsersRequest = Schema.Schema.Type<typeof WatchUsersRequestSchema>;
+
+export const UserSchema = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+});
+export type User = Schema.Schema.Type<typeof UserSchema>;
 
 export const UserEventSchema = Schema.Struct({
   id: Schema.String,

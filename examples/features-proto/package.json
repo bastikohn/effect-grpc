@@ -1,6 +1,5 @@
 {
   "name": "@effect-grpc/features-proto",
-  "version": "0.0.1-beta.3",
   "private": true,
   "type": "module",
   "exports": {
@@ -20,16 +19,13 @@
       "types": "./dist/showcase_pb.d.mts",
       "default": "./dist/showcase_pb.mjs"
     },
-    "./package.json": "./package.json",
-    "./internal/*": null
+    "./package.json": "./package.json"
   },
   "scripts": {
     "clean": "rm -rf src/generated dist coverage node_modules",
     "generate": "buf generate",
     "build": "pnpm run generate && tsdown --config-loader unrun",
-    "dev": "tsdown --watch --config-loader unrun",
-    "typecheck": "tsc --noEmit --project tsconfig.json",
-    "test": "vitest run --passWithNoTests"
+    "typecheck": "tsc --noEmit --project tsconfig.json"
   },
   "dependencies": {
     "@bufbuild/protobuf": "^2.0.0",

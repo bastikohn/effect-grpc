@@ -15,3 +15,7 @@ Breaking: the public surface shrinks to what is actually load-bearing.
   `grpc.reflection.v1alpha` alias is no longer registered.
 - `GrpcHealth.make`/`layer` are nullary values, and `GrpcHealthService.statuses`
   plus `GrpcHealthOptions.initialStatuses` are removed.
+- The `@effect-grpc/codegen` package is discontinued and will not be published
+  again — it was a second front-end to this generator. `buf generate` with the
+  `protoc-gen-effect-grpc` plugin is the supported path; see the README for the
+  `buf.yaml`/`buf.gen.yaml` recipe.

@@ -2032,6 +2032,11 @@ export const ShadowSchema = Schema.Struct({
 });
 export type Shadow = Schema.Schema.Type<typeof ShadowSchema>;
 
+export const GrpcGoogleProtobufTimestampSchema = Schema.Struct({
+  at: Schema.optional(Schema.Date),
+});
+export type GrpcGoogleProtobufTimestamp = Schema.Schema.Type<typeof GrpcGoogleProtobufTimestampSchema>;
+
 export const GrpcGoogleProtobufBoolValueSchema = Schema.Struct({
   enabled: Schema.Boolean,
 });
@@ -2041,11 +2046,6 @@ export const GrpcGoogleProtobufEmptySchema = Schema.Struct({
   label: Schema.String,
 });
 export type GrpcGoogleProtobufEmpty = Schema.Schema.Type<typeof GrpcGoogleProtobufEmptySchema>;
-
-export const GrpcGoogleProtobufTimestampSchema = Schema.Struct({
-  at: Schema.optional(Schema.Date),
-});
-export type GrpcGoogleProtobufTimestamp = Schema.Schema.Type<typeof GrpcGoogleProtobufTimestampSchema>;
 
 const compact = <T extends Record<string, unknown>>(object: T): T => {
   const result: Record<string, unknown> = {};
@@ -2162,24 +2162,24 @@ export const toGrpcGoogleProtobufTimestamp = (value: unknown): Record<string, un
 };
 
 export const fromGrpcGoogleProtobufBoolValue = (message: unknown): unknown => compact({
-  enabled: (readField(message, "enabled")) as boolean,
+  enabled: (CodegenSupport.readField(message, "enabled")) as boolean,
 });
 
 export const toGrpcGoogleProtobufBoolValue = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    enabled: (readField(message, "enabled")) as boolean,
+    enabled: (CodegenSupport.readField(message, "enabled")) as boolean,
   });
 };
 
 export const fromGrpcGoogleProtobufEmpty = (message: unknown): unknown => compact({
-  label: (readField(message, "label")) as string,
+  label: (CodegenSupport.readField(message, "label")) as string,
 });
 
 export const toGrpcGoogleProtobufEmpty = (value: unknown): Record<string, unknown> => {
   const message = value as Record<string, unknown>;
   return compact({
-    label: (readField(message, "label")) as string,
+    label: (CodegenSupport.readField(message, "label")) as string,
   });
 };
 

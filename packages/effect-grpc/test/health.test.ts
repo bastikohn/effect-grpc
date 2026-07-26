@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import * as GrpcHealth from "../src/GrpcHealth.js";
 import * as GrpcServerProtocol from "../src/GrpcServerProtocol.js";
+import * as HealthPb from "../src/internal/healthPb.js";
 import {
   captureImplementation,
   handlerContext,
@@ -71,5 +72,33 @@ describe("GrpcHealth service", () => {
 
     // `HealthCheckResponse.ServingStatus.SERVING` is 1.
     expect(response).toEqual({ status: 1 });
+  });
+
+  // The wire value of a status is its position in a single array read by both
+  // converters, so a reordering stays self-consistent and round trips. The
+  // canonical numbering lives in the vendored descriptor; cross-check it there
+  // rather than restating it as a second literal list.
+  it("agrees with the descriptor on every serving status number", () => {
+    const entry = GrpcHealth.HealthGrpcRegistry.get(
+      "grpc.health.v1.Health/Check",
+    )!;
+    const servingStatus = HealthPb.Health.file.messages
+      .find((message) => message.name === "HealthCheckResponse")!
+      .nestedEnums.find((nested) => nested.name === "ServingStatus")!;
+
+    expect(servingStatus.values).toHaveLength(4);
+    expect(
+      servingStatus.values.map((value) => ({
+        name: value.name,
+        encoded: entry.toGrpcResponse({ status: value.name }),
+        decoded: entry.fromGrpcResponse({ status: value.number } as never),
+      })),
+    ).toEqual(
+      servingStatus.values.map((value) => ({
+        name: value.name,
+        encoded: { status: value.number },
+        decoded: { status: value.name },
+      })),
+    );
   });
 });

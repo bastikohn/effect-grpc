@@ -9,12 +9,6 @@
     "paths": {
       "@effect-grpc/effect-grpc": ["packages/effect-grpc/src/index.ts"],
       "@effect-grpc/effect-grpc/*": ["packages/effect-grpc/src/*"],
-      "@effect-grpc/protoc-gen-effect-grpc": [
-        "packages/protoc-gen-effect-grpc/src/index.ts"
-      ],
-      "@effect-grpc/protoc-gen-effect-grpc/*": [
-        "packages/protoc-gen-effect-grpc/src/*"
-      ],
       "@effect-grpc/simple-proto/*": ["examples/simple-proto/src/*"]
     },
     "allowImportingTsExtensions": true,

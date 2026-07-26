@@ -7,7 +7,7 @@ Runtime support for generated [Effect](https://effect.website)-native gRPC
 clients and servers. Pairs with the build-time generator
 [`@effect-grpc/protoc-gen-effect-grpc`](https://www.npmjs.com/package/@effect-grpc/protoc-gen-effect-grpc),
 which turns `.proto` service definitions into typed Effect clients, server
-handler layers, and registries — no runtime `.proto` loading.
+handlers, and registries — no runtime `.proto` loading.
 
 ## Install
 
@@ -99,9 +99,11 @@ const program = Effect.gen(function* () {
 
 ## Error model
 
-Generated RPCs use `GrpcStatusError` as their generic error schema. It is a
-schema-backed tagged error, so generated client failures are decoded into real
-`GrpcStatusError.GrpcStatusError` instances. Discriminate them by their `_tag`
+Generated RPCs fail with `GrpcStatusError`, a `Data.TaggedError`. Failures
+coming off the wire are built from the peer's connect error by
+`GrpcStatusError.fromConnectError`, and handler failures are turned back into
+one by `GrpcStatusError.toConnectError`, so both ends see the same status code,
+message, and metadata. Discriminate them by their `_tag`
 (`"GrpcStatusError"`), e.g. with `Effect.catchTag`.
 
 User metadata keys beginning with `x-effect-grpc-` are reserved for runtime

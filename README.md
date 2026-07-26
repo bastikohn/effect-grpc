@@ -88,12 +88,12 @@ Vite+ internally for linting, formatting, and workspace task orchestration.
 
 `.proto` files are consumed at build time. `@bufbuild/protoc-gen-es` generates
 protobuf-es descriptors and message types, and
-`protoc-gen-effect-grpc` generates Effect schemas, RPC declarations, registries,
-client facades, and server handler layers.
+`protoc-gen-effect-grpc` generates Effect schemas, method registries, client
+facades, and server handlers.
 
-Unsupported method kinds and protobuf field shapes fail codegen by default with
-a clear error. See [limitations](docs/users/limitations.md) for the current
-support policy.
+Unsupported method kinds and protobuf field shapes fail codegen with a clear
+error. See [limitations](docs/users/limitations.md) for the current support
+policy.
 
 ### Generating from your own `.proto` files
 

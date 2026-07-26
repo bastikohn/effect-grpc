@@ -14,9 +14,6 @@ export const createVitestConfig = (aliases: Record<string, string> = {}) =>
         "@effect-grpc/effect-grpc": resolveRepoPath(
           "packages/effect-grpc/src/index.ts",
         ),
-        "@effect-grpc/protoc-gen-effect-grpc": resolveRepoPath(
-          "packages/protoc-gen-effect-grpc/src/index.ts",
-        ),
         ...aliases,
       },
     },

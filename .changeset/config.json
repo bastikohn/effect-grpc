@@ -12,9 +12,6 @@
   "ignore": [
     "@effect-grpc/simple-proto",
     "@effect-grpc/simple-server",
-    "@effect-grpc/simple-client",
-    "@effect-grpc/features-proto",
-    "@effect-grpc/features-server",
-    "@effect-grpc/features-client"
+    "@effect-grpc/simple-client"
   ]
 }

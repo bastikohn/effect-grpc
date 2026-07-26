@@ -1,4 +1,3 @@
-import * as net from "node:net";
 import { fromBinary } from "@bufbuild/protobuf";
 import { FileDescriptorProtoSchema } from "@bufbuild/protobuf/wkt";
 import { Effect, Layer, Stream } from "effect";
@@ -17,6 +16,8 @@ import {
   UserServiceHandlers,
   type UserServiceImplementation,
 } from "@effect-grpc/simple-proto/generated/demo/v1/user_service_effect_grpc";
+
+import { freePort } from "./support.ts";
 
 const implementation: UserServiceImplementation = {
   getUser: (request) =>
@@ -199,21 +200,3 @@ const withReflectionServer = <A, E>(
       );
     }),
   );
-
-const freePort = Effect.promise(
-  () =>
-    new Promise<number>((resolve, reject) => {
-      const server = net.createServer();
-      server.once("error", reject);
-      server.listen(0, "127.0.0.1", () => {
-        const address = server.address();
-        server.close(() => {
-          if (address && typeof address === "object") {
-            resolve(address.port);
-          } else {
-            reject(new Error("Unable to allocate a local port"));
-          }
-        });
-      });
-    }),
-);

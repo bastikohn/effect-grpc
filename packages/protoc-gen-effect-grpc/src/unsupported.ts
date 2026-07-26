@@ -29,58 +29,42 @@ export const methodKindModel = (
 };
 
 export const supportedField = (field: DescField): void => {
-  switch (field.fieldKind) {
-    case "scalar":
-      if (field.presence === FeatureSet_FieldPresence.LEGACY_REQUIRED) {
-        unsupportedField(
-          field,
-          `proto2 required field ${field.parent.typeName}.${field.name}`,
-          "proto2 required fields",
-        );
-      }
-      if (
-        field.proto.defaultValue !== undefined &&
-        field.proto.defaultValue !== ""
-      ) {
-        unsupportedField(
-          field,
-          `proto2 default field ${field.parent.typeName}.${field.name}`,
-          "proto2 default values",
-        );
-      }
-      return;
-    case "message":
-      if (isWellKnownType(field.message)) {
-        supportedWellKnownField(field, field.message);
-      }
-      return;
-    case "enum":
-      return;
-    case "list":
-      switch (field.listKind) {
-        case "scalar":
-        case "enum":
-          return;
-        case "message":
-          if (isWellKnownType(field.message)) {
-            supportedWellKnownField(field, field.message);
-          }
-          return;
-      }
-      return;
-    case "map":
-      switch (field.mapKind) {
-        case "scalar":
-          return;
-        case "message":
-          if (isWellKnownType(field.message)) {
-            supportedWellKnownField(field, field.message);
-          }
-          return;
-        case "enum":
-          return;
-      }
-      return;
+  if (field.fieldKind === "scalar") {
+    if (field.presence === FeatureSet_FieldPresence.LEGACY_REQUIRED) {
+      unsupportedField(
+        field,
+        `proto2 required field ${field.parent.typeName}.${field.name}`,
+        "proto2 required fields",
+      );
+    }
+    if (
+      field.proto.defaultValue !== undefined &&
+      field.proto.defaultValue !== ""
+    ) {
+      unsupportedField(
+        field,
+        `proto2 default field ${field.parent.typeName}.${field.name}`,
+        "proto2 default values",
+      );
+    }
+    return;
+  }
+  const message =
+    field.fieldKind === "message" ||
+    (field.fieldKind === "list" && field.listKind === "message") ||
+    (field.fieldKind === "map" && field.mapKind === "message")
+      ? field.message
+      : undefined;
+  if (
+    message !== undefined &&
+    isWellKnownType(message) &&
+    wellKnownKind(message.typeName) === undefined
+  ) {
+    unsupportedField(
+      field,
+      `well-known type field ${field.parent.typeName}.${field.name} (${message.typeName})`,
+      "well-known protobuf types",
+    );
   }
 };
 
@@ -125,18 +109,3 @@ const unsupportedField = (
 
 export const isWellKnownType = (desc: DescMessage | DescEnum) =>
   desc.file.proto.package === "google.protobuf";
-
-export const isSupportedWellKnownType = (message: DescMessage) =>
-  wellKnownKind(message.typeName) !== undefined;
-
-const supportedWellKnownField = (
-  field: DescField,
-  message: DescMessage,
-): void => {
-  if (isSupportedWellKnownType(message)) return;
-  unsupportedField(
-    field,
-    `well-known type field ${field.parent.typeName}.${field.name} (${message.typeName})`,
-    "well-known protobuf types",
-  );
-};

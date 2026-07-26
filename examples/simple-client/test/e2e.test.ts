@@ -1,4 +1,3 @@
-import * as net from "node:net";
 import * as OtelTracer from "@effect/opentelemetry/Tracer";
 import { SpanKind, SpanStatusCode } from "@opentelemetry/api";
 import {
@@ -20,8 +19,11 @@ import {
   UserServiceClientLayer,
   UserServiceGrpcRegistry,
   UserServiceHandlers,
+  type UserServiceClientService,
   type UserServiceImplementation,
 } from "@effect-grpc/simple-proto/generated/demo/v1/user_service_effect_grpc";
+
+import { freePort, withServer as serve } from "./support.ts";
 
 const defaultImplementation: UserServiceImplementation = {
   getUser: (request) =>
@@ -385,141 +387,105 @@ describe("simple demo e2e", () => {
     });
   });
 
-  it("client-side Effect interruption cancels native unary calls", async () => {
-    await Effect.runPromise(
-      Effect.gen(function* () {
-        const started = yield* Deferred.make<void>();
-        const cancelled = yield* Deferred.make<void>();
-        const implementation: UserServiceImplementation = {
-          ...defaultImplementation,
-          getUser: () =>
-            Deferred.succeed(started, undefined).pipe(
-              Effect.andThen(Effect.never),
-              Effect.ensuring(Deferred.succeed(cancelled, undefined)),
-            ),
-        };
-
-        yield* withServer(
-          (baseUrl) =>
-            Effect.gen(function* () {
-              const client = yield* UserServiceClient;
-              const fiber = yield* client
-                .getUser({ id: "hang" })
-                .pipe(Effect.forkChild);
-              yield* Deferred.await(started).pipe(Effect.timeout("1 second"));
-              yield* Effect.sleep("20 millis");
-              yield* Fiber.interrupt(fiber);
-              yield* Deferred.await(cancelled).pipe(Effect.timeout("1 second"));
-            }).pipe(Effect.provide(clientLayer(baseUrl))),
-          { implementation },
-        );
-      }),
+  // Signal `started`, block until torn down, then signal `cancelled` from the
+  // finalizer. Both termination modes below assert the same fact — the
+  // server-side call is cancelled — so they are parameterised over the call
+  // shape rather than spelled out per shape.
+  const hang = (
+    started: Deferred.Deferred<void>,
+    cancelled: Deferred.Deferred<void>,
+  ) =>
+    Deferred.succeed(started, undefined).pipe(
+      Effect.andThen(Effect.never),
+      Effect.ensuring(Deferred.succeed(cancelled, undefined)),
     );
-  });
 
-  it("client protocol scope finalization cancels active native unary calls", async () => {
-    await Effect.runPromise(
-      Effect.gen(function* () {
-        const started = yield* Deferred.make<void>();
-        const cancelled = yield* Deferred.make<void>();
-        const implementation: UserServiceImplementation = {
-          ...defaultImplementation,
-          getUser: () =>
-            Deferred.succeed(started, undefined).pipe(
-              Effect.andThen(Effect.never),
-              Effect.ensuring(Deferred.succeed(cancelled, undefined)),
-            ),
-        };
-
-        yield* withServer(
-          (baseUrl) =>
-            Effect.gen(function* () {
-              yield* Effect.scoped(
-                Effect.gen(function* () {
-                  const client = yield* UserServiceClient;
-                  yield* client.getUser({ id: "hang" }).pipe(Effect.forkScoped);
-                  yield* Deferred.await(started).pipe(
-                    Effect.timeout("1 second"),
-                  );
-                }),
-              ).pipe(Effect.provide(clientLayer(baseUrl)));
-              yield* Deferred.await(cancelled).pipe(Effect.timeout("1 second"));
-            }),
-          { implementation },
-        );
+  const hangingCall = {
+    unary: {
+      implementation: (hanging: Effect.Effect<never>) => ({
+        ...defaultImplementation,
+        getUser: () => hanging,
       }),
-    );
-  });
-
-  it("client-side Effect interruption cancels native server streams", async () => {
-    await Effect.runPromise(
-      Effect.gen(function* () {
-        const started = yield* Deferred.make<void>();
-        const cancelled = yield* Deferred.make<void>();
-        const implementation: UserServiceImplementation = {
-          ...defaultImplementation,
-          watchUsers: () =>
-            Stream.fromEffect(Deferred.succeed(started, undefined)).pipe(
-              Stream.drain,
-              Stream.concat(Stream.never),
-              Stream.ensuring(Deferred.succeed(cancelled, undefined)),
-            ),
-        };
-
-        yield* withServer(
-          (baseUrl) =>
-            Effect.gen(function* () {
-              const client = yield* UserServiceClient;
-              const fiber = yield* client
-                .watchUsers({ tenantId: "demo", count: 1 })
-                .pipe(Stream.runDrain, Effect.forkChild);
-              yield* Deferred.await(started).pipe(Effect.timeout("1 second"));
-              yield* Effect.sleep("20 millis");
-              yield* Fiber.interrupt(fiber);
-              yield* Deferred.await(cancelled).pipe(Effect.timeout("1 second"));
-            }).pipe(Effect.provide(clientLayer(baseUrl))),
-          { implementation },
-        );
+      call: (client: UserServiceClientService) =>
+        client.getUser({ id: "hang" }),
+    },
+    "server stream": {
+      implementation: (hanging: Effect.Effect<never>) => ({
+        ...defaultImplementation,
+        watchUsers: () => Stream.fromEffect(hanging),
       }),
-    );
-  });
+      call: (client: UserServiceClientService) =>
+        client.watchUsers({ tenantId: "demo", count: 1 }).pipe(Stream.runDrain),
+    },
+  } as const;
 
-  it("client protocol scope finalization cancels active native server streams", async () => {
-    await Effect.runPromise(
-      Effect.gen(function* () {
-        const started = yield* Deferred.make<void>();
-        const cancelled = yield* Deferred.make<void>();
-        const implementation: UserServiceImplementation = {
-          ...defaultImplementation,
-          watchUsers: () =>
-            Stream.fromEffect(Deferred.succeed(started, undefined)).pipe(
-              Stream.drain,
-              Stream.concat(Stream.never),
-              Stream.ensuring(Deferred.succeed(cancelled, undefined)),
-            ),
-        };
+  const shapes = [["unary"], ["server stream"]] as const;
 
-        yield* withServer(
-          (baseUrl) =>
-            Effect.gen(function* () {
-              yield* Effect.scoped(
-                Effect.gen(function* () {
-                  const client = yield* UserServiceClient;
-                  yield* client
-                    .watchUsers({ tenantId: "demo", count: 1 })
-                    .pipe(Stream.runDrain, Effect.forkScoped);
-                  yield* Deferred.await(started).pipe(
-                    Effect.timeout("1 second"),
-                  );
-                }),
-              ).pipe(Effect.provide(clientLayer(baseUrl)));
-              yield* Deferred.await(cancelled).pipe(Effect.timeout("1 second"));
-            }),
-          { implementation },
-        );
-      }),
-    );
-  });
+  it.each(shapes)(
+    "client-side Effect interruption cancels native %s calls",
+    async (shape) => {
+      const { call, implementation } = hangingCall[shape];
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const started = yield* Deferred.make<void>();
+          const cancelled = yield* Deferred.make<void>();
+
+          yield* withServer(
+            (baseUrl) =>
+              Effect.gen(function* () {
+                const client = yield* UserServiceClient;
+                const fiber = yield* call(client).pipe(Effect.forkChild);
+                yield* Deferred.await(started).pipe(Effect.timeout("1 second"));
+                // Give connect-node a beat to flush the request before the
+                // interrupt races it; without this the abort can arrive first
+                // and the server never starts the call.
+                yield* Effect.sleep("20 millis");
+                yield* Fiber.interrupt(fiber);
+                yield* Deferred.await(cancelled).pipe(
+                  Effect.timeout("1 second"),
+                );
+              }).pipe(Effect.provide(clientLayer(baseUrl))),
+            { implementation: implementation(hang(started, cancelled)) },
+          );
+        }),
+      );
+    },
+  );
+
+  it.each(shapes)(
+    "client protocol scope finalization cancels active native %s calls",
+    async (shape) => {
+      const { call, implementation } = hangingCall[shape];
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const started = yield* Deferred.make<void>();
+          const cancelled = yield* Deferred.make<void>();
+
+          yield* withServer(
+            (baseUrl) =>
+              Effect.gen(function* () {
+                // The client layer lives in the inner scope; closing it is what
+                // must cancel the in-flight call, so `cancelled` is awaited
+                // outside that scope.
+                yield* Effect.scoped(
+                  Effect.gen(function* () {
+                    const client = yield* UserServiceClient;
+                    yield* call(client).pipe(Effect.forkScoped);
+                    yield* Deferred.await(started).pipe(
+                      Effect.timeout("1 second"),
+                    );
+                  }),
+                ).pipe(Effect.provide(clientLayer(baseUrl)));
+                yield* Deferred.await(cancelled).pipe(
+                  Effect.timeout("1 second"),
+                );
+              }),
+            { implementation: implementation(hang(started, cancelled)) },
+          );
+        }),
+      );
+    },
+  );
 
   it("handles concurrent unary calls, server streams, and isolated stream cancellation", async () => {
     const result = await Effect.runPromise(
@@ -696,25 +662,18 @@ const withServer = <A, E, R>(
     readonly implementation?: UserServiceImplementation;
   },
 ): Effect.Effect<A, E, R> =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const port = yield* freePort;
-      yield* GrpcNodeServer.serveAll({
-        host: "127.0.0.1",
-        port,
-        services: [
-          {
-            registry: UserServiceGrpcRegistry,
-            handlers: UserServiceHandlers(
-              options?.implementation ?? defaultImplementation,
-            ),
-          },
-        ],
-      }).pipe(Effect.forkScoped);
-      yield* Effect.sleep("50 millis");
-
-      return yield* use(new URL(`http://127.0.0.1:${port}`));
-    }),
+  serve(
+    {
+      services: [
+        {
+          registry: UserServiceGrpcRegistry,
+          handlers: UserServiceHandlers(
+            options?.implementation ?? defaultImplementation,
+          ),
+        },
+      ],
+    },
+    use,
   );
 
 const clientLayer = (baseUrl: URL) =>
@@ -753,21 +712,3 @@ const protocolSpan = (
   expect(span).toBeDefined();
   return span!;
 };
-
-const freePort = Effect.promise(
-  () =>
-    new Promise<number>((resolve, reject) => {
-      const server = net.createServer();
-      server.once("error", reject);
-      server.listen(0, "127.0.0.1", () => {
-        const address = server.address();
-        server.close(() => {
-          if (address && typeof address === "object") {
-            resolve(address.port);
-          } else {
-            reject(new Error("Unable to allocate a local port"));
-          }
-        });
-      });
-    }),
-);

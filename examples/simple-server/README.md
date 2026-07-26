@@ -7,4 +7,5 @@ pnpm build
 pnpm demo:server
 ```
 
-Defaults to `127.0.0.1:50051`. Override with `--host` and `--port`.
+Serves `demo.v1.UserService`, `features.v1.FeatureShowcaseService` and server
+reflection. Defaults to `127.0.0.1:50051`; override with `--host` and `--port`.

@@ -54,7 +54,7 @@ importers:
         specifier: ^4.0.0
         version: 4.1.8(@opentelemetry/api@1.9.1)(@types/node@24.13.1)(vite@8.0.16(@types/node@24.13.1)(yaml@2.9.0))
 
-  examples/features-client:
+  examples/simple-client:
     dependencies:
       '@bufbuild/protobuf':
         specifier: ^2.0.0
@@ -65,71 +65,6 @@ importers:
       '@connectrpc/connect-node':
         specifier: ^2.0.0
         version: 2.1.1(@bufbuild/protobuf@2.12.0)(@connectrpc/connect@2.1.1(@bufbuild/protobuf@2.12.0))
-      '@effect-grpc/effect-grpc':
-        specifier: workspace:*
-        version: link:../../packages/effect-grpc
-      '@effect-grpc/features-proto':
-        specifier: workspace:*
-        version: link:../features-proto
-      '@effect/platform-node':
-        specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92)(ioredis@5.11.1)
-      effect:
-        specifier: 'catalog:'
-        version: 4.0.0-beta.92
-    devDependencies:
-      '@effect-grpc/simple-proto':
-        specifier: workspace:*
-        version: link:../simple-proto
-
-  examples/features-proto:
-    dependencies:
-      '@bufbuild/protobuf':
-        specifier: ^2.0.0
-        version: 2.12.0
-      '@connectrpc/connect':
-        specifier: ^2.0.0
-        version: 2.1.1(@bufbuild/protobuf@2.12.0)
-      '@effect-grpc/effect-grpc':
-        specifier: workspace:*
-        version: link:../../packages/effect-grpc
-      effect:
-        specifier: 'catalog:'
-        version: 4.0.0-beta.92
-    devDependencies:
-      '@effect-grpc/protoc-gen-effect-grpc':
-        specifier: workspace:*
-        version: link:../../packages/protoc-gen-effect-grpc
-
-  examples/features-server:
-    dependencies:
-      '@bufbuild/protobuf':
-        specifier: ^2.0.0
-        version: 2.12.0
-      '@connectrpc/connect':
-        specifier: ^2.0.0
-        version: 2.1.1(@bufbuild/protobuf@2.12.0)
-      '@effect-grpc/effect-grpc':
-        specifier: workspace:*
-        version: link:../../packages/effect-grpc
-      '@effect-grpc/features-proto':
-        specifier: workspace:*
-        version: link:../features-proto
-      '@effect/platform-node':
-        specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92)(ioredis@5.11.1)
-      effect:
-        specifier: 'catalog:'
-        version: 4.0.0-beta.92
-
-  examples/simple-client:
-    dependencies:
-      '@bufbuild/protobuf':
-        specifier: ^2.0.0
-        version: 2.12.0
-      '@connectrpc/connect':
-        specifier: ^2.0.0
-        version: 2.1.1(@bufbuild/protobuf@2.12.0)
       '@effect-grpc/effect-grpc':
         specifier: workspace:*
         version: link:../../packages/effect-grpc

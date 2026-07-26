@@ -12,6 +12,8 @@ import {
   type UserServiceImplementation,
 } from "@effect-grpc/simple-proto/generated/demo/v1/user_service_effect_grpc";
 
+import { featureShowcaseService } from "./featureShowcase.ts";
+
 const getArg = (name: string, fallback: string): string => {
   const index = process.argv.indexOf(`--${name}`);
   return index >= 0 && process.argv[index + 1]
@@ -58,6 +60,7 @@ const services = [
     registry: UserServiceGrpcRegistry,
     handlers: UserServiceHandlers(implementation),
   },
+  featureShowcaseService,
 ] as const;
 
 const program = Effect.scoped(

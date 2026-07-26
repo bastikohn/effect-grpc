@@ -4,13 +4,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./generated/demo/v1/user_service_effect_grpc": {
-      "types": "./dist/user_service_effect_grpc.d.mts",
-      "default": "./dist/user_service_effect_grpc.mjs"
-    },
-    "./generated/demo/v1/user_service_pb": {
-      "types": "./dist/user_service_pb.d.mts",
-      "default": "./dist/user_service_pb.mjs"
+    "./generated/*": {
+      "types": "./dist/*.d.mts",
+      "default": "./dist/*.mjs"
     },
     "./package.json": "./package.json"
   },

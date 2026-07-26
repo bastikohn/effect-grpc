@@ -6,7 +6,7 @@
 Build-time protobuf generator for
 [`effect-grpc`](https://github.com/bastikohn/effect-grpc). It emits one
 `*_effect_grpc.ts` file beside protobuf-es output, containing typed
-[Effect](https://effect.website) clients, server handler layers, and
+[Effect](https://effect.website) clients, server handlers, and
 registries for the runtime package
 [`@effect-grpc/effect-grpc`](https://www.npmjs.com/package/@effect-grpc/effect-grpc).
 

@@ -9,6 +9,7 @@ import type { GrpcMethodEntry } from "../src/GrpcMethodRegistry.js";
 import * as GrpcNodeServer from "../src/GrpcNodeServer.js";
 import * as GrpcServerProtocol from "../src/GrpcServerProtocol.js";
 import * as GrpcStatusError from "../src/GrpcStatusError.js";
+import type { ServiceImplementation } from "./support/serverHarness.js";
 import {
   captureImplementation,
   freePort,
@@ -116,195 +117,106 @@ describe("GrpcServerProtocol", () => {
     });
   });
 
-  it("rejects unary methods without a registered handler as unimplemented", async () => {
-    const error = await Effect.runPromise(
-      Effect.gen(function* () {
-        const { routes } = yield* GrpcServerProtocol.make({
-          registry: new Map([[unaryEntry.tag, unaryEntry]]),
-        });
-        const implementation = captureUnaryImplementation(routes);
+  // Every `handlers.get(tag)` miss — no handler at all, or one registered
+  // under a different kind — is the same `unimplemented` status on every call
+  // shape. The wrong-kind row is the only coverage of the kind guard.
+  it.each([
+    ["a unary", unaryEntry, undefined],
+    ["a server-streaming", serverStreamingEntry, undefined],
+    ["a client-streaming", clientStreamingEntry, undefined],
+    [
+      "a wrong-kind",
+      unaryEntry,
+      {
+        kind: "server-streaming",
+        handler: () => Stream.empty,
+      } satisfies GrpcServerProtocol.GrpcHandler,
+    ],
+  ] as ReadonlyArray<
+    readonly [
+      string,
+      GrpcMethodEntry,
+      GrpcServerProtocol.GrpcHandler | undefined,
+    ]
+  >)(
+    "rejects %s method without a handler as unimplemented",
+    async (_shape, entry, handler) => {
+      const error = await Effect.runPromise(
+        Effect.gen(function* () {
+          const { routes } = yield* GrpcServerProtocol.make({
+            registry: new Map([[entry.tag, entry]]),
+            // The wrong-kind row registers a handler under the unary tag with a
+            // streaming shape: the guard must fast-fail instead of invoking it.
+            handlers: handler ? handlers(entry.tag, handler) : undefined,
+          });
 
-        return yield* Effect.promise(async () => {
-          try {
-            await implementation.get({}, handlerContext());
-          } catch (cause) {
-            return GrpcStatusError.fromConnectError(cause);
-          }
-          throw new Error("Expected missing handler to fail");
-        });
-      }),
-    );
+          return yield* failureOf(captureImplementation(routes), entry);
+        }),
+      );
 
-    expect(error).toMatchObject({
-      code: "unimplemented",
-      message: "Missing handler for demo.v1.TestService/Get",
-    });
-  });
+      expect(error).toMatchObject({
+        code: "unimplemented",
+        message: `Missing handler for ${entry.tag}`,
+      });
+    },
+  );
 
-  it("rejects server-streaming methods without a registered handler as unimplemented", async () => {
-    const error = await Effect.runPromise(
-      Effect.gen(function* () {
-        const { routes } = yield* GrpcServerProtocol.make({
-          registry: new Map([[serverStreamingEntry.tag, serverStreamingEntry]]),
-        });
-        const implementation = captureServerStreamingImplementation(routes);
+  // The registry's error policy as connect sees it: a request payload the
+  // codec rejects is the caller's fault, a response the converter cannot
+  // produce is ours. One row per execution template (effect and stream), the
+  // codes themselves being asserted per direction in `methodRegistry.test.ts`.
+  it.each([
+    [
+      "an unconvertible request payload",
+      {
+        ...unaryEntry,
+        payloadSchema: Schema.Struct({ id: Schema.String }),
+        fromGrpcRequest: () => ({ id: 123 }),
+      } satisfies GrpcMethodEntry,
+      {
+        kind: "unary",
+        handler: (request) => Effect.succeed(request),
+      } satisfies GrpcServerProtocol.GrpcHandler,
+      { code: "invalid_argument", message: "Invalid gRPC request payload" },
+    ],
+    [
+      "a throwing streamed response converter",
+      {
+        ...serverStreamingEntry,
+        toGrpcResponse: () => {
+          throw new Error("bad stream response");
+        },
+      } satisfies GrpcMethodEntry,
+      {
+        kind: "server-streaming",
+        handler: () => Stream.make({ ok: true }),
+      } satisfies GrpcServerProtocol.GrpcHandler,
+      { code: "internal", message: "Invalid gRPC response payload" },
+    ],
+  ] as ReadonlyArray<
+    readonly [
+      string,
+      GrpcMethodEntry,
+      GrpcServerProtocol.GrpcHandler,
+      { readonly code: string; readonly message: string },
+    ]
+  >)(
+    "fails %s with a typed status",
+    async (_name, entry, handler, expected) => {
+      const error = await Effect.runPromise(
+        Effect.gen(function* () {
+          const { routes } = yield* GrpcServerProtocol.make({
+            registry: new Map([[entry.tag, entry]]),
+            handlers: handlers(entry.tag, handler),
+          });
 
-        return yield* Effect.promise(async () => {
-          try {
-            for await (const value of implementation.watch(
-              {},
-              handlerContext(),
-            )) {
-              void value;
-            }
-          } catch (cause) {
-            return GrpcStatusError.fromConnectError(cause);
-          }
-          throw new Error("Expected missing handler to fail");
-        });
-      }),
-    );
+          return yield* failureOf(captureImplementation(routes), entry);
+        }),
+      );
 
-    expect(error).toMatchObject({
-      code: "unimplemented",
-      message: "Missing handler for demo.v1.TestService/Watch",
-    });
-  });
-
-  it("treats a handler registered under the wrong kind as unimplemented", async () => {
-    const error = await Effect.runPromise(
-      Effect.gen(function* () {
-        const { routes } = yield* GrpcServerProtocol.make({
-          registry: new Map([[unaryEntry.tag, unaryEntry]]),
-          // Registered under the unary tag but with a streaming shape — the
-          // kind guard must fast-fail instead of invoking the wrong shape.
-          handlers: handlers(unaryEntry.tag, {
-            kind: "server-streaming",
-            handler: () => Stream.empty,
-          }),
-        });
-        const implementation = captureUnaryImplementation(routes);
-
-        return yield* Effect.promise(async () => {
-          try {
-            await implementation.get({}, handlerContext());
-          } catch (cause) {
-            return GrpcStatusError.fromConnectError(cause);
-          }
-          throw new Error("Expected wrong-kind handler to fail");
-        });
-      }),
-    );
-
-    expect(error).toMatchObject({
-      code: "unimplemented",
-      message: "Missing handler for demo.v1.TestService/Get",
-    });
-  });
-
-  it("maps request converter failures to invalid_argument", async () => {
-    const error = await Effect.runPromise(
-      Effect.gen(function* () {
-        const entry = {
-          ...unaryEntry,
-          fromGrpcRequest: () => {
-            throw new Error("bad request");
-          },
-        } satisfies GrpcMethodEntry;
-        const { routes } = yield* GrpcServerProtocol.make({
-          registry: new Map([[entry.tag, entry]]),
-          handlers: handlers(entry.tag, {
-            kind: "unary",
-            handler: (request) => Effect.succeed(request),
-          }),
-        });
-        const implementation = captureUnaryImplementation(routes);
-
-        return yield* Effect.promise(async () => {
-          try {
-            await implementation.get({}, handlerContext());
-          } catch (cause) {
-            return GrpcStatusError.fromConnectError(cause);
-          }
-          throw new Error("Expected request conversion to fail");
-        });
-      }),
-    );
-
-    expect(error).toMatchObject({
-      code: "invalid_argument",
-      message: "Invalid gRPC request payload",
-    });
-  });
-
-  it("maps encoded request payload validation failures to invalid_argument", async () => {
-    const error = await Effect.runPromise(
-      Effect.gen(function* () {
-        const entry = {
-          ...unaryEntry,
-          payloadSchema: Schema.Struct({ id: Schema.String }),
-          fromGrpcRequest: () => ({ id: 123 }),
-        } satisfies GrpcMethodEntry;
-        const { routes } = yield* GrpcServerProtocol.make({
-          registry: new Map([[entry.tag, entry]]),
-          handlers: handlers(entry.tag, {
-            kind: "unary",
-            handler: (request) => Effect.succeed(request),
-          }),
-        });
-        const implementation = captureUnaryImplementation(routes);
-
-        return yield* Effect.promise(async () => {
-          try {
-            await implementation.get({}, handlerContext());
-          } catch (cause) {
-            return GrpcStatusError.fromConnectError(cause);
-          }
-          throw new Error("Expected request validation to fail");
-        });
-      }),
-    );
-
-    expect(error).toMatchObject({
-      code: "invalid_argument",
-      message: "Invalid gRPC request payload",
-    });
-  });
-
-  it("maps unary response converter failures to internal", async () => {
-    const error = await Effect.runPromise(
-      Effect.gen(function* () {
-        const entry = {
-          ...unaryEntry,
-          toGrpcResponse: () => {
-            throw new Error("bad response");
-          },
-        } satisfies GrpcMethodEntry;
-        const { routes } = yield* GrpcServerProtocol.make({
-          registry: new Map([[entry.tag, entry]]),
-          handlers: handlers(entry.tag, {
-            kind: "unary",
-            handler: () => Effect.succeed({ ok: true }),
-          }),
-        });
-        const implementation = captureUnaryImplementation(routes);
-
-        return yield* Effect.promise(async () => {
-          try {
-            await implementation.get({}, handlerContext());
-          } catch (cause) {
-            return GrpcStatusError.fromConnectError(cause);
-          }
-          throw new Error("Expected response conversion to fail");
-        });
-      }),
-    );
-
-    expect(error).toMatchObject({
-      code: "internal",
-      message: "Invalid gRPC response payload",
-    });
-  });
+      expect(error).toMatchObject(expected);
+    },
+  );
 
   it("streams server-streaming responses and completes", async () => {
     const received = await Effect.runPromise(
@@ -379,47 +291,6 @@ describe("GrpcServerProtocol", () => {
     expect(result.error).toMatchObject({
       code: "unavailable",
       message: "stream broke",
-    });
-  });
-
-  it("maps server-streaming response converter failures to internal", async () => {
-    const error = await Effect.runPromise(
-      Effect.gen(function* () {
-        const entry = {
-          ...serverStreamingEntry,
-          toGrpcResponse: () => {
-            throw new Error("bad stream response");
-          },
-        } satisfies GrpcMethodEntry;
-        const { routes } = yield* GrpcServerProtocol.make({
-          registry: new Map([[entry.tag, entry]]),
-          handlers: handlers(entry.tag, {
-            kind: "server-streaming",
-            handler: () => Stream.make({ ok: true }),
-          }),
-        });
-        const implementation = captureServerStreamingImplementation(routes);
-
-        return yield* Effect.promise(async () => {
-          try {
-            for await (const value of implementation.watch(
-              {},
-              handlerContext(),
-            )) {
-              void value;
-              // Consume until the converter throws.
-            }
-          } catch (cause) {
-            return GrpcStatusError.fromConnectError(cause);
-          }
-          throw new Error("Expected streaming response conversion to fail");
-        });
-      }),
-    );
-
-    expect(error).toMatchObject({
-      code: "internal",
-      message: "Invalid gRPC response payload",
     });
   });
 
@@ -605,34 +476,6 @@ describe("GrpcServerProtocol streaming bridge", () => {
     });
   });
 
-  it("rejects streaming methods without a registered handler as unimplemented", async () => {
-    const error = await Effect.runPromise(
-      Effect.gen(function* () {
-        const { routes } = yield* GrpcServerProtocol.make({
-          registry: new Map([[clientStreamingEntry.tag, clientStreamingEntry]]),
-        });
-        const implementation = captureUnaryImplementation(routes);
-
-        return yield* Effect.promise(async () => {
-          try {
-            await implementation.upload(
-              (async function* () {})() as never,
-              handlerContext(),
-            );
-          } catch (cause) {
-            return GrpcStatusError.fromConnectError(cause);
-          }
-          throw new Error("Expected missing handler to fail");
-        });
-      }),
-    );
-
-    expect(error).toMatchObject({
-      code: "unimplemented",
-      message: "Missing handler for demo.v1.TestService/Upload",
-    });
-  });
-
   it("maps invalid streamed request payloads to invalid_argument", async () => {
     const error = await Effect.runPromise(
       Effect.gen(function* () {
@@ -797,6 +640,43 @@ const handlers = (
   tag: string,
   handler: GrpcServerProtocol.GrpcHandler,
 ): GrpcServerProtocol.GrpcHandlers => new Map([[tag, handler]]);
+
+/**
+ * Calls `entry`'s method on a captured implementation the way connect does —
+ * a message for message-request kinds, an async generator for stream-request
+ * ones — and returns the gRPC status it fails with. Stream responses are
+ * *drained to completion*: the failures under test are raised mid-iteration,
+ * so a call that is merely started would pass vacuously.
+ */
+const failureOf = (
+  implementation: ServiceImplementation,
+  entry: GrpcMethodEntry,
+): Effect.Effect<GrpcStatusError.GrpcStatusError> =>
+  Effect.promise(async () => {
+    const call = (implementation[entry.localName] as Method)(
+      entry.kind === "unary" || entry.kind === "server-streaming"
+        ? {}
+        : (async function* () {
+            yield {};
+          })(),
+      handlerContext(),
+    );
+    try {
+      if (entry.kind === "unary" || entry.kind === "client-streaming") {
+        await (call as Promise<unknown>);
+      } else {
+        for await (const _ of call as AsyncIterable<unknown>) void _;
+      }
+    } catch (cause) {
+      return GrpcStatusError.fromConnectError(cause);
+    }
+    throw new Error(`Expected ${entry.tag} to fail`);
+  });
+
+type Method = (
+  request: unknown,
+  context: HandlerContext,
+) => Promise<unknown> | AsyncIterable<unknown>;
 
 const {
   unary: unaryEntry,

@@ -1,26 +1,27 @@
-import type { ConnectRouter, HandlerContext } from "@connectrpc/connect";
-import { Context, Effect, Layer, Stream } from "effect";
+import type { HandlerContext } from "@connectrpc/connect";
+import { Effect, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 
 import * as GrpcHealth from "../src/GrpcHealth.js";
 import * as GrpcServerProtocol from "../src/GrpcServerProtocol.js";
-import * as GrpcStatusError from "../src/GrpcStatusError.js";
-
-/** Wire values of `HealthCheckResponse.ServingStatus`. */
-const SERVING = 1;
-const NOT_SERVING = 2;
-const SERVICE_UNKNOWN = 3;
+import {
+  captureImplementation,
+  handlerContext,
+} from "./support/serverHarness.js";
 
 describe("GrpcHealth service", () => {
-  it("marks the overall server as serving by default", async () => {
-    const overall = await Effect.runPromise(
+  it("reports the overall server status under the empty service name", async () => {
+    const result = await Effect.runPromise(
       Effect.gen(function* () {
         const health = yield* GrpcHealth.make;
-        return yield* health.check();
+        const initial = yield* health.check();
+        yield* health.set("", "NOT_SERVING");
+        return { initial, drained: yield* health.check("") };
       }),
     );
 
-    expect(overall).toBe("SERVING");
+    // The server starts serving, and `""` is a settable service like any other.
+    expect(result).toEqual({ initial: "SERVING", drained: "NOT_SERVING" });
   });
 
   it("unregisters services on clear", async () => {
@@ -43,184 +44,32 @@ describe("GrpcHealth service", () => {
     });
     expect(result.watched).toEqual(["SERVICE_UNKNOWN"]);
   });
-});
 
-describe("grpc.health.v1.Health over the server protocol", () => {
-  it("Check returns the status of a serving service", async () => {
-    const response = await withHealthServer((harness) =>
+  // The one thing the wire tests cannot see: `health-e2e.test.ts` asserts the
+  // status *name* on both ends, so a consistently wrong pair of converters
+  // would still round trip. This pins the encoded value itself.
+  it("puts the domain status name on the wire as its numeric enum value", async () => {
+    const response = await Effect.runPromise(
       Effect.gen(function* () {
-        yield* harness.health.set("demo.v1.UserService", "SERVING");
-        return yield* Effect.promise(() =>
-          harness.check({ service: "demo.v1.UserService" }),
-        );
-      }),
-    );
-
-    expect(response).toEqual({ status: SERVING });
-  });
-
-  it("Check with the empty service name reports overall server health", async () => {
-    const result = await withHealthServer((harness) =>
-      Effect.gen(function* () {
-        const initial = yield* Effect.promise(() =>
-          harness.check({ service: "" }),
-        );
-        yield* harness.health.set("", "NOT_SERVING");
-        const drained = yield* Effect.promise(() =>
-          harness.check({ service: "" }),
-        );
-        return { initial, drained };
-      }),
-    );
-
-    expect(result.initial).toEqual({ status: SERVING });
-    expect(result.drained).toEqual({ status: NOT_SERVING });
-  });
-
-  it("Check fails with not_found for unknown services", async () => {
-    const error = await withHealthServer((harness) =>
-      Effect.promise(async () => {
-        try {
-          await harness.check({ service: "demo.v1.Missing" });
-        } catch (cause) {
-          return GrpcStatusError.fromConnectError(cause);
-        }
-        throw new Error("Expected Check to fail for an unknown service");
-      }),
-    );
-
-    expect(error).toMatchObject({
-      code: "not_found",
-      message: "unknown service: demo.v1.Missing",
-    });
-  });
-
-  it("Watch emits the current status immediately", async () => {
-    const result = await withHealthServer((harness) =>
-      Effect.gen(function* () {
-        yield* harness.health.set("demo.v1.UserService", "SERVING");
-        const known = watchIterator(harness, "demo.v1.UserService");
-        const unknown = watchIterator(harness, "demo.v1.Missing");
-        try {
-          return {
-            known: yield* Effect.promise(() => known.next()),
-            unknown: yield* Effect.promise(() => unknown.next()),
-          };
-        } finally {
-          yield* closeIterator(known);
-          yield* closeIterator(unknown);
-        }
-      }),
-    );
-
-    expect(result.known.value).toEqual({ status: SERVING });
-    expect(result.unknown.value).toEqual({ status: SERVICE_UNKNOWN });
-  });
-
-  it("Watch streams status changes and suppresses duplicates", async () => {
-    const received = await withHealthServer((harness) =>
-      Effect.gen(function* () {
-        yield* harness.health.set("demo.v1.UserService", "SERVING");
-        const iterator = watchIterator(harness, "demo.v1.UserService");
-        try {
-          const first = yield* Effect.promise(() => iterator.next());
-          // A no-op update must not produce an element; the next pull only
-          // resolves with the real change that follows it.
-          yield* harness.health.set("demo.v1.UserService", "SERVING");
-          yield* harness.health.set("demo.v1.UserService", "NOT_SERVING");
-          const second = yield* Effect.promise(() => iterator.next());
-          return [first.value, second.value];
-        } finally {
-          yield* closeIterator(iterator);
-        }
-      }),
-    );
-
-    expect(received).toEqual([{ status: SERVING }, { status: NOT_SERVING }]);
-  });
-});
-
-interface HealthHarness {
-  readonly health: GrpcHealth.GrpcHealthService;
-  readonly check: (request: unknown) => Promise<unknown>;
-  readonly watch: (request: unknown) => AsyncIterable<unknown>;
-}
-
-/**
- * Runs the real `Health` handlers behind the server protocol: handlers
- * effect, handlers map, and connect route implementation, without a listener.
- */
-const withHealthServer = <A>(
-  test: (harness: HealthHarness) => Effect.Effect<A>,
-): Promise<A> =>
-  Effect.runPromise(
-    Effect.scoped(
-      Effect.gen(function* () {
-        const context = yield* Layer.build(GrpcHealth.layer);
+        const health = yield* GrpcHealth.make;
         const { routes } = yield* GrpcServerProtocol.make({
           registry: GrpcHealth.HealthGrpcRegistry,
           handlers: yield* GrpcHealth.HealthHandlers.pipe(
-            Effect.provide(context),
+            Effect.provideService(GrpcHealth.GrpcHealth, health),
           ),
         });
-
-        const implementation = captureImplementation(routes);
-        return yield* test({
-          health: Context.get(context, GrpcHealth.GrpcHealth),
-          check: (request) =>
-            implementation["check"]!(
-              request,
-              handlerContext(),
-            ) as Promise<unknown>,
-          watch: (request) =>
-            implementation["watch"]!(
-              request,
-              handlerContext(),
-            ) as AsyncIterable<unknown>,
-        });
-      }),
-    ),
-  );
-
-const watchIterator = (
-  harness: HealthHarness,
-  service: string,
-): AsyncIterator<unknown> => harness.watch({ service })[Symbol.asyncIterator]();
-
-const closeIterator = (iterator: AsyncIterator<unknown>) =>
-  Effect.promise(async () => {
-    await iterator.return?.(undefined as never);
-  });
-
-const captureImplementation = (
-  routes: (router: ConnectRouter) => ConnectRouter,
-) => {
-  let implementation:
-    | Record<
-        string,
-        (
+        const check = captureImplementation(routes)["check"] as (
           request: unknown,
           context: HandlerContext,
-        ) => Promise<unknown> | AsyncIterable<unknown>
-      >
-    | undefined;
-  const router = {
-    service(_service: unknown, serviceImplementation: unknown) {
-      implementation = serviceImplementation as typeof implementation;
-      return router;
-    },
-  };
+        ) => Promise<unknown>;
 
-  routes(router as unknown as ConnectRouter);
+        return yield* Effect.promise(() =>
+          check({ service: "" }, handlerContext()),
+        );
+      }),
+    );
 
-  if (!implementation) {
-    throw new Error("Expected routes to register a service implementation");
-  }
-  return implementation;
-};
-
-const handlerContext = (): HandlerContext =>
-  ({
-    requestHeader: new Headers(),
-    signal: new AbortController().signal,
-  }) as HandlerContext;
+    // `HealthCheckResponse.ServingStatus.SERVING` is 1.
+    expect(response).toEqual({ status: 1 });
+  });
+});

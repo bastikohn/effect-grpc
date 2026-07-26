@@ -1,6 +1,7 @@
 # simple-proto
 
-Demo `.proto` package for the first `effect-grpc` prototype.
+Demo `.proto` packages for `effect-grpc`: `demo.v1` (unary and
+server-streaming) and `features.v1` (the full field/method-kind showcase).
 
 ```sh
 pnpm --filter @effect-grpc/simple-proto generate

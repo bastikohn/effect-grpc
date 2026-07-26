@@ -1,94 +1,58 @@
-import type { WellKnownKind } from "./types.js";
+/**
+ * The supported `google.protobuf.*` types, in canonical emission order. The
+ * protobuf type name *is* the kind, so no name derivation is needed anywhere.
+ */
+export const wellKnownKinds = [
+  "Timestamp",
+  "Duration",
+  "DoubleValue",
+  "FloatValue",
+  "Int64Value",
+  "UInt64Value",
+  "Int32Value",
+  "UInt32Value",
+  "BoolValue",
+  "StringValue",
+  "BytesValue",
+  "Any",
+  "Struct",
+  "Value",
+  "ListValue",
+  "FieldMask",
+] as const;
 
-const wellKnownTypes = {
-  "google.protobuf.Timestamp": {
-    kind: "timestamp",
-    protobufName: "Timestamp",
-  },
-  "google.protobuf.Duration": {
-    kind: "duration",
-    protobufName: "Duration",
-  },
-  "google.protobuf.DoubleValue": {
-    kind: "double-value",
-    protobufName: "DoubleValue",
-  },
-  "google.protobuf.FloatValue": {
-    kind: "float-value",
-    protobufName: "FloatValue",
-  },
-  "google.protobuf.Int64Value": {
-    kind: "int64-value",
-    protobufName: "Int64Value",
-  },
-  "google.protobuf.UInt64Value": {
-    kind: "uint64-value",
-    protobufName: "UInt64Value",
-  },
-  "google.protobuf.Int32Value": {
-    kind: "int32-value",
-    protobufName: "Int32Value",
-  },
-  "google.protobuf.UInt32Value": {
-    kind: "uint32-value",
-    protobufName: "UInt32Value",
-  },
-  "google.protobuf.BoolValue": {
-    kind: "bool-value",
-    protobufName: "BoolValue",
-  },
-  "google.protobuf.StringValue": {
-    kind: "string-value",
-    protobufName: "StringValue",
-  },
-  "google.protobuf.BytesValue": {
-    kind: "bytes-value",
-    protobufName: "BytesValue",
-  },
-  "google.protobuf.Any": {
-    kind: "any",
-    protobufName: "Any",
-  },
-  "google.protobuf.Struct": {
-    kind: "struct",
-    protobufName: "Struct",
-  },
-  "google.protobuf.Value": {
-    kind: "value",
-    protobufName: "Value",
-  },
-  "google.protobuf.ListValue": {
-    kind: "list-value",
-    protobufName: "ListValue",
-  },
-  "google.protobuf.FieldMask": {
-    kind: "field-mask",
-    protobufName: "FieldMask",
-  },
-} as const satisfies Record<
-  string,
-  { readonly kind: WellKnownKind; readonly protobufName: string }
->;
+export type WellKnownKind = (typeof wellKnownKinds)[number];
 
-export const wellKnownKind = (typeName: string): WellKnownKind | undefined =>
-  wellKnownTypes[typeName as keyof typeof wellKnownTypes]?.kind;
+/** Wrapper kinds that need the boxed `{ value }` message encoding. */
+export const wrapperWellKnownKinds: ReadonlySet<WellKnownKind> = new Set(
+  wellKnownKinds.slice(
+    wellKnownKinds.indexOf("DoubleValue"),
+    wellKnownKinds.indexOf("BytesValue") + 1,
+  ),
+);
 
-export const wellKnownProtobufName = (kind: WellKnownKind): string => {
-  for (const entry of Object.values(wellKnownTypes)) {
-    if (entry.kind === kind) return entry.protobufName;
-  }
-  return kind;
+const packagePrefix = "google.protobuf.";
+
+export const wellKnownKind = (typeName: string): WellKnownKind | undefined => {
+  const name = typeName.startsWith(packagePrefix)
+    ? typeName.slice(packagePrefix.length)
+    : undefined;
+  return name !== undefined &&
+    (wellKnownKinds as ReadonlyArray<string>).includes(name)
+    ? (name as WellKnownKind)
+    : undefined;
 };
 
+/** The `@bufbuild/protobuf/wkt` schema a JSON-encoded well-known type needs. */
 export const wellKnownJsonSchemaName = (kind: WellKnownKind) => {
   switch (kind) {
-    case "struct":
+    case "Struct":
       return "ProtobufStructSchema";
-    case "value":
+    case "Value":
       return "ProtobufValueSchema";
-    case "list-value":
+    case "ListValue":
       return "ProtobufListValueSchema";
-    case "field-mask":
+    case "FieldMask":
       return "ProtobufFieldMaskSchema";
     default:
       return undefined;

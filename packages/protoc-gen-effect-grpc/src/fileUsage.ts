@@ -4,9 +4,13 @@ import {
   type GeneratorFile,
   type MessageModel,
   type MethodWellKnownKind,
-  type WellKnownKind,
 } from "./types.js";
-import { wellKnownJsonSchemaName } from "./wellKnown.js";
+import {
+  wellKnownJsonSchemaName,
+  wellKnownKinds,
+  wrapperWellKnownKinds,
+  type WellKnownKind,
+} from "./wellKnown.js";
 
 /**
  * One analysis of what a generated file actually uses — imports, helpers,
@@ -45,38 +49,6 @@ export interface FileUsage {
   readonly recursiveEdges: ReadonlySet<string>;
 }
 
-/** Canonical emission order for well-known kinds. */
-export const wellKnownKinds = [
-  "timestamp",
-  "duration",
-  "double-value",
-  "float-value",
-  "int64-value",
-  "uint64-value",
-  "int32-value",
-  "uint32-value",
-  "bool-value",
-  "string-value",
-  "bytes-value",
-  "any",
-  "struct",
-  "value",
-  "list-value",
-  "field-mask",
-] as const satisfies ReadonlyArray<WellKnownKind>;
-
-export const wrapperWellKnownKinds = [
-  "double-value",
-  "float-value",
-  "int32-value",
-  "uint32-value",
-  "int64-value",
-  "uint64-value",
-  "bool-value",
-  "string-value",
-  "bytes-value",
-] as const satisfies ReadonlyArray<WellKnownKind>;
-
 export const analyzeFileUsage = (file: GeneratorFile): FileUsage => {
   const wellKnownMethods = new Set<WellKnownKind>();
   const methodTypeNames = new Set<string>();
@@ -95,7 +67,7 @@ export const analyzeFileUsage = (file: GeneratorFile): FileUsage => {
   // A wrapper used as a method type or inside list/map/oneof needs the boxed
   // `{ value }` encoding; a direct wrapper field arrives unwrapped.
   const boxedWrappers = new Set<WellKnownKind>(
-    wrapperWellKnownKinds.filter((kind) => wellKnownMethods.has(kind)),
+    [...wrapperWellKnownKinds].filter((kind) => wellKnownMethods.has(kind)),
   );
   let usesBytesScalar = false;
   const enumFieldTypeNames = new Set<string>();
@@ -105,7 +77,7 @@ export const analyzeFileUsage = (file: GeneratorFile): FileUsage => {
         if (value.kind === "enum") enumFieldTypeNames.add(value.enumName);
         if (value.kind === "well-known") {
           wellKnownFields.add(value.type);
-          if (boxed && isWrapperWellKnownKind(value.type)) {
+          if (boxed && wrapperWellKnownKinds.has(value.type)) {
             boxedWrappers.add(value.type);
           }
         }
@@ -139,7 +111,7 @@ export const analyzeFileUsage = (file: GeneratorFile): FileUsage => {
     readsFields: file.messages.some((message) => message.fields.length > 0),
     usesGrpcEmpty,
     usesBase64Bytes:
-      usesBytesScalar || usesWellKnown("bytes-value") || usesWellKnown("any"),
+      usesBytesScalar || usesWellKnown("BytesValue") || usesWellKnown("Any"),
     wellKnownMethods,
     wellKnownUsed,
     boxedWrappers,
@@ -156,10 +128,7 @@ export const analyzeFileUsage = (file: GeneratorFile): FileUsage => {
 
 export const isWrapperWellKnownKind = (
   type: MethodWellKnownKind | undefined,
-): boolean =>
-  wrapperWellKnownKinds.includes(
-    type as (typeof wrapperWellKnownKinds)[number],
-  );
+): boolean => wrapperWellKnownKinds.has(type as WellKnownKind);
 
 /** Every value position a field contributes, with its wrapper-boxing context. */
 const fieldValueOccurrences = (

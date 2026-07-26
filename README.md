@@ -22,11 +22,10 @@ server handlers without introducing runtime `.proto` loading.
 
 Private workspace packages under `examples/`:
 
-- `simple-proto`, `simple-server`, `simple-client`: the demo proto with a
+- `simple-proto`, `simple-server`, `simple-client`: two demo protos (a simple
+  unary/server-streaming service and a feature showcase covering client- and
+  bidi-streaming methods, richer field shapes and well-known types) with a
   native gRPC server and client.
-- `features-proto`, `features-server`, `features-client`: showcase a wider
-  feature surface (client- and bidi-streaming methods, richer field shapes,
-  well-known types).
 
 ## Roadmap
 

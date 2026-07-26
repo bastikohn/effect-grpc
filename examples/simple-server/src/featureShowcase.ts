@@ -1,23 +1,14 @@
-import { NodeRuntime } from "@effect/platform-node";
 import { Effect, Stream } from "effect";
 
-import { GrpcNodeServer } from "@effect-grpc/effect-grpc";
 import {
   FeatureShowcaseServiceGrpcRegistry,
   FeatureShowcaseServiceHandlers,
   type FeatureShowcaseServiceImplementation,
-} from "@effect-grpc/features-proto/generated/features/v1/showcase_effect_grpc";
+} from "@effect-grpc/simple-proto/generated/features/v1/showcase_effect_grpc";
 
-const getArg = (name: string, fallback: string): string => {
-  const index = process.argv.indexOf(`--${name}`);
-  return index >= 0 && process.argv[index + 1]
-    ? process.argv[index + 1]!
-    : fallback;
-};
-
-const host = getArg("host", "127.0.0.1");
-const port = Number(getArg("port", "50052"));
-
+// A second service on the same server, showing the wider protobuf surface:
+// client- and bidi-streaming methods, repeated/map/oneof fields, well-known
+// types.
 const implementation: FeatureShowcaseServiceImplementation = {
   describe: (request) =>
     Effect.succeed({
@@ -46,17 +37,7 @@ const implementation: FeatureShowcaseServiceImplementation = {
     })),
 };
 
-const program = Effect.scoped(
-  GrpcNodeServer.serveAll({
-    host,
-    port,
-    services: [
-      {
-        registry: FeatureShowcaseServiceGrpcRegistry,
-        handlers: FeatureShowcaseServiceHandlers(implementation),
-      },
-    ],
-  }),
-);
-
-NodeRuntime.runMain(program);
+export const featureShowcaseService = {
+  registry: FeatureShowcaseServiceGrpcRegistry,
+  handlers: FeatureShowcaseServiceHandlers(implementation),
+};

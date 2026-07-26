@@ -1,3 +1,5 @@
+import type { WellKnownKind } from "./wellKnown.js";
+
 export interface GeneratorFile {
   readonly protoFileName: string;
   readonly imports: ReadonlyArray<ImportModel>;
@@ -97,23 +99,6 @@ export interface OneofCaseModel {
 }
 
 export type ScalarKind = "string" | "number" | "boolean" | "bytes" | "bigint";
-export type WellKnownKind =
-  | "timestamp"
-  | "duration"
-  | "double-value"
-  | "float-value"
-  | "int64-value"
-  | "uint64-value"
-  | "int32-value"
-  | "uint32-value"
-  | "bool-value"
-  | "string-value"
-  | "bytes-value"
-  | "any"
-  | "struct"
-  | "value"
-  | "list-value"
-  | "field-mask";
 
 export interface ServiceModel {
   readonly name: string;

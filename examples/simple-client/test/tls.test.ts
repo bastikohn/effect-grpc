@@ -1,5 +1,4 @@
 import * as fs from "node:fs";
-import * as net from "node:net";
 import * as path from "node:path";
 import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
@@ -12,6 +11,8 @@ import {
   UserServiceHandlers,
   type UserServiceImplementation,
 } from "@effect-grpc/simple-proto/generated/demo/v1/user_service_effect_grpc";
+
+import { withServer as serve } from "./support.ts";
 
 // Long-lived self-signed chain committed for tests only; regenerate with
 // fixtures/tls/generate.sh.
@@ -138,40 +139,15 @@ const withServer = <A, E, R>(
   options: { readonly tls: GrpcNodeServer.GrpcServerTlsOptions },
   use: (baseUrl: URL) => Effect.Effect<A, E, R>,
 ): Effect.Effect<A, E, R> =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const port = yield* freePort;
-      yield* GrpcNodeServer.serveAll({
-        host: "127.0.0.1",
-        port,
-        tls: options.tls,
-        services: [
-          {
-            registry: UserServiceGrpcRegistry,
-            handlers: UserServiceHandlers(implementation),
-          },
-        ],
-      }).pipe(Effect.forkScoped);
-      yield* Effect.sleep("50 millis");
-
-      return yield* use(new URL(`https://127.0.0.1:${port}`));
-    }),
+  serve(
+    {
+      tls: options.tls,
+      services: [
+        {
+          registry: UserServiceGrpcRegistry,
+          handlers: UserServiceHandlers(implementation),
+        },
+      ],
+    },
+    use,
   );
-
-const freePort = Effect.promise(
-  () =>
-    new Promise<number>((resolve, reject) => {
-      const server = net.createServer();
-      server.once("error", reject);
-      server.listen(0, "127.0.0.1", () => {
-        const address = server.address();
-        server.close(() => {
-          if (address && typeof address === "object") {
-            resolve(address.port);
-          } else {
-            reject(new Error("Unable to allocate a local port"));
-          }
-        });
-      });
-    }),
-);

@@ -1,5 +1,3 @@
-import * as net from "node:net";
-
 import { createClient } from "@connectrpc/connect";
 import { createGrpcTransport } from "@connectrpc/connect-node";
 import {
@@ -14,11 +12,7 @@ import {
 } from "effect";
 import { describe, expect, it } from "vitest";
 
-import {
-  GrpcClientProtocol,
-  GrpcNodeServer,
-  GrpcStatusError,
-} from "@effect-grpc/effect-grpc";
+import { GrpcClientProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc";
 import {
   UserServiceClient,
   UserServiceClientLayer,
@@ -33,8 +27,10 @@ import {
   FeatureShowcaseServiceHandlers,
   type FeatureRequest,
   type FeatureShowcaseServiceImplementation,
-} from "@effect-grpc/features-proto/generated/features/v1/showcase_effect_grpc";
-import { FeatureShowcaseService } from "@effect-grpc/features-proto/generated/features/v1/showcase_pb";
+} from "@effect-grpc/simple-proto/generated/features/v1/showcase_effect_grpc";
+import { FeatureShowcaseService } from "@effect-grpc/simple-proto/generated/features/v1/showcase_pb";
+
+import { withServer as serve } from "./support.ts";
 
 const featureRequest = (): FeatureRequest => ({
   tags: ["alpha", "beta"],
@@ -456,30 +452,23 @@ const withServer = <A, E, R>(
   use: (baseUrl: URL) => Effect.Effect<A, E, R>,
   overrides?: Partial<FeatureShowcaseServiceImplementation>,
 ): Effect.Effect<A, E, R> =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const port = yield* freePort;
-      yield* GrpcNodeServer.serveAll({
-        host: "127.0.0.1",
-        port,
-        services: [
-          {
-            registry: FeatureShowcaseServiceGrpcRegistry,
-            handlers: FeatureShowcaseServiceHandlers({
-              ...implementation,
-              ...overrides,
-            }),
-          },
-          {
-            registry: UserServiceGrpcRegistry,
-            handlers: UserServiceHandlers(userImplementation),
-          },
-        ],
-      }).pipe(Effect.forkScoped);
-      yield* Effect.sleep("50 millis");
-
-      return yield* use(new URL(`http://127.0.0.1:${port}`));
-    }),
+  serve(
+    {
+      services: [
+        {
+          registry: FeatureShowcaseServiceGrpcRegistry,
+          handlers: FeatureShowcaseServiceHandlers({
+            ...implementation,
+            ...overrides,
+          }),
+        },
+        {
+          registry: UserServiceGrpcRegistry,
+          handlers: UserServiceHandlers(userImplementation),
+        },
+      ],
+    },
+    use,
   );
 
 const clientLayer = (baseUrl: URL) =>
@@ -503,21 +492,3 @@ const userClientLayer = (baseUrl: URL) =>
       }),
     ),
   );
-
-const freePort = Effect.promise(
-  () =>
-    new Promise<number>((resolve, reject) => {
-      const server = net.createServer();
-      server.once("error", reject);
-      server.listen(0, "127.0.0.1", () => {
-        const address = server.address();
-        server.close(() => {
-          if (address && typeof address === "object") {
-            resolve(address.port);
-          } else {
-            reject(new Error("Unable to allocate a local port"));
-          }
-        });
-      });
-    }),
-);

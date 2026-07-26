@@ -15,9 +15,9 @@
       "@effect-grpc/protoc-gen-effect-grpc/*": [
         "packages/protoc-gen-effect-grpc/src/*"
       ],
-      "@effect-grpc/features-proto/*": ["examples/features-proto/src/*"],
       "@effect-grpc/simple-proto/*": ["examples/simple-proto/src/*"]
     },
+    "allowImportingTsExtensions": true,
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,

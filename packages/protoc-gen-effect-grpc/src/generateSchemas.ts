@@ -4,12 +4,10 @@ import type {
   FieldValueModel,
   GeneratorFile,
   ScalarKind,
-  WellKnownKind,
 } from "./types.js";
 import type { FileUsage } from "./fileUsage.js";
-import { wellKnownKinds } from "./fileUsage.js";
 import { grpcEmptyName, grpcWellKnownName } from "./naming.js";
-import { wellKnownProtobufName } from "./wellKnown.js";
+import { wellKnownKinds, type WellKnownKind } from "./wellKnown.js";
 
 export const generateSchemas = (file: GeneratorFile, usage: FileUsage) => [
   ...(usage.usesGrpcEmpty
@@ -37,7 +35,7 @@ const wellKnownMethodSchemas = (usage: FileUsage) =>
   wellKnownKinds
     .filter((type) => usage.wellKnownMethods.has(type))
     .flatMap((type) => {
-      const name = grpcWellKnownName(wellKnownProtobufName(type));
+      const name = grpcWellKnownName(type);
       return [
         `export const ${name}Schema = ${wellKnownSchema(type)};`,
         `export type ${name} = Schema.Schema.Type<typeof ${name}Schema>;`,
@@ -148,33 +146,33 @@ const scalarSchema = (type: ScalarKind, unsigned?: boolean) => {
 
 const wellKnownSchema = (type: WellKnownKind) => {
   switch (type) {
-    case "timestamp":
+    case "Timestamp":
       return "Schema.Date";
-    case "duration":
+    case "Duration":
       return "Schema.Duration";
-    case "double-value":
-    case "float-value":
-    case "int32-value":
+    case "DoubleValue":
+    case "FloatValue":
+    case "Int32Value":
       return scalarSchema("number");
-    case "uint32-value":
+    case "UInt32Value":
       return scalarSchema("number", true);
-    case "int64-value":
+    case "Int64Value":
       return scalarSchema("bigint");
-    case "uint64-value":
+    case "UInt64Value":
       return scalarSchema("bigint", true);
-    case "bool-value":
+    case "BoolValue":
       return "Schema.Boolean";
-    case "string-value":
+    case "StringValue":
       return "Schema.String";
-    case "bytes-value":
+    case "BytesValue":
       return "Schema.Uint8Array";
-    case "any":
+    case "Any":
       return "Schema.Struct({ typeUrl: Schema.String, value: Schema.String })";
-    case "struct":
-    case "value":
-    case "list-value":
+    case "Struct":
+    case "Value":
+    case "ListValue":
       return "Schema.Unknown";
-    case "field-mask":
+    case "FieldMask":
       return "Schema.String";
   }
 };

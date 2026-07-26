@@ -1,5 +1,5 @@
 import { NodeRuntime, NodeServices } from "@effect/platform-node";
-import { Console, Effect, Layer, Stream } from "effect";
+import { Console, Duration, Effect, Layer, Stream } from "effect";
 import { CliError, Command, Flag } from "effect/unstable/cli";
 
 import { GrpcClientProtocol } from "@effect-grpc/effect-grpc";
@@ -8,6 +8,11 @@ import {
   UserServiceClientLayer,
   UserServiceGrpcRegistry,
 } from "@effect-grpc/simple-proto/generated/demo/v1/user_service_effect_grpc";
+import {
+  FeatureShowcaseServiceClient,
+  FeatureShowcaseServiceClientLayer,
+  FeatureShowcaseServiceGrpcRegistry,
+} from "@effect-grpc/simple-proto/generated/features/v1/showcase_effect_grpc";
 
 const clientLayer = (baseUrl: URL) =>
   UserServiceClientLayer.pipe(
@@ -75,6 +80,47 @@ const watchUsers = (baseUrl: URL, tenantId: string, count: number) =>
     }),
   );
 
+// The feature showcase service on the same server: every supported field shape
+// in one request.
+const describeFeatures = (baseUrl: URL) =>
+  Effect.gen(function* () {
+    const client = yield* FeatureShowcaseServiceClient;
+
+    yield* client
+      .describe({
+        tags: ["alpha", "beta"],
+        scores: [10, 20],
+        notes: [{ text: "generated feature demo" }],
+        state: 1,
+        owner: { id: "user-1", name: "Ada" },
+        labels: { env: "demo" },
+        counts: { attempts: 1 },
+        reviewers: { primary: { id: "reviewer-1", role: "owner" } },
+        createdAt: new Date(0),
+        ttl: Duration.seconds(30),
+        payload: new Uint8Array([1, 2, 3]),
+        sequence: 42n,
+        contact: { case: "contactEmail", value: "ada@example.com" },
+      })
+      .pipe(
+        Effect.matchEffect({
+          onFailure: reportError,
+          onSuccess: (response) => Console.log(response.summary),
+        }),
+      );
+  }).pipe(
+    Effect.provide(
+      FeatureShowcaseServiceClientLayer.pipe(
+        Layer.provide(
+          GrpcClientProtocol.layer({
+            baseUrl: baseUrl.toString().replace(/\/$/, ""),
+            registry: FeatureShowcaseServiceGrpcRegistry,
+          }),
+        ),
+      ),
+    ),
+  );
+
 const baseUrl = Flag.string("base-url").pipe(
   Flag.mapTryCatch(
     (value) => new URL(value),
@@ -125,12 +171,23 @@ const watchUsersCommand = Command.make(
     }),
 ).pipe(Command.withDescription("Stream user events"));
 
+const describeFeaturesCommand = Command.make("describe-features", {}, () =>
+  Effect.gen(function* () {
+    const { baseUrl } = yield* simpleClient;
+    yield* describeFeatures(baseUrl);
+  }),
+).pipe(Command.withDescription("Round-trip the feature showcase request"));
+
 const setFailureExitCode = Effect.sync(() => {
   process.exitCode = 1;
 });
 
 simpleClient.pipe(
-  Command.withSubcommands([getUserCommand, watchUsersCommand]),
+  Command.withSubcommands([
+    getUserCommand,
+    watchUsersCommand,
+    describeFeaturesCommand,
+  ]),
   Command.run({ version: "0.0.0" }),
   Effect.catch((error) =>
     CliError.isCliError(error) ? setFailureExitCode : Effect.fail(error),

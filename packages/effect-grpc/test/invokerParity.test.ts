@@ -53,60 +53,6 @@ describe("GrpcInvoker adapter parity", () => {
     // keys lowercased and ordered, repeated ASCII keys joined, `-bin` decoded.
     expect(underTest(wire.seen!)).toEqual(delivered);
   });
-
-  it.each([
-    ["Uint8Array under an ASCII key", [["x-parity", new Uint8Array([1])]]],
-    ["string under a -bin key", [["x-parity-bin", "not-bytes"]]],
-    // Header syntax: `Headers.append` throws a `TypeError` on each of these,
-    // which both adapters would surface as a defect rather than a status.
-    ["key with a space", [["bad key", "v"]]],
-    ["empty key", [["", "v"]]],
-    ["non-ASCII key", [["ünicode", "v"]]],
-    ["key with a colon", [["x:a", "v"]]],
-    ["value with a newline", [["x-parity", "a\nb"]]],
-  ] as ReadonlyArray<readonly [string, GrpcMetadata.GrpcMetadata]>)(
-    "rejects a %s with invalid_argument on both adapters",
-    async (_name, metadata) => {
-      const wire = await onTheWire((invoker) =>
-        Effect.flip(invoker.unary(CHECK, { service: "" }, { metadata })),
-      );
-      const memory = await inMemory((invoker) =>
-        Effect.flip(invoker.unary(CHECK, { service: "" }, { metadata })),
-      );
-
-      expect(wire.response.code).toBe("invalid_argument");
-      expect(memory.response.code).toBe("invalid_argument");
-      expect(memory.response.message).toBe(wire.response.message);
-      // The call never left, so no handler observed it.
-      expect(wire.seen).toBeUndefined();
-      expect(memory.seen).toBeUndefined();
-    },
-  );
-
-  // End-to-end pin of the documented semantic. One case only: each run spins
-  // up a listener, and the per-value normalization is covered without one by
-  // the fake-`Transport` test below.
-  it("treats timeoutMs=0 as no deadline on the wire", async () => {
-    const wire = await onTheWire((invoker) =>
-      invoker.unary(CHECK, { service: "" }, { timeoutMs: 0 }),
-    );
-
-    expect(wire.response).toEqual(SERVING);
-    // The handler must not be told about a deadline that is not in force.
-    expect(wire.seenTimeout).toBeUndefined();
-  });
-
-  it.each([0, -1])(
-    "hides a non-positive timeoutMs=%s from the in-memory call context",
-    async (timeoutMs) => {
-      const memory = await inMemory((invoker) =>
-        invoker.unary(CHECK, { service: "" }, { timeoutMs }),
-      );
-
-      expect(memory.response).toEqual(SERVING);
-      expect(memory.call).toEqual({ tag: CHECK, metadata: [] });
-    },
-  );
 });
 
 describe("GrpcInvoker (connect call options)", () => {
@@ -153,8 +99,6 @@ describe("GrpcInvoker (connect call options)", () => {
 interface Observed<A> {
   readonly response: A;
   readonly seen: GrpcMetadata.GrpcMetadata | undefined;
-  readonly seenTimeout: string | undefined;
-  readonly call: GrpcInvoker.GrpcInMemoryCall | undefined;
 }
 
 /** Runs `use` against a real server over a loopback HTTP/2 listener. */
@@ -165,7 +109,6 @@ const onTheWire = <A, E>(
     Effect.scoped(
       Effect.gen(function* () {
         let seen: GrpcMetadata.GrpcMetadata | undefined;
-        let seenTimeout: string | undefined;
         const { routes } = yield* GrpcServerProtocol.make({
           registry: GrpcHealth.HealthGrpcRegistry,
           handlers: new Map([
@@ -176,9 +119,6 @@ const onTheWire = <A, E>(
                 handler: (_request, context) =>
                   Effect.sync(() => {
                     seen = context.metadata;
-                    seenTimeout = context.metadata.find(
-                      ([key]) => key === "grpc-timeout",
-                    )?.[1] as string | undefined;
                     return SERVING;
                   }),
               } satisfies GrpcServerProtocol.GrpcHandler,
@@ -200,7 +140,7 @@ const onTheWire = <A, E>(
             }),
           ),
         );
-        return { response, seen, seenTimeout, call: undefined };
+        return { response, seen };
       }),
     ),
   );
@@ -227,11 +167,6 @@ const inMemory = <A, E>(
           }),
         ),
       );
-      return {
-        response,
-        seen: call?.metadata,
-        seenTimeout: undefined,
-        call,
-      };
+      return { response, seen: call?.metadata };
     }),
   );

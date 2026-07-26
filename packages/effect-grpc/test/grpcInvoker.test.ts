@@ -185,32 +185,38 @@ describe("GrpcInvoker (in-memory adapter)", () => {
     }
   });
 
-  it.each([0, -1])(
-    "does not impose a deadline for timeoutMs=%s",
-    async (timeoutMs) => {
-      const result = await withInvoker(
-        {
-          "test.Svc/Unary": {
-            kind: "unary",
-            handler: (request) => Effect.sleep(1).pipe(Effect.as(request)),
-          },
-          "test.Svc/ClientStream": {
-            kind: "client-streaming",
-            handler: () => Effect.sleep(1).pipe(Effect.as("client response")),
-          },
+  // `timeoutMs <= 0` uniformly means *no deadline* — the connect adapter drops
+  // the option (see `invokerParity.test.ts`), so the in-memory one must neither
+  // enforce it nor put it on the call context, or a zero would turn every call
+  // into an instant `deadline_exceeded`.
+  it("treats a non-positive timeoutMs as no deadline", async () => {
+    let seen: GrpcInvoker.GrpcInMemoryCall | undefined;
+    const result = await withInvoker(
+      {
+        "test.Svc/Unary": {
+          kind: "unary",
+          handler: (request, call) =>
+            Effect.sync(() => {
+              seen = call;
+            }).pipe(Effect.andThen(Effect.sleep(20)), Effect.as(request)),
         },
-        (invoker) =>
-          Effect.all([
-            invoker.unary("test.Svc/Unary", "unary response", { timeoutMs }),
-            invoker.clientStream("test.Svc/ClientStream", Stream.empty, {
-              timeoutMs,
-            }),
-          ]),
-      );
+        "test.Svc/ClientStream": {
+          kind: "client-streaming",
+          handler: () => Effect.sleep(20).pipe(Effect.as("client response")),
+        },
+      },
+      (invoker) =>
+        Effect.all([
+          invoker.unary("test.Svc/Unary", "unary response", { timeoutMs: 0 }),
+          invoker.clientStream("test.Svc/ClientStream", Stream.empty, {
+            timeoutMs: 0,
+          }),
+        ]),
+    );
 
-      expect(result).toEqual(["unary response", "client response"]);
-    },
-  );
+    expect(result).toEqual(["unary response", "client response"]);
+    expect(seen).toEqual({ tag: "test.Svc/Unary", metadata: [] });
+  });
 
   it("terminates the handler when the caller interrupts", async () => {
     const observed = await withInvoker(

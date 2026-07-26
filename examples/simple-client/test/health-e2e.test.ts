@@ -62,10 +62,15 @@ describe("grpc.health.v1 e2e", () => {
 
           return yield* client.watch({ service: "demo.v1.UserService" }).pipe(
             // Flip the server-side status once the initial emission arrives,
-            // so the second element is a genuine status change.
+            // so the second element is a genuine status change — but write the
+            // current status again first: a no-op update must not produce an
+            // element, so the second element proves duplicate suppression.
             Stream.tap((response) =>
               response.status === "SERVING"
-                ? health.set("demo.v1.UserService", "NOT_SERVING")
+                ? Effect.flatMap(
+                    health.set("demo.v1.UserService", "SERVING"),
+                    () => health.set("demo.v1.UserService", "NOT_SERVING"),
+                  )
                 : Effect.void,
             ),
             Stream.take(2),

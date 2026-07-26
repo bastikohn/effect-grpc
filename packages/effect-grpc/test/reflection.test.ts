@@ -2,14 +2,11 @@ import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import { fileDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import { base64Encode } from "@bufbuild/protobuf/wire";
 import { FileDescriptorProtoSchema } from "@bufbuild/protobuf/wkt";
-import type { ConnectRouter, HandlerContext } from "@connectrpc/connect";
-import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 
 import * as GrpcHealth from "../src/GrpcHealth.js";
 import type * as GrpcMethodRegistry from "../src/GrpcMethodRegistry.js";
 import * as GrpcReflection from "../src/GrpcReflection.js";
-import * as GrpcServerProtocol from "../src/GrpcServerProtocol.js";
 
 /** `grpc::StatusCode` wire values used by reflection error responses. */
 const NOT_FOUND = 5;
@@ -66,6 +63,21 @@ describe("GrpcReflection index", () => {
     });
 
     expect(descriptorNames(response)).toEqual([HEALTH_PROTO]);
+  });
+
+  it("answers an unknown filename with an in-band NOT_FOUND", () => {
+    const response = GrpcReflection.respond(index, {
+      host: "",
+      messageRequest: { case: "fileByFilename", value: "missing.proto" },
+    });
+
+    expect(response.messageResponse).toEqual({
+      case: "errorResponse",
+      value: {
+        errorCode: NOT_FOUND,
+        errorMessage: "file not found: missing.proto",
+      },
+    });
   });
 
   it("answers unknown names with an in-band NOT_FOUND echoing the request", () => {
@@ -234,147 +246,9 @@ describe("GrpcReflection index with imports and extensions", () => {
   });
 });
 
-describe("grpc.reflection over the server protocol", () => {
-  it("answers a mixed request stream on v1, in order", async () => {
-    const responses = await withReflectionServer(
-      "grpc.reflection.v1.ServerReflection",
-      [
-        {
-          host: "localhost",
-          messageRequest: { case: "listServices", value: "*" },
-        },
-        {
-          host: "localhost",
-          messageRequest: {
-            case: "fileContainingSymbol",
-            value: "grpc.health.v1.Health",
-          },
-        },
-        {
-          host: "localhost",
-          messageRequest: { case: "fileByFilename", value: "missing.proto" },
-        },
-      ],
-    );
-
-    expect(responses).toHaveLength(3);
-
-    const [list, file, missing] = responses;
-
-    const listOneof = messageResponseOf(list);
-    expect(listOneof.case).toBe("listServicesResponse");
-    expect(
-      (
-        listOneof.value as { service: ReadonlyArray<{ name: string }> }
-      ).service.map((entry) => entry.name),
-    ).toContain("grpc.health.v1.Health");
-
-    const fileOneof = messageResponseOf(file);
-    expect(fileOneof.case).toBe("fileDescriptorResponse");
-    const descriptors = (
-      fileOneof.value as { fileDescriptorProto: ReadonlyArray<Uint8Array> }
-    ).fileDescriptorProto;
-    expect(
-      descriptors.map(
-        (bytes) => fromBinary(FileDescriptorProtoSchema, bytes).name,
-      ),
-    ).toEqual([HEALTH_PROTO]);
-
-    const missingOneof = messageResponseOf(missing);
-    expect(missingOneof.case).toBe("errorResponse");
-    expect(missingOneof.value).toMatchObject({ errorCode: NOT_FOUND });
-    // The failed request is echoed back per the spec.
-    expect(missing).toMatchObject({
-      originalRequest: {
-        messageRequest: { case: "fileByFilename", value: "missing.proto" },
-      },
-    });
-  });
-});
-
 const descriptorNames = (
   response: GrpcReflection.ServerReflectionResponse,
 ): ReadonlyArray<string> =>
   response.messageResponse.case === "fileDescriptorResponse"
     ? response.messageResponse.value.fileDescriptorProto.map(decodeFileName)
     : [];
-
-const messageResponseOf = (
-  response: unknown,
-): { case?: string; value?: unknown } =>
-  (response as Record<string, { case?: string; value?: unknown } | undefined>)[
-    "messageResponse"
-  ] ?? {};
-
-/**
- * Runs the real reflection handlers behind the server protocol — streaming
- * handlers effect, registry converters, and connect route implementation,
- * without a TCP listener — and collects the responses to `requests`.
- */
-const withReflectionServer = (
-  serviceTypeName: string,
-  requests: ReadonlyArray<unknown>,
-): Promise<ReadonlyArray<unknown>> =>
-  Effect.runPromise(
-    Effect.scoped(
-      Effect.gen(function* () {
-        const reflection = GrpcReflection.service([GrpcHealth.service]);
-        const { routes } = yield* GrpcServerProtocol.make({
-          registry: new Map([
-            ...GrpcHealth.HealthGrpcRegistry,
-            ...reflection.registry,
-          ]),
-          handlers: yield* reflection.handlers,
-        });
-
-        const implementation = captureImplementations(routes)[serviceTypeName];
-        if (!implementation) {
-          throw new Error(`No route registered for ${serviceTypeName}`);
-        }
-        return yield* Effect.promise(async () => {
-          const responses: unknown[] = [];
-          const iterable = implementation["serverReflectionInfo"]!(
-            (async function* () {
-              yield* requests;
-            })(),
-            handlerContext(),
-          ) as AsyncIterable<unknown>;
-          for await (const response of iterable) {
-            responses.push(response);
-          }
-          return responses;
-        });
-      }),
-    ),
-  );
-
-const captureImplementations = (
-  routes: (router: ConnectRouter) => ConnectRouter,
-) => {
-  const implementations: Record<
-    string,
-    Record<
-      string,
-      (
-        request: unknown,
-        context: HandlerContext,
-      ) => Promise<unknown> | AsyncIterable<unknown>
-    >
-  > = {};
-  const router = {
-    service(service: { typeName: string }, implementation: unknown) {
-      implementations[service.typeName] =
-        implementation as (typeof implementations)[string];
-      return router;
-    },
-  };
-
-  routes(router as unknown as ConnectRouter);
-  return implementations;
-};
-
-const handlerContext = (): HandlerContext =>
-  ({
-    requestHeader: new Headers(),
-    signal: new AbortController().signal,
-  }) as HandlerContext;

@@ -1,16 +1,22 @@
+import type { Printable } from "@bufbuild/protoplugin";
+
 import { serviceHandlersName, serviceImplementationName } from "./naming.js";
+import { exportDecl } from "./printing.js";
 import type { GeneratorFile, MethodModel } from "./types.js";
 
-export const generateServer = (file: GeneratorFile) =>
-  file.services.flatMap((service) => [
-    `export interface ${serviceImplementationName(service.name)}<R = never> {`,
+export const generateServer = (file: GeneratorFile): ReadonlyArray<Printable> =>
+  file.services.flatMap((service): ReadonlyArray<Printable> => [
+    [
+      exportDecl("interface", serviceImplementationName(service.name)),
+      "<R = never> {",
+    ],
     ...service.methods.map(
       (method) =>
         `  readonly ${method.localName}: ${implementationSignature(method)};`,
     ),
     "}",
     "",
-    `export const ${serviceHandlersName(service.name)} = <R>(`,
+    [exportDecl("const", serviceHandlersName(service.name)), " = <R>("],
     `  implementation: ${serviceImplementationName(service.name)}<R>,`,
     `): Effect.Effect<GrpcServerProtocol.GrpcHandlers, never, R> =>`,
     "  GrpcServerProtocol.handlersEffect<R>({",

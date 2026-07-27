@@ -57,6 +57,10 @@ describe("proto feature fixtures", () => {
     expectSnapshot("optional_scalars");
     expectSnapshot("empty_messages");
     expectSnapshot("bytes_collision");
+    expectSnapshot("same_name", {
+      primary: "same_name.proto",
+      protoFiles: ["same_name_common.proto", "same_name.proto"],
+    });
   }, 120_000);
 
   it("typechecks generated output", () => {
@@ -315,6 +319,31 @@ describe("proto feature fixtures", () => {
     // and as a method input/output it was read back as the well-known it is
     // named after, which declared its schema and type a second time. Only a
     // typecheck sees those duplicate declarations.
+    // Cross-package same-name collision: the importing file redeclares the
+    // generated name `Widget`, so the foreign schema/type/converters arrive
+    // under protoplugin's `$1` aliases. Only a typecheck proves the aliased
+    // import block and the aliased body references agree.
+    writeTypecheckSource(
+      generateProtoFeature("same_name", {
+        primary: "same_name.proto",
+        protoFiles: ["same_name_common.proto", "same_name.proto"],
+      }),
+      [
+        'import { WidgetSchema as WidgetPbSchema } from "./same_name_pb.js";',
+        'import { create } from "@bufbuild/protobuf";',
+        'import type { Widget as CommonWidget } from "./same_name_common_effect_grpc.js";',
+        'import { SameNameFeatureGrpcRegistry, type Widget } from "./same_name_effect_grpc.js";',
+        'const common: CommonWidget = { id: "common" };',
+        'const value: Widget = { id: "1", parent: common };',
+        'const entry = SameNameFeatureGrpcRegistry.get("features.v1.SameNameFeature/Echo");',
+        'if (!entry) throw new Error("missing registry entry");',
+        "create(WidgetPbSchema, entry.toGrpcRequest(value));",
+        'const commonEntry = SameNameFeatureGrpcRegistry.get("features.v1.SameNameFeature/EchoCommon");',
+        'if (!commonEntry) throw new Error("missing common registry entry");',
+        "commonEntry.toGrpcRequest(common);",
+        "",
+      ].join("\n"),
+    );
     writeTypecheckSource(
       generateProtoFeature("bytes_collision"),
       [

@@ -24,263 +24,131 @@ import {
 } from "@bufbuild/protobuf/wkt";
 import { describe, expect, it } from "vitest";
 
-import { generateFile } from "../src/generate.js";
 import { plugin } from "../src/pluginDefinition.js";
-import type { GeneratorFile } from "../src/types.js";
 
-// `generateFile` emits one Printable per line; protoplugin's print() appends
-// the newlines when the plugin runs. This mirrors protoplugin's rendering for
-// the printables the emitters produce (strings, nested arrays, export
-// statements, import symbols by name) so the hand-built model tests can keep
-// asserting on text until they migrate to `plugin.run` fixtures.
-const render = (file: GeneratorFile) =>
-  generateFile(file).map(renderEntry).join("\n");
-
-const renderEntry = (entry: ReturnType<typeof generateFile>[number]): string => {
-  if (typeof entry === "string") return entry;
-  if (Array.isArray(entry)) return entry.map(renderEntry).join("");
-  if (typeof entry === "object" && entry !== null && "kind" in entry) {
-    const printable = entry as {
-      readonly kind: string;
-      readonly name?: string;
-      readonly declaration?: string;
-    };
-    if (printable.kind === "es_export_stmt") {
-      const declaration =
-        printable.declaration === undefined ? "" : `${printable.declaration} `;
-      return `export ${declaration}${printable.name}`;
-    }
-    if (printable.kind === "es_symbol") return printable.name ?? "";
-  }
-  throw new Error(`Unsupported printable: ${JSON.stringify(entry)}`);
-};
-
-const demoFile: GeneratorFile = {
-  protoFileName: "demo/v1/user_service.proto",
-  enums: [],
-  messages: [
-    {
-      name: "GetUserRequest",
-      fields: [{ kind: "scalar", name: "id", type: "string" }],
-    },
-    {
-      name: "GetUserResponse",
-      fields: [
-        {
-          kind: "message",
-          name: "user",
-          messageName: "User",
-          optional: true,
-        },
-      ],
-    },
-    {
-      name: "WatchUsersRequest",
-      fields: [
-        { kind: "scalar", name: "tenantId", type: "string" },
-        { kind: "scalar", name: "count", type: "number" },
-      ],
-    },
-    {
-      name: "User",
-      fields: [
-        { kind: "scalar", name: "id", type: "string" },
-        { kind: "scalar", name: "name", type: "string" },
-      ],
-    },
-    {
-      name: "UserEvent",
-      fields: [
-        { kind: "scalar", name: "id", type: "string" },
-        { kind: "scalar", name: "name", type: "string" },
-        { kind: "scalar", name: "action", type: "string" },
-        { kind: "scalar", name: "sequence", type: "number" },
-      ],
-    },
-  ],
-  services: [
-    {
-      name: "UserService",
-      typeName: "demo.v1.UserService",
-      methods: [
-        {
-          name: "GetUser",
-          localName: "getUser",
-          kind: "unary",
-          inputType: { name: "GetUserRequest" },
-          outputType: { name: "GetUserResponse" },
-        },
-        {
-          name: "WatchUsers",
-          localName: "watchUsers",
-          kind: "server-streaming",
-          inputType: { name: "WatchUsersRequest" },
-          outputType: { name: "UserEvent" },
-        },
-        {
-          name: "UploadUsers",
-          localName: "uploadUsers",
-          kind: "client-streaming",
-          inputType: { name: "User" },
-          outputType: { name: "GetUserResponse" },
-        },
-        {
-          name: "ChatUsers",
-          localName: "chatUsers",
-          kind: "bidi-streaming",
-          inputType: { name: "UserEvent" },
-          outputType: { name: "UserEvent" },
-        },
-      ],
-    },
-  ],
-};
-
-describe("generateFile", () => {
-  // The snapshot below pins the whole emission; the assertions kept here name
-  // the two decisions a reader cannot infer from it — the annotated
-  // `Schema.suspend` recursive edge, and that the server path routes through
-  // `handlersEffect` rather than Effect RPC.
+describe("plugin fixture", () => {
+  // The snapshot pins the whole emission for all four method kinds; the
+  // assertions name the two decisions a reader cannot infer from it — the
+  // annotated `Schema.suspend` recursive edge, and that the server path
+  // routes through `handlersEffect` rather than Effect RPC.
   it("generates schemas, registry, client, and server glue", () => {
-    const output = render(demoFile);
+    const response = plugin.run(
+      fixtureRequest(undefined, {
+        extraMethods: [
+          create(MethodDescriptorProtoSchema, {
+            name: "WatchUsers",
+            inputType: ".demo.v1.GetUserRequest",
+            outputType: ".demo.v1.User",
+            serverStreaming: true,
+          }),
+          create(MethodDescriptorProtoSchema, {
+            name: "UploadUsers",
+            inputType: ".demo.v1.User",
+            outputType: ".demo.v1.GetUserResponse",
+            clientStreaming: true,
+          }),
+          create(MethodDescriptorProtoSchema, {
+            name: "ChatUsers",
+            inputType: ".demo.v1.User",
+            outputType: ".demo.v1.User",
+            clientStreaming: true,
+            serverStreaming: true,
+          }),
+        ],
+      }),
+    );
 
-    expect(output).toContain(
+    const content = response.file[0]?.content;
+    expect(content).toContain(
       "user: Schema.optional(Schema.suspend((): typeof UserSchema => UserSchema))",
     );
-    expect(output).toContain("GrpcServerProtocol.handlersEffect<R>({");
-    expect(output).not.toContain("Rpc.make(");
-    expect(output).not.toContain("RpcGroup");
-    expect(output).not.toContain("effect/unstable/rpc");
-    expect(output).toMatchSnapshot();
+    expect(content).toContain("GrpcServerProtocol.handlersEffect<R>({");
+    expect(content).not.toContain("Rpc.make(");
+    expect(content).not.toContain("RpcGroup");
+    expect(content).not.toContain("effect/unstable/rpc");
+    expect(content).toMatchSnapshot();
   });
 
   it("omits readField and compact when every message is empty", () => {
-    const output = render({
-      protoFileName: "demo/v1/empty.proto",
-      enums: [],
-      messages: [
-        { name: "VoidRequest", fields: [] },
-        { name: "VoidResponse", fields: [] },
-      ],
-      services: [
-        {
-          name: "VoidService",
-          typeName: "demo.v1.VoidService",
-          methods: [
-            {
-              name: "Call",
-              localName: "call",
-              kind: "unary",
-              inputType: { name: "VoidRequest" },
-              outputType: { name: "VoidResponse" },
-            },
-          ],
-        },
-      ],
-    });
+    const response = plugin.run(fixtureRequest([], { emptyMessages: true }));
 
-    expect(output).not.toContain("readField");
-    expect(output).not.toContain("compact");
-    expect(output).toContain(
-      "export const fromVoidRequest = (_message: unknown): unknown => ({});",
+    const content = response.file[0]?.content;
+    expect(content).not.toContain("readField");
+    expect(content).not.toContain("compact");
+    expect(content).toContain(
+      "export const fromGetUserRequest = (_message: unknown): unknown => ({});",
     );
-    expect(output).toContain(
-      "export const toVoidRequest = (_value: unknown): Record<string, unknown> => ({});",
+    expect(content).toContain(
+      "export const toGetUserRequest = (_value: unknown): Record<string, unknown> => ({});",
     );
   });
 
   it("emits the annotated Schema.suspend for a recursive self-edge", () => {
-    const output = render({
-      protoFileName: "demo/v1/node.proto",
-      enums: [],
-      messages: [
-        {
-          name: "Node",
-          fields: [
-            {
-              kind: "message",
-              name: "next",
-              messageName: "Node",
-              optional: true,
-            },
-          ],
-        },
-      ],
-      services: [
-        {
-          name: "NodeService",
-          typeName: "demo.v1.NodeService",
-          methods: [
-            {
-              name: "Echo",
-              localName: "echo",
-              kind: "unary",
-              inputType: { name: "Node" },
-              outputType: { name: "Node" },
-            },
-          ],
-        },
-      ],
-    });
+    const response = plugin.run(
+      fixtureRequest([
+        field("next", 1, FieldDescriptorProto_Type.MESSAGE, {
+          typeName: ".demo.v1.GetUserRequest",
+        }),
+      ]),
+    );
 
     // A cyclic edge must break the type recursion with an explicit annotation
-    // rather than the self-referential `typeof NodeSchema` form.
-    expect(output).toContain(
-      "next: Schema.optional(Schema.suspend((): Schema.Codec<unknown, unknown, never, never> => NodeSchema))",
+    // rather than the self-referential `typeof GetUserRequestSchema` form.
+    const content = response.file[0]?.content;
+    expect(content).toContain(
+      "next: Schema.optional(Schema.suspend((): Schema.Codec<unknown, unknown, never, never> => GetUserRequestSchema))",
     );
-    expect(output).not.toContain("Schema.suspend((): typeof NodeSchema");
+    expect(content).not.toContain(
+      "Schema.suspend((): typeof GetUserRequestSchema",
+    );
   });
 
-  it("omits client-only rpc imports for a streaming-only service", () => {
-    const output = render({
-      protoFileName: "demo/v1/upload.proto",
-      enums: [],
-      messages: [
+  it("aliases colliding same-name imports from another package", () => {
+    // demo.v1.User (declared locally) and other.v1.User (imported) both
+    // generate the identifier `User`. Before imports went through
+    // protoplugin, the spliced import statement redeclared the local names
+    // and the generated file failed to compile (TS2300); protoplugin's
+    // collision aliasing renames the foreign symbols instead.
+    const response = plugin.run(
+      fixtureRequest(
+        [
+          field("friend", 1, FieldDescriptorProto_Type.MESSAGE, {
+            typeName: ".other.v1.User",
+          }),
+        ],
         {
-          name: "UploadRequest",
-          fields: [{ kind: "scalar", name: "id", type: "string" }],
-        },
-        {
-          name: "UploadResponse",
-          fields: [{ kind: "scalar", name: "id", type: "string" }],
-        },
-      ],
-      services: [
-        {
-          name: "UploadService",
-          typeName: "demo.v1.UploadService",
-          methods: [
-            {
-              name: "Upload",
-              localName: "upload",
-              kind: "client-streaming",
-              inputType: { name: "UploadRequest" },
-              outputType: { name: "UploadResponse" },
-            },
-            {
-              name: "Chat",
-              localName: "chat",
-              kind: "bidi-streaming",
-              inputType: { name: "UploadRequest" },
-              outputType: { name: "UploadResponse" },
-            },
+          dependency: ["demo/v1/other.proto"],
+          extraFiles: [
+            create(FileDescriptorProtoSchema, {
+              name: "demo/v1/other.proto",
+              package: "other.v1",
+              syntax: "proto3",
+              messageType: [
+                create(DescriptorProtoSchema, {
+                  name: "User",
+                  field: [field("id", 1, FieldDescriptorProto_Type.STRING)],
+                }),
+              ],
+            }),
           ],
+          methodOutputType: ".other.v1.User",
         },
-      ],
-    });
+      ),
+    );
 
-    // Generated code no longer touches `effect/unstable/rpc` at all: the
-    // client depends on the `GrpcInvoker` seam and the server publishes its
-    // handlers through `GrpcServerProtocol.handlersEffect`.
-    expect(output).not.toContain("effect/unstable/rpc");
-    expect(output).toContain("const invoker = yield* GrpcInvoker.GrpcInvoker;");
-    expect(output).not.toContain("RpcClient");
-    expect(output).not.toContain("RpcClientError");
-    expect(output).not.toContain("GrpcClientProtocol");
+    const content = response.file[0]?.content;
+    // Local declarations keep their names...
+    expect(content).toContain("export const UserSchema = Schema.Struct({");
+    expect(content).toContain("export const fromUser = ");
+    // ...and every foreign same-name import is aliased.
+    expect(content).toContain("UserSchema as UserSchema$1");
+    expect(content).toContain("import type { User as User$1 }");
+    expect(content).toContain("friend: Schema.optional(UserSchema$1)");
+    expect(content).toContain("successSchema: UserSchema$1,");
+    expect(content).toContain("fromGrpcResponse: fromUser$1,");
+    expect(content).toContain("Effect.Effect<User$1, UserServiceClientError>");
   });
-});
 
-describe("plugin fixture", () => {
   it("generates a real plugin response from descriptor input", () => {
     const response = plugin.run(fixtureRequest());
 
@@ -575,6 +443,11 @@ describe("streaming methods", () => {
     );
     expect(content).not.toContain("effect/unstable/rpc");
     expect(content).toContain("GrpcServerProtocol.handlersEffect");
+    // Generated code no longer touches Effect RPC on either side: the client
+    // depends on the GrpcInvoker seam, the server on handlersEffect.
+    expect(content).toContain("const invoker = yield* GrpcInvoker.GrpcInvoker;");
+    expect(content).not.toContain("RpcClient");
+    expect(content).not.toContain("GrpcClientProtocol");
   });
 });
 
@@ -592,6 +465,8 @@ const fixtureRequest = (
     readonly methodInputType?: string;
     readonly methodOutputType?: string;
     readonly parameter?: string;
+    /** Strip every message's fields (`readsFields === false`). */
+    readonly emptyMessages?: boolean;
   },
 ) =>
   create(CodeGeneratorRequestSchema, {
@@ -615,18 +490,22 @@ const fixtureRequest = (
           }),
           create(DescriptorProtoSchema, {
             name: "GetUserResponse",
-            field: [
-              field("user", 1, FieldDescriptorProto_Type.MESSAGE, {
-                typeName: ".demo.v1.User",
-              }),
-            ],
+            field: options?.emptyMessages
+              ? []
+              : [
+                  field("user", 1, FieldDescriptorProto_Type.MESSAGE, {
+                    typeName: ".demo.v1.User",
+                  }),
+                ],
           }),
           create(DescriptorProtoSchema, {
             name: "User",
-            field: [
-              field("id", 1, FieldDescriptorProto_Type.STRING),
-              field("name", 2, FieldDescriptorProto_Type.STRING),
-            ],
+            field: options?.emptyMessages
+              ? []
+              : [
+                  field("id", 1, FieldDescriptorProto_Type.STRING),
+                  field("name", 2, FieldDescriptorProto_Type.STRING),
+                ],
           }),
         ],
         service: [

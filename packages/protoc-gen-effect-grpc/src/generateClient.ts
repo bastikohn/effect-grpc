@@ -10,50 +10,54 @@ import * as sym from "./symbols.js";
 import type { GeneratorFile, MethodModel, ServiceModel } from "./types.js";
 
 export const generateClient = (file: GeneratorFile): ReadonlyArray<Printable> =>
-  file.services.flatMap((service): ReadonlyArray<Printable> => [
-    [
-      exportDecl("type", `${service.name}ClientError`),
-      " = ",
-      sym.GrpcStatusError,
-      ".GrpcStatusError;",
+  file.services.flatMap(
+    (service): ReadonlyArray<Printable> => [
+      [
+        exportDecl("type", `${service.name}ClientError`),
+        " = ",
+        sym.GrpcStatusError,
+        ".GrpcStatusError;",
+      ],
+      "",
+      [exportDecl("interface", serviceClientServiceName(service.name)), " {"],
+      ...service.methods.map(
+        (method): Printable => [
+          `  readonly ${method.localName}: `,
+          clientMethodSignature(service, method),
+          ";",
+        ],
+      ),
+      "}",
+      "",
+      [
+        `const make${serviceClientName(service.name)} = `,
+        sym.Effect,
+        ".gen(function* () {",
+      ],
+      ["  const invoker = yield* ", sym.GrpcInvoker, ".GrpcInvoker;"],
+      "  return {",
+      ...service.methods.map((method) => clientMethodImpl(service, method)),
+      `  } satisfies ${serviceClientServiceName(service.name)};`,
+      "});",
+      "",
+      [
+        exportDecl("class", serviceClientName(service.name)),
+        " extends ",
+        sym.Context,
+        `.Service<${serviceClientName(service.name)}, ${serviceClientServiceName(service.name)}>()("${service.typeName}/${serviceClientName(service.name)}", {`,
+      ],
+      `  make: make${serviceClientName(service.name)},`,
+      "}) {}",
+      "",
+      [
+        exportDecl("const", serviceClientLayerName(service.name)),
+        " = ",
+        sym.Layer,
+        `.effect(${serviceClientName(service.name)}, ${serviceClientName(service.name)}.make);`,
+      ],
+      "",
     ],
-    "",
-    [exportDecl("interface", serviceClientServiceName(service.name)), " {"],
-    ...service.methods.map((method): Printable => [
-      `  readonly ${method.localName}: `,
-      clientMethodSignature(service, method),
-      ";",
-    ]),
-    "}",
-    "",
-    [
-      `const make${serviceClientName(service.name)} = `,
-      sym.Effect,
-      ".gen(function* () {",
-    ],
-    ["  const invoker = yield* ", sym.GrpcInvoker, ".GrpcInvoker;"],
-    "  return {",
-    ...service.methods.map((method) => clientMethodImpl(service, method)),
-    `  } satisfies ${serviceClientServiceName(service.name)};`,
-    "});",
-    "",
-    [
-      exportDecl("class", serviceClientName(service.name)),
-      " extends ",
-      sym.Context,
-      `.Service<${serviceClientName(service.name)}, ${serviceClientServiceName(service.name)}>()("${service.typeName}/${serviceClientName(service.name)}", {`,
-    ],
-    `  make: make${serviceClientName(service.name)},`,
-    "}) {}",
-    "",
-    [
-      exportDecl("const", serviceClientLayerName(service.name)),
-      " = ",
-      sym.Layer,
-      `.effect(${serviceClientName(service.name)}, ${serviceClientName(service.name)}.make);`,
-    ],
-    "",
-  ]);
+  );
 
 const clientMethodSignature = (
   service: ServiceModel,

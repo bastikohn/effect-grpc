@@ -68,4 +68,8 @@ export const effectValue = (
  * one would break at ESM load time when a transpile-only consumer keeps it.
  */
 export const effectType = (protoFileName: string, name: string): ImportSymbol =>
-  createImportSymbol(name, `./${protoBase(protoFileName)}_effect_grpc.js`, true);
+  createImportSymbol(
+    name,
+    `./${protoBase(protoFileName)}_effect_grpc.js`,
+    true,
+  );

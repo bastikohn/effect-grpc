@@ -43,17 +43,19 @@ export const wellKnownKind = (typeName: string): WellKnownKind | undefined => {
     : undefined;
 };
 
-/** The `@bufbuild/protobuf/wkt` schema a JSON-encoded well-known type needs. */
+/**
+ * The `@bufbuild/protobuf/wkt` schema a JSON-encoded well-known type needs,
+ * under its exported name. A proto message that happens to generate the same
+ * name (e.g. a message named `Struct`) is safe: protoplugin aliases the
+ * imported symbol on collision with any exported declaration.
+ */
 export const wellKnownJsonSchemaName = (kind: WellKnownKind) => {
   switch (kind) {
     case "Struct":
-      return "ProtobufStructSchema";
     case "Value":
-      return "ProtobufValueSchema";
     case "ListValue":
-      return "ProtobufListValueSchema";
     case "FieldMask":
-      return "ProtobufFieldMaskSchema";
+      return `${kind}Schema`;
     default:
       return undefined;
   }

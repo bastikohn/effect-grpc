@@ -16,7 +16,7 @@
     "check:generated": "pnpm --filter @effect-grpc/protoc-gen-effect-grpc build && pnpm demo:generate && git diff --exit-code -- examples/simple-proto/src/generated",
     "changeset": "changeset",
     "changeset:publish": "node scripts/publish-public-packages.mjs",
-    "changeset:version": "changeset version && pnpm install --lockfile-only",
+    "changeset:version": "changeset version && pnpm install --lockfile-only && pnpm --filter @effect-grpc/protoc-gen-effect-grpc build && pnpm demo:generate && pnpm --filter @effect-grpc/protoc-gen-effect-grpc test --update",
     "demo:client": "pnpm --filter @effect-grpc/simple-client start",
     "demo:generate": "pnpm --filter @effect-grpc/simple-proto generate",
     "demo:server": "pnpm --filter @effect-grpc/simple-server start",

@@ -1,32 +1,7 @@
-import { dirname, relative } from "node:path/posix";
-
-export const protoBaseName = (protoFileName: string) => {
-  const slash = protoFileName.lastIndexOf("/");
-  const fileName = slash >= 0 ? protoFileName.slice(slash + 1) : protoFileName;
-  return fileName.endsWith(".proto")
-    ? fileName.slice(0, -".proto".length)
-    : fileName;
-};
-
-export const pbImportPath = (protoFileName: string, extension: "js" | "ts") =>
-  `./${protoBaseName(protoFileName)}_pb.${extension}`;
-
 export const effectFileName = (protoFileName: string) =>
   protoFileName.endsWith(".proto")
     ? `${protoFileName.slice(0, -".proto".length)}_effect_grpc.ts`
     : `${protoFileName}_effect_grpc.ts`;
-
-export const effectImportPath = (
-  fromProtoFileName: string,
-  toProtoFileName: string,
-  extension: "js" | "ts",
-) => {
-  const path = relative(
-    dirname(fromProtoFileName),
-    effectFileName(toProtoFileName),
-  ).replace(/\.ts$/, `.${extension}`);
-  return path.startsWith(".") ? path : `./${path}`;
-};
 
 export const serviceClientServiceName = (serviceName: string) =>
   `${serviceName}ClientService`;

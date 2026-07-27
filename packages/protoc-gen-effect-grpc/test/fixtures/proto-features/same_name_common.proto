@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package features.common.v1;
+
+// Deliberately shares its generated name (`Widget`) with
+// features.v1.Widget in same_name.proto: the importing file must alias
+// the foreign schema, type, and converters.
+message Widget {
+  string id = 1;
+}

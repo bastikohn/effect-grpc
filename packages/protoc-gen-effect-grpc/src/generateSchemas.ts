@@ -1,51 +1,89 @@
+import type { Printable } from "@bufbuild/protoplugin";
+
 import type {
+  EnumFieldModel,
   EnumModel,
   FieldModel,
   FieldValueModel,
   GeneratorFile,
+  MessageFieldModel,
   ScalarKind,
 } from "./types.js";
 import type { FileUsage } from "./fileUsage.js";
 import { grpcEmptyName, grpcWellKnownName } from "./naming.js";
+import { exportDecl, joinPrintables } from "./printing.js";
+import * as sym from "./symbols.js";
 import { wellKnownKinds, type WellKnownKind } from "./wellKnown.js";
 
-export const generateSchemas = (file: GeneratorFile, usage: FileUsage) => [
+/** The effect `Schema` namespace import followed by raw text. */
+const S = (rest: string): Printable => [sym.Schema, rest];
+
+export const generateSchemas = (
+  file: GeneratorFile,
+  usage: FileUsage,
+): ReadonlyArray<Printable> => [
   ...(usage.usesGrpcEmpty
     ? [
-        `export const ${grpcEmptyName}Schema = Schema.Struct({});`,
-        `export type ${grpcEmptyName} = Schema.Schema.Type<typeof ${grpcEmptyName}Schema>;`,
+        [
+          exportDecl("const", `${grpcEmptyName}Schema`),
+          " = ",
+          S(".Struct({});"),
+        ],
+        [
+          exportDecl("type", grpcEmptyName),
+          " = ",
+          S(`.Schema.Type<typeof ${grpcEmptyName}Schema>;`),
+        ],
         "",
       ]
     : []),
   ...wellKnownMethodSchemas(usage),
   ...file.enums.flatMap(enumSchema),
-  ...file.messages.flatMap((message) => [
-    `export const ${message.name}Schema = Schema.Struct({`,
-    ...message.fields.map(
-      (field) =>
-        `  ${field.name}: ${fieldSchema(field, message.name, usage.recursiveEdges)},`,
-    ),
-    "});",
-    `export type ${message.name} = Schema.Schema.Type<typeof ${message.name}Schema>;`,
-    "",
-  ]),
+  ...file.messages.flatMap(
+    (message): ReadonlyArray<Printable> => [
+      [exportDecl("const", `${message.name}Schema`), " = ", S(".Struct({")],
+      ...message.fields.map(
+        (field): Printable => [
+          `  ${field.name}: `,
+          fieldSchema(field, message.name, usage.recursiveEdges),
+          ",",
+        ],
+      ),
+      "});",
+      [
+        exportDecl("type", message.name),
+        " = ",
+        S(`.Schema.Type<typeof ${message.name}Schema>;`),
+      ],
+      "",
+    ],
+  ),
 ];
 
-const wellKnownMethodSchemas = (usage: FileUsage) =>
+const wellKnownMethodSchemas = (usage: FileUsage): ReadonlyArray<Printable> =>
   wellKnownKinds
     .filter((type) => usage.wellKnownMethods.has(type))
-    .flatMap((type) => {
+    .flatMap((type): ReadonlyArray<Printable> => {
       const name = grpcWellKnownName(type);
       return [
-        `export const ${name}Schema = ${wellKnownSchema(type)};`,
-        `export type ${name} = Schema.Schema.Type<typeof ${name}Schema>;`,
+        [
+          exportDecl("const", `${name}Schema`),
+          " = ",
+          wellKnownSchema(type),
+          ";",
+        ],
+        [
+          exportDecl("type", name),
+          " = ",
+          S(`.Schema.Type<typeof ${name}Schema>;`),
+        ],
         "",
       ];
     });
 
-const enumSchema = (field: EnumModel) => [
-  `export const ${field.name}Schema = Schema.Number;`,
-  `export type ${field.name} = number;`,
+const enumSchema = (field: EnumModel): ReadonlyArray<Printable> => [
+  [exportDecl("const", `${field.name}Schema`), " = ", S(".Number;")],
+  [exportDecl("type", field.name), " = number;"],
   "",
 ];
 
@@ -53,103 +91,147 @@ const fieldSchema = (
   field: FieldModel,
   messageName: string,
   recursiveEdges: ReadonlySet<string>,
-): string => {
+): Printable => {
   switch (field.kind) {
     case "scalar": {
       const schema = scalarSchema(field.type, field.unsigned);
-      return field.optional ? `Schema.optional(${schema})` : schema;
+      return field.optional ? optional(schema) : schema;
     }
-    case "message":
-      return field.optional
-        ? `Schema.optional(${messageSchema(field, messageName, recursiveEdges)})`
-        : messageSchema(field, messageName, recursiveEdges);
+    case "message": {
+      const schema = messageSchema(field, messageName, recursiveEdges);
+      return field.optional ? optional(schema) : schema;
+    }
     case "enum":
       return field.optional
-        ? `Schema.optional(${field.enumName}Schema)`
-        : `${field.enumName}Schema`;
+        ? optional(enumSchemaRef(field))
+        : enumSchemaRef(field);
     case "well-known":
       return field.optional
-        ? `Schema.optional(${wellKnownSchema(field.type)})`
+        ? optional(wellKnownSchema(field.type))
         : wellKnownSchema(field.type);
     case "list":
-      return `Schema.Array(${valueSchema(field.item, messageName, recursiveEdges)})`;
+      return [
+        S(".Array("),
+        valueSchema(field.item, messageName, recursiveEdges),
+        ")",
+      ];
     case "map":
-      return `Schema.Record(${mapKeySchema(field.key.type)}, ${valueSchema(field.value, messageName, recursiveEdges)})`;
+      return [
+        S(".Record("),
+        mapKeySchema(field.key.type),
+        ", ",
+        valueSchema(field.value, messageName, recursiveEdges),
+        ")",
+      ];
     case "oneof":
-      return `Schema.Union([${[
-        ...field.cases.map(
-          (oneofCase) =>
-            `Schema.Struct({ case: Schema.Literal("${oneofCase.name}"), value: ${valueSchema(oneofCase.value, messageName, recursiveEdges)} })`,
+      return [
+        S(".Union(["),
+        joinPrintables(
+          [
+            ...field.cases.map(
+              (oneofCase): Printable => [
+                S(".Struct({ case: "),
+                S(`.Literal("${oneofCase.name}"), value: `),
+                valueSchema(oneofCase.value, messageName, recursiveEdges),
+                " })",
+              ],
+            ),
+            [
+              S(".Struct({ case: "),
+              S(".Undefined, value: "),
+              S(".optional("),
+              S(".Undefined) })"),
+            ],
+          ],
+          ", ",
         ),
-        "Schema.Struct({ case: Schema.Undefined, value: Schema.optional(Schema.Undefined) })",
-      ].join(", ")}])`;
+        "])",
+      ];
   }
 };
+
+const optional = (schema: Printable): Printable => [
+  S(".optional("),
+  schema,
+  ")",
+];
 
 const valueSchema = (
   field: FieldValueModel,
   messageName: string,
   recursiveEdges: ReadonlySet<string>,
-): string => {
+): Printable => {
   switch (field.kind) {
     case "scalar":
       return scalarSchema(field.type, field.unsigned);
     case "message":
       return messageSchema(field, messageName, recursiveEdges);
     case "enum":
-      return `${field.enumName}Schema`;
+      return enumSchemaRef(field);
     case "well-known":
       return wellKnownSchema(field.type);
   }
 };
 
+const enumSchemaRef = (field: EnumFieldModel): Printable =>
+  field.importedFrom === undefined
+    ? `${field.enumName}Schema`
+    : sym.effectValue(field.importedFrom, `${field.enumName}Schema`);
+
 const messageSchema = (
-  field: Extract<FieldValueModel, { readonly kind: "message" }>,
+  field: MessageFieldModel,
   currentMessageName: string,
   recursiveEdges: ReadonlySet<string>,
-) =>
-  field.source === "local"
+): Printable =>
+  field.importedFrom === undefined
     ? recursiveEdges.has(`${currentMessageName}->${field.messageName}`)
-      ? `Schema.suspend((): Schema.Codec<unknown, unknown, never, never> => ${field.messageName}Schema)`
-      : `Schema.suspend((): typeof ${field.messageName}Schema => ${field.messageName}Schema)`
-    : `${field.messageName}Schema`;
+      ? [
+          S(".suspend((): "),
+          S(
+            `.Codec<unknown, unknown, never, never> => ${field.messageName}Schema)`,
+          ),
+        ]
+      : S(
+          `.suspend((): typeof ${field.messageName}Schema => ${field.messageName}Schema)`,
+        )
+    : sym.effectValue(field.importedFrom, `${field.messageName}Schema`);
 
 const mapKeySchema = (
   type: Extract<FieldModel, { readonly kind: "map" }>["key"]["type"],
-) => {
+): Printable => {
   switch (type) {
     case "number":
-      return "Schema.Number";
+      return S(".Number");
     case "string":
-      return "Schema.String";
+      return S(".String");
   }
 };
 
-const scalarSchema = (type: ScalarKind, unsigned?: boolean) => {
+const scalarSchema = (type: ScalarKind, unsigned?: boolean): Printable => {
   switch (type) {
     case "string":
-      return "Schema.String";
+      return S(".String");
     case "number":
-      return "Schema.Number";
+      return S(".Number");
     case "boolean":
-      return "Schema.Boolean";
+      return S(".Boolean");
     case "bytes":
-      return "Schema.Uint8Array";
+      return S(".Uint8Array");
     case "bigint":
       return unsigned
-        ? "Schema.BigInt.check(Schema.isGreaterThanOrEqualToBigInt(0n))"
-        : "Schema.BigInt";
+        ? [S(".BigInt.check("), S(".isGreaterThanOrEqualToBigInt(0n))")]
+        : S(".BigInt");
     default:
-      return "Schema.Unknown";
+      return S(".Unknown");
   }
 };
 
-const wellKnownSchema = (type: WellKnownKind) => {
+const wellKnownSchema = (type: WellKnownKind): Printable => {
   switch (type) {
     case "Timestamp":
-      return "Schema.Date";
+      return S(".Date");
     case "Duration":
-      return "Schema.Duration";
+      return S(".Duration");
     case "DoubleValue":
     case "FloatValue":
     case "Int32Value":
@@ -161,18 +243,18 @@ const wellKnownSchema = (type: WellKnownKind) => {
     case "UInt64Value":
       return scalarSchema("bigint", true);
     case "BoolValue":
-      return "Schema.Boolean";
+      return S(".Boolean");
     case "StringValue":
-      return "Schema.String";
+      return S(".String");
     case "BytesValue":
-      return "Schema.Uint8Array";
+      return S(".Uint8Array");
     case "Any":
-      return "Schema.Struct({ typeUrl: Schema.String, value: Schema.String })";
+      return [S(".Struct({ typeUrl: "), S(".String, value: "), S(".String })")];
     case "Struct":
     case "Value":
     case "ListValue":
-      return "Schema.Unknown";
+      return S(".Unknown");
     case "FieldMask":
-      return "Schema.String";
+      return S(".String");
   }
 };

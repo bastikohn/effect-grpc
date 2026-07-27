@@ -55,9 +55,14 @@ pnpm exec buf generate
 Pass this under `opt:` in `buf.gen.yaml` (or as an `--effect-grpc_opt` flag when
 invoking `protoc` directly):
 
-| Option             | Values     | Default | Description                               |
-| ------------------ | ---------- | ------- | ----------------------------------------- |
-| `import_extension` | `js`, `ts` | `js`    | Extension used in generated import paths. |
+| Option             | Values             | Default | Description                               |
+| ------------------ | ------------------ | ------- | ----------------------------------------- |
+| `import_extension` | `none`, `js`, `ts` | `none`  | Extension used in generated import paths. |
+
+`import_extension` follows the standard protoplugin option, matching
+`protoc-gen-es`: the default emits extensionless relative imports. Node ESM
+consumers should pass `import_extension=js` (as the recipe above does) so
+generated imports resolve at runtime.
 
 Unknown options and unsupported values fail codegen with a clear error.
 

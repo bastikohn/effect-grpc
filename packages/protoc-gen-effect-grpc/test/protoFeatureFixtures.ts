@@ -114,7 +114,7 @@ export const generateProtoFeature = (
 };
 
 /** How many features {@link writeTypecheckSource} is expected to stage. */
-const typecheckFeatureCount = 13;
+const typecheckFeatureCount = 14;
 
 const staged: Array<string> = [];
 

@@ -5,28 +5,21 @@ import {
   type MessageModel,
   type MethodWellKnownKind,
 } from "./types.js";
-import {
-  wellKnownJsonSchemaName,
-  wellKnownKinds,
-  wrapperWellKnownKinds,
-  type WellKnownKind,
-} from "./wellKnown.js";
+import { wrapperWellKnownKinds, type WellKnownKind } from "./wellKnown.js";
 
 /**
- * One analysis of what a generated file actually uses — imports, helpers,
- * method partitions, well-known types, recursive edges — computed once from
- * the normalized model. Renderers consume these facts instead of re-scanning
- * the model, so absence conditions (where nothing must be emitted) are
- * decided in one place.
+ * One analysis of the content a generated file needs — helper emission,
+ * well-known types, recursive edges — computed once from the normalized
+ * model. Renderers consume these facts instead of re-scanning the model, so
+ * absence conditions (where nothing must be emitted) are decided in one
+ * place. Imports are not analyzed anywhere: emitters print protoplugin
+ * `ImportSymbol`s and protoplugin emits imports for what was printed.
  */
 export interface FileUsage {
-  readonly hasServices: boolean;
-  /** `Stream` appears in generated signatures only for non-unary methods. */
-  readonly usesStream: boolean;
   /** Some message has a field, so converters need `readField`/`compact`. */
   readonly readsFields: boolean;
   readonly usesGrpcEmpty: boolean;
-  /** A bytes conversion is emitted somewhere (needs `node:buffer`). */
+  /** A base64 bytes conversion helper is emitted somewhere. */
   readonly usesBase64Bytes: boolean;
   /** Well-known kinds used as method input/output types. */
   readonly wellKnownMethods: ReadonlySet<WellKnownKind>;
@@ -34,29 +27,16 @@ export interface FileUsage {
   readonly wellKnownUsed: ReadonlySet<WellKnownKind>;
   /** Wrapper kinds that need the boxed `{ value }` message encoding. */
   readonly boxedWrappers: ReadonlySet<WellKnownKind>;
-  /** `[importedName, alias]` pairs from `@bufbuild/protobuf/wkt`, sorted. */
-  readonly jsonWellKnownImports: ReadonlyArray<readonly [string, string]>;
-  /**
-   * Imported names whose bare `type` alias generated code references: enums
-   * used in a field position (`from*` converters cast with `as <Enum>`) and
-   * messages used as a method input/output (client/server signatures name the
-   * type directly). Every other position goes through the imported
-   * `Schema`/`from`/`to` symbols, so emitting the alias would leave an unused
-   * import behind.
-   */
-  readonly usedImportedTypes: ReadonlySet<string>;
   /** `A->B` edges that participate in a cycle and need `Schema.suspend`. */
   readonly recursiveEdges: ReadonlySet<string>;
 }
 
 export const analyzeFileUsage = (file: GeneratorFile): FileUsage => {
   const wellKnownMethods = new Set<WellKnownKind>();
-  const methodTypeNames = new Set<string>();
   let usesGrpcEmpty = false;
   for (const service of file.services) {
     for (const method of service.methods) {
       for (const type of [method.inputType, method.outputType]) {
-        methodTypeNames.add(type.name);
         if (type.wellKnown === "empty") usesGrpcEmpty = true;
         else if (type.wellKnown) wellKnownMethods.add(type.wellKnown);
       }
@@ -70,11 +50,9 @@ export const analyzeFileUsage = (file: GeneratorFile): FileUsage => {
     [...wrapperWellKnownKinds].filter((kind) => wellKnownMethods.has(kind)),
   );
   let usesBytesScalar = false;
-  const enumFieldTypeNames = new Set<string>();
   for (const message of file.messages) {
     for (const field of message.fields) {
       for (const { value, boxed } of fieldValueOccurrences(field)) {
-        if (value.kind === "enum") enumFieldTypeNames.add(value.enumName);
         if (value.kind === "well-known") {
           wellKnownFields.add(value.type);
           if (boxed && wrapperWellKnownKinds.has(value.type)) {
@@ -92,36 +70,17 @@ export const analyzeFileUsage = (file: GeneratorFile): FileUsage => {
     ...wellKnownFields,
     ...wellKnownMethods,
   ]);
-  const usesWellKnown = (kind: WellKnownKind) => wellKnownUsed.has(kind);
-
-  const jsonWellKnownImports = wellKnownKinds
-    .flatMap((kind) => {
-      const alias = usesWellKnown(kind)
-        ? wellKnownJsonSchemaName(kind)
-        : undefined;
-      return alias ? [[alias.replace(/^Protobuf/, ""), alias] as const] : [];
-    })
-    .sort(([left], [right]) => left.localeCompare(right));
 
   return {
-    hasServices: file.services.length > 0,
-    usesStream: file.services.some((service) =>
-      service.methods.some((method) => method.kind !== "unary"),
-    ),
     readsFields: file.messages.some((message) => message.fields.length > 0),
     usesGrpcEmpty,
     usesBase64Bytes:
-      usesBytesScalar || usesWellKnown("BytesValue") || usesWellKnown("Any"),
+      usesBytesScalar ||
+      wellKnownUsed.has("BytesValue") ||
+      wellKnownUsed.has("Any"),
     wellKnownMethods,
     wellKnownUsed,
     boxedWrappers,
-    jsonWellKnownImports,
-    usedImportedTypes: new Set(
-      file.imports.flatMap((imported) => [
-        ...imported.enums.filter((name) => enumFieldTypeNames.has(name)),
-        ...imported.messages.filter((name) => methodTypeNames.has(name)),
-      ]),
-    ),
     recursiveEdges: findRecursiveEdges(file.messages),
   };
 };
@@ -158,7 +117,7 @@ const fieldValueOccurrences = (
 const messageDependencies = (message: MessageModel) =>
   message.fields.flatMap((field) =>
     fieldValueOccurrences(field).flatMap(({ value }) =>
-      value.kind === "message" && value.source === "local"
+      value.kind === "message" && value.importedFrom === undefined
         ? [value.messageName]
         : [],
     ),

@@ -1,15 +1,21 @@
+import type { Printable } from "@bufbuild/protoplugin";
+
 import {
   serviceClientLayerName,
   serviceClientName,
   serviceClientServiceName,
 } from "./naming.js";
+import { exportDecl } from "./printing.js";
 import type { GeneratorFile, MethodModel, ServiceModel } from "./types.js";
 
-export const generateClient = (file: GeneratorFile) =>
-  file.services.flatMap((service) => [
-    `export type ${service.name}ClientError = GrpcStatusError.GrpcStatusError;`,
+export const generateClient = (file: GeneratorFile): ReadonlyArray<Printable> =>
+  file.services.flatMap((service): ReadonlyArray<Printable> => [
+    [
+      exportDecl("type", `${service.name}ClientError`),
+      " = GrpcStatusError.GrpcStatusError;",
+    ],
     "",
-    `export interface ${serviceClientServiceName(service.name)} {`,
+    [exportDecl("interface", serviceClientServiceName(service.name)), " {"],
     ...service.methods.map(
       (method) =>
         `  readonly ${method.localName}: ${clientMethodSignature(service, method)};`,
@@ -23,11 +29,17 @@ export const generateClient = (file: GeneratorFile) =>
     `  } satisfies ${serviceClientServiceName(service.name)};`,
     "});",
     "",
-    `export class ${serviceClientName(service.name)} extends Context.Service<${serviceClientName(service.name)}, ${serviceClientServiceName(service.name)}>()("${service.typeName}/${serviceClientName(service.name)}", {`,
+    [
+      exportDecl("class", serviceClientName(service.name)),
+      ` extends Context.Service<${serviceClientName(service.name)}, ${serviceClientServiceName(service.name)}>()("${service.typeName}/${serviceClientName(service.name)}", {`,
+    ],
     `  make: make${serviceClientName(service.name)},`,
     "}) {}",
     "",
-    `export const ${serviceClientLayerName(service.name)} = Layer.effect(${serviceClientName(service.name)}, ${serviceClientName(service.name)}.make);`,
+    [
+      exportDecl("const", serviceClientLayerName(service.name)),
+      ` = Layer.effect(${serviceClientName(service.name)}, ${serviceClientName(service.name)}.make);`,
+    ],
     "",
   ]);
 

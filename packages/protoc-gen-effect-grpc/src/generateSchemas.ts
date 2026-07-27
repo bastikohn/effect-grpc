@@ -39,21 +39,25 @@ export const generateSchemas = (
     : []),
   ...wellKnownMethodSchemas(usage),
   ...file.enums.flatMap(enumSchema),
-  ...file.messages.flatMap((message): ReadonlyArray<Printable> => [
-    [exportDecl("const", `${message.name}Schema`), " = ", S(".Struct({")],
-    ...message.fields.map((field): Printable => [
-      `  ${field.name}: `,
-      fieldSchema(field, message.name, usage.recursiveEdges),
-      ",",
-    ]),
-    "});",
-    [
-      exportDecl("type", message.name),
-      " = ",
-      S(`.Schema.Type<typeof ${message.name}Schema>;`),
+  ...file.messages.flatMap(
+    (message): ReadonlyArray<Printable> => [
+      [exportDecl("const", `${message.name}Schema`), " = ", S(".Struct({")],
+      ...message.fields.map(
+        (field): Printable => [
+          `  ${field.name}: `,
+          fieldSchema(field, message.name, usage.recursiveEdges),
+          ",",
+        ],
+      ),
+      "});",
+      [
+        exportDecl("type", message.name),
+        " = ",
+        S(`.Schema.Type<typeof ${message.name}Schema>;`),
+      ],
+      "",
     ],
-    "",
-  ]),
+  ),
 ];
 
 const wellKnownMethodSchemas = (usage: FileUsage): ReadonlyArray<Printable> =>
@@ -124,12 +128,14 @@ const fieldSchema = (
         S(".Union(["),
         joinPrintables(
           [
-            ...field.cases.map((oneofCase): Printable => [
-              S(".Struct({ case: "),
-              S(`.Literal("${oneofCase.name}"), value: `),
-              valueSchema(oneofCase.value, messageName, recursiveEdges),
-              " })",
-            ]),
+            ...field.cases.map(
+              (oneofCase): Printable => [
+                S(".Struct({ case: "),
+                S(`.Literal("${oneofCase.name}"), value: `),
+                valueSchema(oneofCase.value, messageName, recursiveEdges),
+                " })",
+              ],
+            ),
             [
               S(".Struct({ case: "),
               S(".Undefined, value: "),
@@ -181,7 +187,9 @@ const messageSchema = (
     ? recursiveEdges.has(`${currentMessageName}->${field.messageName}`)
       ? [
           S(".suspend((): "),
-          S(`.Codec<unknown, unknown, never, never> => ${field.messageName}Schema)`),
+          S(
+            `.Codec<unknown, unknown, never, never> => ${field.messageName}Schema)`,
+          ),
         ]
       : S(
           `.suspend((): typeof ${field.messageName}Schema => ${field.messageName}Schema)`,
@@ -241,11 +249,7 @@ const wellKnownSchema = (type: WellKnownKind): Printable => {
     case "BytesValue":
       return S(".Uint8Array");
     case "Any":
-      return [
-        S(".Struct({ typeUrl: "),
-        S(".String, value: "),
-        S(".String })"),
-      ];
+      return [S(".Struct({ typeUrl: "), S(".String, value: "), S(".String })")];
     case "Struct":
     case "Value":
     case "ListValue":

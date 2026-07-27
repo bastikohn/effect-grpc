@@ -44,49 +44,64 @@ export const generateRegistry = (
       ]
     : []),
   ...generateConverters(file, usage),
-  ...file.services.flatMap((service): ReadonlyArray<Printable> => [
-    [
-      exportDecl("const", serviceRegistryName(service.name)),
-      " = new Map<string, ",
-      sym.GrpcMethodRegistry,
-      ".GrpcMethodEntry>([",
+  ...file.services.flatMap(
+    (service): ReadonlyArray<Printable> => [
+      [
+        exportDecl("const", serviceRegistryName(service.name)),
+        " = new Map<string, ",
+        sym.GrpcMethodRegistry,
+        ".GrpcMethodEntry>([",
+      ],
+      ...service.methods.flatMap(
+        (method): ReadonlyArray<Printable> => [
+          "  [",
+          `    "${service.typeName}/${method.name}",`,
+          "    {",
+          `      kind: "${method.kind}",`,
+          `      tag: "${service.typeName}/${method.name}",`,
+          [
+            "      service: ",
+            sym.pbValue(file.protoFileName, service.name),
+            ",",
+          ],
+          `      localName: "${method.localName}",`,
+          [
+            "      payloadSchema: ",
+            methodValueRef(method.inputType, `${method.inputType.name}Schema`),
+            ",",
+          ],
+          [
+            "      successSchema: ",
+            methodValueRef(
+              method.outputType,
+              `${method.outputType.name}Schema`,
+            ),
+            ",",
+          ],
+          ["      toGrpcRequest: ", toRegistryConverter(method.inputType), ","],
+          [
+            "      fromGrpcRequest: ",
+            methodValueRef(method.inputType, `from${method.inputType.name}`),
+            ",",
+          ],
+          [
+            "      toGrpcResponse: ",
+            toRegistryConverter(method.outputType),
+            ",",
+          ],
+          [
+            "      fromGrpcResponse: ",
+            methodValueRef(method.outputType, `from${method.outputType.name}`),
+            ",",
+          ],
+          "    },",
+          "  ],",
+        ],
+      ),
+      "]);",
+      "",
     ],
-    ...service.methods.flatMap((method): ReadonlyArray<Printable> => [
-      "  [",
-      `    "${service.typeName}/${method.name}",`,
-      "    {",
-      `      kind: "${method.kind}",`,
-      `      tag: "${service.typeName}/${method.name}",`,
-      ["      service: ", sym.pbValue(file.protoFileName, service.name), ","],
-      `      localName: "${method.localName}",`,
-      [
-        "      payloadSchema: ",
-        methodValueRef(method.inputType, `${method.inputType.name}Schema`),
-        ",",
-      ],
-      [
-        "      successSchema: ",
-        methodValueRef(method.outputType, `${method.outputType.name}Schema`),
-        ",",
-      ],
-      ["      toGrpcRequest: ", toRegistryConverter(method.inputType), ","],
-      [
-        "      fromGrpcRequest: ",
-        methodValueRef(method.inputType, `from${method.inputType.name}`),
-        ",",
-      ],
-      ["      toGrpcResponse: ", toRegistryConverter(method.outputType), ","],
-      [
-        "      fromGrpcResponse: ",
-        methodValueRef(method.outputType, `from${method.outputType.name}`),
-        ",",
-      ],
-      "    },",
-      "  ],",
-    ]),
-    "]);",
-    "",
-  ]),
+  ),
 ];
 
 /** A name declared beside the method's type: local text or an import. */
@@ -140,50 +155,55 @@ const generateConverters = (
         ]),
     ...scalarConverters(usage),
     ...wellKnownConverters(usage),
-    ...messages.flatMap((message): ReadonlyArray<Printable> =>
-      message.fields.length === 0
-        ? [
-            [
-              exportDecl("const", `from${message.name}`),
-              " = (_message: unknown): unknown => ({});",
+    ...messages.flatMap(
+      (message): ReadonlyArray<Printable> =>
+        message.fields.length === 0
+          ? [
+              [
+                exportDecl("const", `from${message.name}`),
+                " = (_message: unknown): unknown => ({});",
+              ],
+              "",
+              [
+                exportDecl("const", `to${message.name}`),
+                " = (_value: unknown): Record<string, unknown> => ({});",
+              ],
+              "",
+            ]
+          : [
+              ...message.fields.flatMap((field) =>
+                field.kind === "oneof" ? oneofConverters(field) : [],
+              ),
+              [
+                exportDecl("const", `from${message.name}`),
+                " = (message: unknown): unknown => compact({",
+              ],
+              ...message.fields.map(
+                (field): Printable => [
+                  `  ${field.name}: `,
+                  fromField(field),
+                  ",",
+                ],
+              ),
+              "});",
+              "",
+              [
+                exportDecl("const", `to${message.name}`),
+                " = (value: unknown): Record<string, unknown> => {",
+              ],
+              "  const message = value as Record<string, unknown>;",
+              "  return compact({",
+              ...message.fields.map(
+                (field): Printable => [
+                  `    ${field.name}: `,
+                  toField(field),
+                  ",",
+                ],
+              ),
+              "  });",
+              "};",
+              "",
             ],
-            "",
-            [
-              exportDecl("const", `to${message.name}`),
-              " = (_value: unknown): Record<string, unknown> => ({});",
-            ],
-            "",
-          ]
-        : [
-            ...message.fields.flatMap((field) =>
-              field.kind === "oneof" ? oneofConverters(field) : [],
-            ),
-            [
-              exportDecl("const", `from${message.name}`),
-              " = (message: unknown): unknown => compact({",
-            ],
-            ...message.fields.map((field): Printable => [
-              `  ${field.name}: `,
-              fromField(field),
-              ",",
-            ]),
-            "});",
-            "",
-            [
-              exportDecl("const", `to${message.name}`),
-              " = (value: unknown): Record<string, unknown> => {",
-            ],
-            "  const message = value as Record<string, unknown>;",
-            "  return compact({",
-            ...message.fields.map((field): Printable => [
-              `    ${field.name}: `,
-              toField(field),
-              ",",
-            ]),
-            "  });",
-            "};",
-            "",
-          ],
     ),
   ];
 };
@@ -400,14 +420,16 @@ const oneofConverters = (
   // The unset case arrives as `undefined` from protobuf-es but as `null` from
   // the JSON codec; coalesce so both select the `undefined` branch.
   "  switch (oneof.case ?? undefined) {",
-  ...field.cases.flatMap((oneofCase): ReadonlyArray<Printable> => [
-    `    case "${oneofCase.name}":`,
-    [
-      `      return { case: "${oneofCase.name}", value: `,
-      fromValue("oneof.value", oneofCase.value),
-      " };",
+  ...field.cases.flatMap(
+    (oneofCase): ReadonlyArray<Printable> => [
+      `    case "${oneofCase.name}":`,
+      [
+        `      return { case: "${oneofCase.name}", value: `,
+        fromValue("oneof.value", oneofCase.value),
+        " };",
+      ],
     ],
-  ]),
+  ),
   "    case undefined:",
   // The JSON codec represents the unset `Schema.Undefined` case as `null`, so
   // emit `null` here for the value to decode (protobuf-es uses `undefined`).
@@ -422,14 +444,16 @@ const oneofConverters = (
   `  const message = oneof as { readonly case?: string; readonly value?: unknown };`,
   // See `from*Oneof`: the JSON codec encodes the unset case as `null`.
   "  switch (message.case ?? undefined) {",
-  ...field.cases.flatMap((oneofCase): ReadonlyArray<Printable> => [
-    `    case "${oneofCase.name}":`,
-    [
-      `      return { case: "${oneofCase.name}", value: `,
-      toValue("message.value", oneofCase.value, "boxed"),
-      " };",
+  ...field.cases.flatMap(
+    (oneofCase): ReadonlyArray<Printable> => [
+      `    case "${oneofCase.name}":`,
+      [
+        `      return { case: "${oneofCase.name}", value: `,
+        toValue("message.value", oneofCase.value, "boxed"),
+        " };",
+      ],
     ],
-  ]),
+  ),
   "    case undefined:",
   "      return { case: undefined };",
   "    default:",
@@ -449,7 +473,11 @@ const scalarConverters = (usage: FileUsage): ReadonlyArray<Printable> =>
         ["  ", sym.Buffer, `.from(value).toString("base64");`],
         "",
         `const to${bytesConverterName} = (value: unknown): Uint8Array =>`,
-        ["  Uint8Array.from(", sym.Buffer, `.from(value as string, "base64"));`],
+        [
+          "  Uint8Array.from(",
+          sym.Buffer,
+          `.from(value as string, "base64"));`,
+        ],
         "",
       ]
     : [];
@@ -615,7 +643,11 @@ const wrapperConverter = (
   const unwrapped = `\n    ${guard}\n      ? value\n      : ((value as { readonly value?: unknown }).value ?? ${defaultValue})\n  `;
   return [
     [
-      wellKnownConverterDecl(usage, type, `from${wellKnownConverterName(type)}`),
+      wellKnownConverterDecl(
+        usage,
+        type,
+        `from${wellKnownConverterName(type)}`,
+      ),
       " = (value: unknown) =>",
     ],
     ["  ", fromScalarValue(unwrapped, scalarField), ";"],

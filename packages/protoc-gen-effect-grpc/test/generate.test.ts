@@ -445,7 +445,9 @@ describe("streaming methods", () => {
     expect(content).toContain("GrpcServerProtocol.handlersEffect");
     // Generated code no longer touches Effect RPC on either side: the client
     // depends on the GrpcInvoker seam, the server on handlersEffect.
-    expect(content).toContain("const invoker = yield* GrpcInvoker.GrpcInvoker;");
+    expect(content).toContain(
+      "const invoker = yield* GrpcInvoker.GrpcInvoker;",
+    );
     expect(content).not.toContain("RpcClient");
     expect(content).not.toContain("GrpcClientProtocol");
   });

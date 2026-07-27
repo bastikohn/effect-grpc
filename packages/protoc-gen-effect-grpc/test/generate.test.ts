@@ -507,6 +507,9 @@ const fixtureRequest = (
               : [
                   field("id", 1, FieldDescriptorProto_Type.STRING),
                   field("name", 2, FieldDescriptorProto_Type.STRING),
+                  // A singular numeric scalar keeps `Schema.Number` and the
+                  // `as number` converter cast pinned in the buf-free tier.
+                  field("count", 3, FieldDescriptorProto_Type.INT32),
                 ],
           }),
         ],

@@ -5,25 +5,33 @@ import {
   serviceClientName,
   serviceClientServiceName,
 } from "./naming.js";
-import { exportDecl } from "./printing.js";
+import { exportDecl, methodTypeRef } from "./printing.js";
+import * as sym from "./symbols.js";
 import type { GeneratorFile, MethodModel, ServiceModel } from "./types.js";
 
 export const generateClient = (file: GeneratorFile): ReadonlyArray<Printable> =>
   file.services.flatMap((service): ReadonlyArray<Printable> => [
     [
       exportDecl("type", `${service.name}ClientError`),
-      " = GrpcStatusError.GrpcStatusError;",
+      " = ",
+      sym.GrpcStatusError,
+      ".GrpcStatusError;",
     ],
     "",
     [exportDecl("interface", serviceClientServiceName(service.name)), " {"],
-    ...service.methods.map(
-      (method) =>
-        `  readonly ${method.localName}: ${clientMethodSignature(service, method)};`,
-    ),
+    ...service.methods.map((method): Printable => [
+      `  readonly ${method.localName}: `,
+      clientMethodSignature(service, method),
+      ";",
+    ]),
     "}",
     "",
-    `const make${serviceClientName(service.name)} = Effect.gen(function* () {`,
-    "  const invoker = yield* GrpcInvoker.GrpcInvoker;",
+    [
+      `const make${serviceClientName(service.name)} = `,
+      sym.Effect,
+      ".gen(function* () {",
+    ],
+    ["  const invoker = yield* ", sym.GrpcInvoker, ".GrpcInvoker;"],
     "  return {",
     ...service.methods.map((method) => clientMethodImpl(service, method)),
     `  } satisfies ${serviceClientServiceName(service.name)};`,
@@ -31,14 +39,18 @@ export const generateClient = (file: GeneratorFile): ReadonlyArray<Printable> =>
     "",
     [
       exportDecl("class", serviceClientName(service.name)),
-      ` extends Context.Service<${serviceClientName(service.name)}, ${serviceClientServiceName(service.name)}>()("${service.typeName}/${serviceClientName(service.name)}", {`,
+      " extends ",
+      sym.Context,
+      `.Service<${serviceClientName(service.name)}, ${serviceClientServiceName(service.name)}>()("${service.typeName}/${serviceClientName(service.name)}", {`,
     ],
     `  make: make${serviceClientName(service.name)},`,
     "}) {}",
     "",
     [
       exportDecl("const", serviceClientLayerName(service.name)),
-      ` = Layer.effect(${serviceClientName(service.name)}, ${serviceClientName(service.name)}.make);`,
+      " = ",
+      sym.Layer,
+      `.effect(${serviceClientName(service.name)}, ${serviceClientName(service.name)}.make);`,
     ],
     "",
   ]);
@@ -46,17 +58,63 @@ export const generateClient = (file: GeneratorFile): ReadonlyArray<Printable> =>
 const clientMethodSignature = (
   service: ServiceModel,
   method: MethodModel,
-): string => {
+): Printable => {
   const clientError = `${service.name}ClientError`;
+  const input = methodTypeRef(method.inputType);
+  const output = methodTypeRef(method.outputType);
   switch (method.kind) {
     case "unary":
-      return `(request: ${method.inputType.name}, options?: CodegenSupport.GrpcCallOptions) => Effect.Effect<${method.outputType.name}, ${clientError}>`;
+      return [
+        "(request: ",
+        input,
+        ", options?: ",
+        sym.CodegenSupport,
+        ".GrpcCallOptions) => ",
+        sym.Effect,
+        ".Effect<",
+        output,
+        `, ${clientError}>`,
+      ];
     case "server-streaming":
-      return `(request: ${method.inputType.name}, options?: CodegenSupport.GrpcCallOptions) => Stream.Stream<${method.outputType.name}, ${clientError}>`;
+      return [
+        "(request: ",
+        input,
+        ", options?: ",
+        sym.CodegenSupport,
+        ".GrpcCallOptions) => ",
+        sym.Stream,
+        ".Stream<",
+        output,
+        `, ${clientError}>`,
+      ];
     case "client-streaming":
-      return `<E>(requests: Stream.Stream<${method.inputType.name}, E>, options?: CodegenSupport.GrpcCallOptions) => Effect.Effect<${method.outputType.name}, ${clientError} | E>`;
+      return [
+        "<E>(requests: ",
+        sym.Stream,
+        ".Stream<",
+        input,
+        ", E>, options?: ",
+        sym.CodegenSupport,
+        ".GrpcCallOptions) => ",
+        sym.Effect,
+        ".Effect<",
+        output,
+        `, ${clientError} | E>`,
+      ];
     case "bidi-streaming":
-      return `<E>(requests: Stream.Stream<${method.inputType.name}, E>, options?: CodegenSupport.GrpcCallOptions) => Stream.Stream<${method.outputType.name}, ${clientError} | E>`;
+      return [
+        "<E>(requests: ",
+        sym.Stream,
+        ".Stream<",
+        input,
+        ", E>, options?: ",
+        sym.CodegenSupport,
+        ".GrpcCallOptions) => ",
+        sym.Stream,
+        ".Stream<",
+        output,
+        `, ${clientError} | E>`,
+      ];
   }
 };
 

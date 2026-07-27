@@ -37,10 +37,6 @@ export const plugin = createEcmaScriptPlugin({
   name: "protoc-gen-effect-grpc",
   version: "0.1.0-alpha.0",
   generateTs(schema) {
-    // protoplugin defaults `import_extension` to "none", but generated ESM
-    // imports need an extension, so anything but an explicit "ts" emits ".js".
-    const importExtension =
-      schema.options.importExtension === "ts" ? "ts" : "js";
     for (const file of schema.files) {
       const model = modelFromFile(file);
       if (
@@ -53,7 +49,7 @@ export const plugin = createEcmaScriptPlugin({
       const generated = schema.generateFile(
         effectFileName(`${file.name}.proto`),
       );
-      for (const entry of generateFile(model, importExtension)) {
+      for (const entry of generateFile(model)) {
         generated.print(entry);
       }
     }

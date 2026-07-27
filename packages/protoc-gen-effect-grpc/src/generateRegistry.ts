@@ -1,7 +1,8 @@
 import type { FileUsage } from "./fileUsage.js";
-import { isWrapperWellKnownKind, wellKnownKinds } from "./fileUsage.js";
+import { isWrapperWellKnownKind } from "./fileUsage.js";
 import {
   grpcEmptyName,
+  grpcGeneratedName,
   grpcWellKnownName,
   serviceRegistryName,
 } from "./naming.js";
@@ -9,6 +10,7 @@ import type {
   FieldModel,
   FieldValueModel,
   GeneratorFile,
+  MethodTypeModel,
   ScalarKind,
   WellKnownKind,
 } from "./types.js";
@@ -17,9 +19,9 @@ import { wellKnownProtobufName } from "./wellKnown.js";
 export const generateRegistry = (file: GeneratorFile, usage: FileUsage) => [
   ...(usage.usesGrpcEmpty
     ? [
-        `export const from${emptyConverterName} = (_message: unknown): ${grpcEmptyName} => ({});`,
+        `export const from${grpcEmptyName} = (_message: unknown): ${grpcEmptyName} => ({});`,
         "",
-        `export const to${emptyConverterName} = (_value: unknown) => ({});`,
+        `export const to${grpcEmptyName} = (_value: unknown) => ({});`,
         "",
       ]
     : []),
@@ -34,12 +36,12 @@ export const generateRegistry = (file: GeneratorFile, usage: FileUsage) => [
       `      tag: "${service.typeName}/${method.name}",`,
       `      service: ${service.name},`,
       `      localName: "${method.localName}",`,
-      `      payloadSchema: ${method.inputType}Schema,`,
-      `      successSchema: ${method.outputType}Schema,`,
+      `      payloadSchema: ${method.inputType.name}Schema,`,
+      `      successSchema: ${method.outputType.name}Schema,`,
       `      toGrpcRequest: ${toRegistryConverter(method.inputType)},`,
-      `      fromGrpcRequest: from${methodConverterName(method.inputType)},`,
+      `      fromGrpcRequest: from${method.inputType.name},`,
       `      toGrpcResponse: ${toRegistryConverter(method.outputType)},`,
-      `      fromGrpcResponse: from${methodConverterName(method.outputType)},`,
+      `      fromGrpcResponse: from${method.outputType.name},`,
       "    },",
       "  ],",
     ]),
@@ -393,12 +395,10 @@ const wellKnownConverters = (usage: FileUsage) => {
 
 // A wrapper used as a method type stays the `{ value }` message on the wire, so
 // the registry needs the boxing converter rather than the bare one.
-const toRegistryConverter = (name: string) => {
-  const kind = wellKnownKindByGrpcName(name);
-  return kind && isWrapperWellKnownKind(kind)
-    ? `to${wellKnownConverterName(kind)}Message`
-    : `to${methodConverterName(name)}`;
-};
+const toRegistryConverter = (type: MethodTypeModel) =>
+  isWrapperWellKnownKind(type.wellKnown)
+    ? `to${type.name}Message`
+    : `to${type.name}`;
 
 const wrapperConverter = (
   usage: FileUsage,
@@ -477,40 +477,17 @@ const wellKnownJsonSchema = (type: WellKnownKind) => {
   }
 };
 
-// Every converter the generator introduces itself — base64, oneof, well-known,
-// Empty — is named under a single `$` namespace. `$` is legal in TypeScript
-// identifiers but never in protobuf ones, so no `from<MessageName>` converter
-// can reach these names, whatever the `.proto` calls its messages. Without it a
-// `message Bytes`, `message Foo_barOneof`, or `message GrpcGoogleProtobufValue`
-// declared its converter twice and the file did not compile. Well-known
-// converters are still *exported* under this name when the type is a method
-// input/output, so the registry can reference them without a separate alias.
-const internalConverterName = (name: string) => `Grpc$${name}`;
-
-const bytesConverterName = internalConverterName("Bytes");
-
-const emptyConverterName = internalConverterName("GoogleProtobufEmpty");
+const bytesConverterName = grpcGeneratedName("Bytes");
 
 const oneofConverterName = (
   field: Extract<FieldModel, { readonly kind: "oneof" }>,
-) => internalConverterName(`${field.converterName}Oneof`);
+) => grpcGeneratedName(`${field.converterName}Oneof`);
 
+// A well-known method type's converters share the name of its schema and type
+// (`Grpc$GoogleProtobufTimestamp`), so the registry needs no lookup at all: it
+// reads `from<name>`/`to<name>` off the method model like any other type.
 const wellKnownConverterName = (type: WellKnownKind) =>
-  internalConverterName(`GoogleProtobuf${wellKnownProtobufName(type)}`);
-
-// Method input/output types carry their schema-layer name (a message name, or
-// `GrpcGoogleProtobufTimestamp` for a generated well-known); only the latter
-// converts under the `$` namespace.
-const methodConverterName = (typeName: string) => {
-  if (typeName === grpcEmptyName) return emptyConverterName;
-  const kind = wellKnownKindByGrpcName(typeName);
-  return kind ? wellKnownConverterName(kind) : typeName;
-};
-
-const wellKnownKindByGrpcName = (name: string) =>
-  wellKnownKinds.find(
-    (type) => grpcWellKnownName(wellKnownProtobufName(type)) === name,
-  );
+  grpcWellKnownName(wellKnownProtobufName(type));
 
 const wellKnownConverterDecl = (usage: FileUsage, type: WellKnownKind) =>
   usage.wellKnownMethods.has(type) ? "export const" : "const";

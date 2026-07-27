@@ -33,6 +33,7 @@ import type {
   MapKeyModel,
   MessageModel,
   MethodModel,
+  MethodTypeModel,
   OneofCaseModel,
   ServiceModel,
 } from "./types.js";
@@ -422,17 +423,25 @@ const isUnsignedScalar = (scalar: DescField["scalar"]) =>
   scalar === ScalarType.FIXED64 ||
   scalar === ScalarType.UINT32;
 
-const methodMessageName = (
+// Well-known identity comes from the descriptor's `typeName`, never from the
+// generated name: `GrpcGoogleProtobufTimestamp` is a name any `.proto` may
+// declare, and only `google.protobuf.Timestamp` is the well-known.
+const methodTypeModel = (
   service: DescService,
   method: DescMethod,
   message: DescMessage,
-) => {
+): MethodTypeModel => {
   switch (message.typeName) {
     case "google.protobuf.Empty":
-      return grpcEmptyName;
+      return { name: grpcEmptyName, wellKnown: "empty" };
   }
   const kind = wellKnownKind(message.typeName);
-  if (kind) return grpcWellKnownName(wellKnownProtobufName(kind));
+  if (kind) {
+    return {
+      name: grpcWellKnownName(wellKnownProtobufName(kind)),
+      wellKnown: kind,
+    };
+  }
   if (isWellKnownType(message)) {
     throw new Error(
       [
@@ -442,7 +451,7 @@ const methodMessageName = (
       ].join("\n"),
     );
   }
-  return declName(message);
+  return { name: declName(message) };
 };
 
 const serviceModel = (
@@ -459,8 +468,8 @@ const serviceModel = (
         name: method.name,
         localName: method.localName,
         kind,
-        inputType: methodMessageName(service, method, method.input),
-        outputType: methodMessageName(service, method, method.output),
+        inputType: methodTypeModel(service, method, method.input),
+        outputType: methodTypeModel(service, method, method.output),
       },
     ];
   }),

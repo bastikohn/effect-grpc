@@ -38,13 +38,13 @@ const clientMethodSignature = (
   const clientError = `${service.name}ClientError`;
   switch (method.kind) {
     case "unary":
-      return `(request: ${method.inputType}, options?: CodegenSupport.GrpcCallOptions) => Effect.Effect<${method.outputType}, ${clientError}>`;
+      return `(request: ${method.inputType.name}, options?: CodegenSupport.GrpcCallOptions) => Effect.Effect<${method.outputType.name}, ${clientError}>`;
     case "server-streaming":
-      return `(request: ${method.inputType}, options?: CodegenSupport.GrpcCallOptions) => Stream.Stream<${method.outputType}, ${clientError}>`;
+      return `(request: ${method.inputType.name}, options?: CodegenSupport.GrpcCallOptions) => Stream.Stream<${method.outputType.name}, ${clientError}>`;
     case "client-streaming":
-      return `<E>(requests: Stream.Stream<${method.inputType}, E>, options?: CodegenSupport.GrpcCallOptions) => Effect.Effect<${method.outputType}, ${clientError} | E>`;
+      return `<E>(requests: Stream.Stream<${method.inputType.name}, E>, options?: CodegenSupport.GrpcCallOptions) => Effect.Effect<${method.outputType.name}, ${clientError} | E>`;
     case "bidi-streaming":
-      return `<E>(requests: Stream.Stream<${method.inputType}, E>, options?: CodegenSupport.GrpcCallOptions) => Stream.Stream<${method.outputType}, ${clientError} | E>`;
+      return `<E>(requests: Stream.Stream<${method.inputType.name}, E>, options?: CodegenSupport.GrpcCallOptions) => Stream.Stream<${method.outputType.name}, ${clientError} | E>`;
   }
 };
 

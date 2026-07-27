@@ -1,12 +1,12 @@
-import { grpcEmptyName, grpcWellKnownName } from "./naming.js";
 import {
   type FieldModel,
   type FieldValueModel,
   type GeneratorFile,
   type MessageModel,
+  type MethodWellKnownKind,
   type WellKnownKind,
 } from "./types.js";
-import { wellKnownJsonSchemaName, wellKnownProtobufName } from "./wellKnown.js";
+import { wellKnownJsonSchemaName } from "./wellKnown.js";
 
 /**
  * One analysis of what a generated file actually uses — imports, helpers,
@@ -87,11 +87,10 @@ export const analyzeFileUsage = (file: GeneratorFile): FileUsage => {
   let usesGrpcEmpty = false;
   for (const service of file.services) {
     for (const method of service.methods) {
-      for (const typeName of [method.inputType, method.outputType]) {
-        methodTypeNames.add(typeName);
-        if (typeName === grpcEmptyName) usesGrpcEmpty = true;
-        const kind = kindByMethodTypeName.get(typeName);
-        if (kind) wellKnownMethods.add(kind);
+      for (const type of [method.inputType, method.outputType]) {
+        methodTypeNames.add(type.name);
+        if (type.wellKnown === "empty") usesGrpcEmpty = true;
+        else if (type.wellKnown) wellKnownMethods.add(type.wellKnown);
       }
     }
   }
@@ -161,17 +160,12 @@ export const analyzeFileUsage = (file: GeneratorFile): FileUsage => {
   };
 };
 
-export const isWrapperWellKnownKind = (type: WellKnownKind): boolean =>
+export const isWrapperWellKnownKind = (
+  type: MethodWellKnownKind | undefined,
+): boolean =>
   wrapperWellKnownKinds.includes(
     type as (typeof wrapperWellKnownKinds)[number],
   );
-
-const kindByMethodTypeName = new Map<string, WellKnownKind>(
-  wellKnownKinds.map((kind) => [
-    grpcWellKnownName(wellKnownProtobufName(kind)),
-    kind,
-  ]),
-);
 
 /** Every value position a field contributes, with its wrapper-boxing context. */
 const fieldValueOccurrences = (

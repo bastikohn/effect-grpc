@@ -151,11 +151,11 @@ describe("proto feature fixtures", () => {
         'import { Duration } from "effect";',
         'import { WellKnownValuesSchema as WellKnownValuesPbSchema } from "./well_known_types_pb.js";',
         'import { create } from "@bufbuild/protobuf";',
-        'import { WellKnownTypeFeatureGrpcRegistry, type GrpcGoogleProtobufBoolValue, type GrpcGoogleProtobufDuration, type GrpcGoogleProtobufTimestamp, type WellKnownValues } from "./well_known_types_effect_grpc.js";',
+        'import { WellKnownTypeFeatureGrpcRegistry, type Grpc$GoogleProtobufBoolValue, type Grpc$GoogleProtobufDuration, type Grpc$GoogleProtobufTimestamp, type WellKnownValues } from "./well_known_types_effect_grpc.js";',
         "const value: WellKnownValues = { createdAt: new Date(0), timeout: Duration.seconds(1), enabled: true };",
-        "const timestamp: GrpcGoogleProtobufTimestamp = new Date(0);",
-        "const duration: GrpcGoogleProtobufDuration = Duration.seconds(1);",
-        "const boolValue: GrpcGoogleProtobufBoolValue = true;",
+        "const timestamp: Grpc$GoogleProtobufTimestamp = new Date(0);",
+        "const duration: Grpc$GoogleProtobufDuration = Duration.seconds(1);",
+        "const boolValue: Grpc$GoogleProtobufBoolValue = true;",
         'const entry = WellKnownTypeFeatureGrpcRegistry.get("features.v1.WellKnownTypeFeature/Echo");',
         'if (!entry) throw new Error("missing registry entry");',
         "create(WellKnownValuesPbSchema, entry.toGrpcRequest(value));",
@@ -309,19 +309,28 @@ describe("proto feature fixtures", () => {
         "",
       ].join("\n"),
     );
-    // `Bytes`, `Choice_pickOneof` and `GrpcGoogleProtobufTimestamp` are legal
-    // proto names that shadow the converters the generator introduces itself
-    // unless those stay namespaced; only a typecheck catches the duplicate
-    // declarations this used to emit.
+    // Every message in this fixture is a legal proto name shadowing something
+    // the generator introduces itself: as a field it collided with a converter,
+    // and as a method input/output it was read back as the well-known it is
+    // named after, which declared its schema and type a second time. Only a
+    // typecheck sees those duplicate declarations.
     typecheckProtoFeature(
       generateProtoFeature("bytes_collision"),
       [
-        'import { BytesSchema as BytesPbSchema } from "./bytes_collision_pb.js";',
+        "import {",
+        "  BytesSchema as BytesPbSchema,",
+        "  GrpcGoogleProtobufEmptySchema as ShadowedEmptyPbSchema,",
+        "  GrpcGoogleProtobufTimestampSchema as ShadowedTimestampPbSchema,",
+        '} from "./bytes_collision_pb.js";',
         'import { create } from "@bufbuild/protobuf";',
         "import {",
         "  BytesCollisionFeatureGrpcRegistry,",
         "  type Bytes,",
         "  type Choice,",
+        "  type Grpc$GoogleProtobufTimestamp,",
+        "  type GrpcGoogleProtobufBoolValue,",
+        "  type GrpcGoogleProtobufEmpty,",
+        "  type GrpcGoogleProtobufTimestamp,",
         "  type Shadow,",
         '} from "./bytes_collision_effect_grpc.js";',
         "const value: Bytes = { data: new Uint8Array([1, 2]) };",
@@ -329,6 +338,11 @@ describe("proto feature fixtures", () => {
         // The message shadowing the well-known name keeps its own converter;
         // its `at` field routes through the namespaced Timestamp one.
         "const shadow: Shadow = { shadowed: { at: new Date(0) } };",
+        "const shadowedTimestamp: GrpcGoogleProtobufTimestamp = { at: new Date(0) };",
+        "const shadowedBoolValue: GrpcGoogleProtobufBoolValue = { enabled: true };",
+        'const shadowedEmpty: GrpcGoogleProtobufEmpty = { label: "b" };',
+        // The well-known the messages above are named after, in the same file.
+        "const timestamp: Grpc$GoogleProtobufTimestamp = new Date(0);",
         'const entry = BytesCollisionFeatureGrpcRegistry.get("features.v1.BytesCollisionFeature/Echo");',
         'if (!entry) throw new Error("missing registry entry");',
         "create(BytesPbSchema, entry.toGrpcRequest(value));",
@@ -338,6 +352,18 @@ describe("proto feature fixtures", () => {
         'const shadowEntry = BytesCollisionFeatureGrpcRegistry.get("features.v1.BytesCollisionFeature/EchoShadow");',
         'if (!shadowEntry) throw new Error("missing shadow registry entry");',
         "shadowEntry.toGrpcRequest(shadow);",
+        'const shadowedTimestampEntry = BytesCollisionFeatureGrpcRegistry.get("features.v1.BytesCollisionFeature/EchoShadowedTimestamp");',
+        'if (!shadowedTimestampEntry) throw new Error("missing shadowed timestamp registry entry");',
+        "create(ShadowedTimestampPbSchema, shadowedTimestampEntry.toGrpcRequest(shadowedTimestamp));",
+        'const shadowedBoolValueEntry = BytesCollisionFeatureGrpcRegistry.get("features.v1.BytesCollisionFeature/EchoShadowedBoolValue");',
+        'if (!shadowedBoolValueEntry) throw new Error("missing shadowed bool value registry entry");',
+        "shadowedBoolValueEntry.toGrpcRequest(shadowedBoolValue);",
+        'const shadowedEmptyEntry = BytesCollisionFeatureGrpcRegistry.get("features.v1.BytesCollisionFeature/EchoShadowedEmpty");',
+        'if (!shadowedEmptyEntry) throw new Error("missing shadowed empty registry entry");',
+        "create(ShadowedEmptyPbSchema, shadowedEmptyEntry.toGrpcRequest(shadowedEmpty));",
+        'const timestampEntry = BytesCollisionFeatureGrpcRegistry.get("features.v1.BytesCollisionFeature/EchoTimestamp");',
+        'if (!timestampEntry) throw new Error("missing timestamp registry entry");',
+        "timestampEntry.toGrpcRequest(timestamp);",
         "",
       ].join("\n"),
     );
@@ -779,6 +805,46 @@ describe("proto feature fixtures", () => {
     const user = { id: "1", state: 1 };
     expect(entry.fromGrpcRequest(user)).toEqual(user);
     expect(entry.toGrpcRequest(user)).toEqual(user);
+  });
+
+  // Not a regression guard — pre-fix the duplicate declarations break the
+  // import before a converter runs. It pins the routing itself: a method type
+  // named after a well-known must still convert as the message it is.
+  it("keeps messages named after a well-known on their own converters", async () => {
+    const feature = generateProtoFeature("bytes_collision");
+    const entryFor = async (method: string) =>
+      (
+        await registryEntry(
+          feature,
+          "BytesCollisionFeatureGrpcRegistry",
+          `features.v1.BytesCollisionFeature/${method}`,
+        )
+      ).entry;
+
+    // The wrapper boxing converter would have made this `{ value: true }`, the
+    // Empty converter `{}` — neither shape a typecheck can rule out.
+    expect(
+      (await entryFor("EchoShadowedBoolValue")).toGrpcRequest({
+        enabled: true,
+      }),
+    ).toEqual({ enabled: true });
+    expect(
+      (await entryFor("EchoShadowedEmpty")).toGrpcRequest({ label: "b" }),
+    ).toEqual({ label: "b" });
+
+    // The shadow's `at` field and the well-known it is named after are the
+    // same real Timestamp, converted the same way from either direction.
+    expect(
+      (await entryFor("EchoShadowedTimestamp")).fromGrpcRequest({
+        at: { seconds: 1n, nanos: 0 },
+      }),
+    ).toEqual({ at: "1970-01-01T00:00:01.000Z" });
+    expect(
+      (await entryFor("EchoTimestamp")).fromGrpcRequest({
+        seconds: 1n,
+        nanos: 0,
+      }),
+    ).toBe("1970-01-01T00:00:01.000Z");
   });
 
   it("converts optional scalar and enum fields", async () => {

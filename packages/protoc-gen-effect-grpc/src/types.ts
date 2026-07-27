@@ -131,6 +131,27 @@ export interface MethodModel {
     | "server-streaming"
     | "client-streaming"
     | "bidi-streaming";
-  readonly inputType: string;
-  readonly outputType: string;
+  readonly inputType: MethodTypeModel;
+  readonly outputType: MethodTypeModel;
 }
+
+/**
+ * A method's input or output type. `name` is the identifier everything
+ * generated for it derives from — `<name>Schema`, the exported type, and the
+ * `from<name>`/`to<name>` converters — while `wellKnown` carries the identity
+ * the *descriptor* declared. The two are independent on purpose: a message
+ * named `GrpcGoogleProtobufTimestamp` is a plain user message, and reading its
+ * generated name back as a well-known made the generator emit that well-known's
+ * schema and convert the message through the wrong converter.
+ */
+export interface MethodTypeModel {
+  readonly name: string;
+  readonly wellKnown?: MethodWellKnownKind;
+}
+
+/**
+ * `google.protobuf.Empty` is a well-known method type but not a well-known
+ * *field* type — it has no schema of its own to nest — so it stands apart from
+ * {@link WellKnownKind}.
+ */
+export type MethodWellKnownKind = WellKnownKind | "empty";

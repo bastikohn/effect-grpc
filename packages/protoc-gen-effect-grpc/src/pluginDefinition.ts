@@ -39,16 +39,13 @@ export const plugin = createEcmaScriptPlugin({
   generateTs(schema) {
     for (const file of schema.files) {
       const model = modelFromFile(file);
-      if (
-        model.enums.length === 0 &&
-        model.messages.length === 0 &&
-        model.services.length === 0
-      ) {
-        continue;
-      }
       const generated = schema.generateFile(
         effectFileName(`${file.name}.proto`),
       );
+      generated.preamble(file);
+      // A proto file with nothing to generate emits no output: protoplugin
+      // drops files whose printed content is empty (a preamble alone does not
+      // count), so no explicit guard is needed here.
       for (const entry of generateFile(model)) {
         generated.print(entry);
       }

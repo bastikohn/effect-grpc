@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package features.v1;
+
+import "same_name_common.proto";
+
+service SameNameFeature {
+  rpc Echo(Widget) returns (Widget);
+  rpc EchoCommon(features.common.v1.Widget) returns (features.common.v1.Widget);
+}
+
+// Generates the same identifier as the imported features.common.v1.Widget;
+// protoplugin aliases the imported names (`WidgetSchema$1`, `Widget$1`, ...).
+message Widget {
+  string id = 1;
+  features.common.v1.Widget parent = 2;
+}

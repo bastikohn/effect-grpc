@@ -1,3 +1,5 @@
+import type { Printable } from "@bufbuild/protoplugin";
+
 import type { FileUsage } from "./fileUsage.js";
 import { isWrapperWellKnownKind } from "./fileUsage.js";
 import {
@@ -6,6 +8,7 @@ import {
   grpcWellKnownName,
   serviceRegistryName,
 } from "./naming.js";
+import { exportDecl } from "./printing.js";
 import type {
   FieldModel,
   FieldValueModel,
@@ -19,18 +22,30 @@ import {
   type WellKnownKind,
 } from "./wellKnown.js";
 
-export const generateRegistry = (file: GeneratorFile, usage: FileUsage) => [
+export const generateRegistry = (
+  file: GeneratorFile,
+  usage: FileUsage,
+): ReadonlyArray<Printable> => [
   ...(usage.usesGrpcEmpty
     ? [
-        `export const from${grpcEmptyName} = (_message: unknown): ${grpcEmptyName} => ({});`,
+        [
+          exportDecl("const", `from${grpcEmptyName}`),
+          ` = (_message: unknown): ${grpcEmptyName} => ({});`,
+        ],
         "",
-        `export const to${grpcEmptyName} = (_value: unknown) => ({});`,
+        [
+          exportDecl("const", `to${grpcEmptyName}`),
+          " = (_value: unknown) => ({});",
+        ],
         "",
       ]
     : []),
   ...generateConverters(file, usage),
-  ...file.services.flatMap((service) => [
-    `export const ${serviceRegistryName(service.name)} = new Map<string, GrpcMethodRegistry.GrpcMethodEntry>([`,
+  ...file.services.flatMap((service): ReadonlyArray<Printable> => [
+    [
+      exportDecl("const", serviceRegistryName(service.name)),
+      " = new Map<string, GrpcMethodRegistry.GrpcMethodEntry>([",
+    ],
     ...service.methods.flatMap((method) => [
       "  [",
       `    "${service.typeName}/${method.name}",`,
@@ -53,7 +68,10 @@ export const generateRegistry = (file: GeneratorFile, usage: FileUsage) => [
   ]),
 ];
 
-const generateConverters = (file: GeneratorFile, usage: FileUsage) => {
+const generateConverters = (
+  file: GeneratorFile,
+  usage: FileUsage,
+): ReadonlyArray<Printable> => {
   const messages = file.messages;
   return [
     ...(!usage.readsFields
@@ -74,25 +92,37 @@ const generateConverters = (file: GeneratorFile, usage: FileUsage) => {
         ]),
     ...scalarConverters(usage),
     ...wellKnownConverters(usage),
-    ...messages.flatMap((message) =>
+    ...messages.flatMap((message): ReadonlyArray<Printable> =>
       message.fields.length === 0
         ? [
-            `export const from${message.name} = (_message: unknown): unknown => ({});`,
+            [
+              exportDecl("const", `from${message.name}`),
+              " = (_message: unknown): unknown => ({});",
+            ],
             "",
-            `export const to${message.name} = (_value: unknown): Record<string, unknown> => ({});`,
+            [
+              exportDecl("const", `to${message.name}`),
+              " = (_value: unknown): Record<string, unknown> => ({});",
+            ],
             "",
           ]
         : [
             ...message.fields.flatMap((field) =>
               field.kind === "oneof" ? oneofConverters(field) : [],
             ),
-            `export const from${message.name} = (message: unknown): unknown => compact({`,
+            [
+              exportDecl("const", `from${message.name}`),
+              " = (message: unknown): unknown => compact({",
+            ],
             ...message.fields.map(
               (field) => `  ${field.name}: ${fromField(field)},`,
             ),
             "});",
             "",
-            `export const to${message.name} = (value: unknown): Record<string, unknown> => {`,
+            [
+              exportDecl("const", `to${message.name}`),
+              " = (value: unknown): Record<string, unknown> => {",
+            ],
             "  const message = value as Record<string, unknown>;",
             "  return compact({",
             ...message.fields.map(
@@ -306,18 +336,32 @@ const scalarConverters = (usage: FileUsage) =>
       ]
     : [];
 
-const wellKnownConverters = (usage: FileUsage) => {
+const wellKnownConverters = (usage: FileUsage): ReadonlyArray<Printable> => {
   return [
     ...(usage.wellKnownUsed.has("Timestamp")
       ? [
-          `${wellKnownConverterDecl(usage, "Timestamp")} from${wellKnownConverterName("Timestamp")} = (value: unknown): string => {`,
+          [
+            wellKnownConverterDecl(
+              usage,
+              "Timestamp",
+              `from${wellKnownConverterName("Timestamp")}`,
+            ),
+            " = (value: unknown): string => {",
+          ],
           "  const message = value as { readonly seconds?: bigint | number; readonly nanos?: number };",
           "  const seconds = Number(message.seconds ?? 0);",
           "  const nanos = message.nanos ?? 0;",
           "  return new Date(seconds * 1000 + Math.trunc(nanos / 1_000_000)).toISOString();",
           "};",
           "",
-          `${wellKnownConverterDecl(usage, "Timestamp")} to${wellKnownConverterName("Timestamp")} = (value: unknown) => {`,
+          [
+            wellKnownConverterDecl(
+              usage,
+              "Timestamp",
+              `to${wellKnownConverterName("Timestamp")}`,
+            ),
+            " = (value: unknown) => {",
+          ],
           "  const millis = new Date(value as string).getTime();",
           "  const seconds = Math.floor(millis / 1000);",
           "  return {",
@@ -330,13 +374,27 @@ const wellKnownConverters = (usage: FileUsage) => {
       : []),
     ...(usage.wellKnownUsed.has("Duration")
       ? [
-          `${wellKnownConverterDecl(usage, "Duration")} from${wellKnownConverterName("Duration")} = (value: unknown) => {`,
+          [
+            wellKnownConverterDecl(
+              usage,
+              "Duration",
+              `from${wellKnownConverterName("Duration")}`,
+            ),
+            " = (value: unknown) => {",
+          ],
           "  const message = value as { readonly seconds?: bigint | number; readonly nanos?: number };",
           "  const nanos = BigInt(message.seconds ?? 0) * 1_000_000_000n + BigInt(message.nanos ?? 0);",
           `  return nanos % 1_000_000n === 0n ? { _tag: "Millis", value: Number(nanos / 1_000_000n) } : { _tag: "Nanos", value: String(nanos) };`,
           "};",
           "",
-          `${wellKnownConverterDecl(usage, "Duration")} to${wellKnownConverterName("Duration")} = (value: unknown) => {`,
+          [
+            wellKnownConverterDecl(
+              usage,
+              "Duration",
+              `to${wellKnownConverterName("Duration")}`,
+            ),
+            " = (value: unknown) => {",
+          ],
           "  const duration = value as { readonly _tag?: string; readonly value?: unknown };",
           '  const nanos = duration._tag === "Millis"',
           "    ? BigInt(duration.value as number) * 1_000_000n",
@@ -368,7 +426,14 @@ const wellKnownConverters = (usage: FileUsage) => {
     ),
     ...(usage.wellKnownUsed.has("Any")
       ? [
-          `${wellKnownConverterDecl(usage, "Any")} from${wellKnownConverterName("Any")} = (value: unknown) => {`,
+          [
+            wellKnownConverterDecl(
+              usage,
+              "Any",
+              `from${wellKnownConverterName("Any")}`,
+            ),
+            " = (value: unknown) => {",
+          ],
           "  const message = value as { readonly typeUrl?: string; readonly value?: Uint8Array };",
           "  return {",
           `    typeUrl: message.typeUrl ?? "",`,
@@ -376,7 +441,14 @@ const wellKnownConverters = (usage: FileUsage) => {
           "  };",
           "};",
           "",
-          `${wellKnownConverterDecl(usage, "Any")} to${wellKnownConverterName("Any")} = (value: unknown) => {`,
+          [
+            wellKnownConverterDecl(
+              usage,
+              "Any",
+              `to${wellKnownConverterName("Any")}`,
+            ),
+            " = (value: unknown) => {",
+          ],
           "  const message = value as { readonly typeUrl?: string; readonly value?: string };",
           "  return {",
           `    typeUrl: message.typeUrl ?? "",`,
@@ -406,7 +478,7 @@ const wrapperConverter = (
   scalar: ScalarKind,
   unsigned: boolean,
   defaultValue: string,
-) => {
+): ReadonlyArray<Printable> => {
   if (!usage.wellKnownUsed.has(type)) return [];
   // A wrapper value can reach the converter either already unwrapped (a bare
   // scalar, e.g. when nested through another converter) or as the `{ value }`
@@ -424,7 +496,10 @@ const wrapperConverter = (
       : `typeof value === "${scalar}"`;
   const unwrapped = `\n    ${guard}\n      ? value\n      : ((value as { readonly value?: unknown }).value ?? ${defaultValue})\n  `;
   return [
-    `${wellKnownConverterDecl(usage, type)} from${wellKnownConverterName(type)} = (value: unknown) =>`,
+    [
+      wellKnownConverterDecl(usage, type, `from${wellKnownConverterName(type)}`),
+      " = (value: unknown) =>",
+    ],
     `  ${fromScalarValue(unwrapped, {
       kind: "scalar",
       name: "value",
@@ -432,10 +507,10 @@ const wrapperConverter = (
       unsigned,
     })};`,
     "",
-    `${wellKnownConverterDecl(usage, type)} to${wellKnownConverterName(type)} = (value: unknown) => ${toScalarValue(
-      "value",
-      scalarField,
-    )};`,
+    [
+      wellKnownConverterDecl(usage, type, `to${wellKnownConverterName(type)}`),
+      ` = (value: unknown) => ${toScalarValue("value", scalarField)};`,
+    ],
     "",
     ...(usage.boxedWrappers.has(type)
       ? [
@@ -448,14 +523,31 @@ const wrapperConverter = (
   ];
 };
 
-const jsonWellKnownConverter = (usage: FileUsage, type: WellKnownKind) => {
+const jsonWellKnownConverter = (
+  usage: FileUsage,
+  type: WellKnownKind,
+): ReadonlyArray<Printable> => {
   const schema = wellKnownJsonSchemaName(type);
   return schema && usage.wellKnownUsed.has(type)
     ? [
-        `${wellKnownConverterDecl(usage, type)} from${wellKnownConverterName(type)} = (value: unknown) =>`,
+        [
+          wellKnownConverterDecl(
+            usage,
+            type,
+            `from${wellKnownConverterName(type)}`,
+          ),
+          " = (value: unknown) =>",
+        ],
         `  protobufToJson(${schema}, value as never);`,
         "",
-        `${wellKnownConverterDecl(usage, type)} to${wellKnownConverterName(type)} = (value: unknown) =>`,
+        [
+          wellKnownConverterDecl(
+            usage,
+            type,
+            `to${wellKnownConverterName(type)}`,
+          ),
+          " = (value: unknown) =>",
+        ],
         `  protobufFromJson(${schema}, value as never);`,
         "",
       ]
@@ -473,5 +565,15 @@ const oneofConverterName = (
 // reads `from<name>`/`to<name>` off the method model like any other type.
 const wellKnownConverterName = (type: WellKnownKind) => grpcWellKnownName(type);
 
-const wellKnownConverterDecl = (usage: FileUsage, type: WellKnownKind) =>
-  usage.wellKnownMethods.has(type) ? "export const" : "const";
+// Only converters standing in for a well-known method type are exported (the
+// registry reads them off the method name); field-only converters stay local
+// and keep the plain-const text — there is no local-name registration in
+// protoplugin, so the `Grpc$` namespace remains their collision guard.
+const wellKnownConverterDecl = (
+  usage: FileUsage,
+  type: WellKnownKind,
+  name: string,
+): Printable =>
+  usage.wellKnownMethods.has(type)
+    ? exportDecl("const", name)
+    : `const ${name}`;

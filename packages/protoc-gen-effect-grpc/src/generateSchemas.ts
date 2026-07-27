@@ -1,3 +1,5 @@
+import type { Printable } from "@bufbuild/protoplugin";
+
 import type {
   EnumModel,
   FieldModel,
@@ -7,45 +9,61 @@ import type {
 } from "./types.js";
 import type { FileUsage } from "./fileUsage.js";
 import { grpcEmptyName, grpcWellKnownName } from "./naming.js";
+import { exportDecl } from "./printing.js";
 import { wellKnownKinds, type WellKnownKind } from "./wellKnown.js";
 
-export const generateSchemas = (file: GeneratorFile, usage: FileUsage) => [
+export const generateSchemas = (
+  file: GeneratorFile,
+  usage: FileUsage,
+): ReadonlyArray<Printable> => [
   ...(usage.usesGrpcEmpty
     ? [
-        `export const ${grpcEmptyName}Schema = Schema.Struct({});`,
-        `export type ${grpcEmptyName} = Schema.Schema.Type<typeof ${grpcEmptyName}Schema>;`,
+        [
+          exportDecl("const", `${grpcEmptyName}Schema`),
+          " = Schema.Struct({});",
+        ],
+        [
+          exportDecl("type", grpcEmptyName),
+          ` = Schema.Schema.Type<typeof ${grpcEmptyName}Schema>;`,
+        ],
         "",
       ]
     : []),
   ...wellKnownMethodSchemas(usage),
   ...file.enums.flatMap(enumSchema),
-  ...file.messages.flatMap((message) => [
-    `export const ${message.name}Schema = Schema.Struct({`,
+  ...file.messages.flatMap((message): ReadonlyArray<Printable> => [
+    [exportDecl("const", `${message.name}Schema`), " = Schema.Struct({"],
     ...message.fields.map(
       (field) =>
         `  ${field.name}: ${fieldSchema(field, message.name, usage.recursiveEdges)},`,
     ),
     "});",
-    `export type ${message.name} = Schema.Schema.Type<typeof ${message.name}Schema>;`,
+    [
+      exportDecl("type", message.name),
+      ` = Schema.Schema.Type<typeof ${message.name}Schema>;`,
+    ],
     "",
   ]),
 ];
 
-const wellKnownMethodSchemas = (usage: FileUsage) =>
+const wellKnownMethodSchemas = (usage: FileUsage): ReadonlyArray<Printable> =>
   wellKnownKinds
     .filter((type) => usage.wellKnownMethods.has(type))
-    .flatMap((type) => {
+    .flatMap((type): ReadonlyArray<Printable> => {
       const name = grpcWellKnownName(type);
       return [
-        `export const ${name}Schema = ${wellKnownSchema(type)};`,
-        `export type ${name} = Schema.Schema.Type<typeof ${name}Schema>;`,
+        [exportDecl("const", `${name}Schema`), ` = ${wellKnownSchema(type)};`],
+        [
+          exportDecl("type", name),
+          ` = Schema.Schema.Type<typeof ${name}Schema>;`,
+        ],
         "",
       ];
     });
 
-const enumSchema = (field: EnumModel) => [
-  `export const ${field.name}Schema = Schema.Number;`,
-  `export type ${field.name} = number;`,
+const enumSchema = (field: EnumModel): ReadonlyArray<Printable> => [
+  [exportDecl("const", `${field.name}Schema`), " = Schema.Number;"],
+  [exportDecl("type", field.name), " = number;"],
   "",
 ];
 

@@ -1,3 +1,5 @@
+import type { Printable } from "@bufbuild/protoplugin";
+
 import { analyzeFileUsage, fieldValueOccurrences } from "./fileUsage.js";
 import { generateClient } from "./generateClient.js";
 import { generateRegistry } from "./generateRegistry.js";
@@ -58,10 +60,15 @@ const importGroups = (file: GeneratorFile): ReadonlyArray<ImportGroup> => {
   }));
 };
 
+/**
+ * One entry per generated line, printed into protoplugin's `GeneratedFile`
+ * (which appends the newline). Plain strings for now; emitters grow
+ * `ImportSymbol`/export-statement printables from here.
+ */
 export const generateFile = (
   file: GeneratorFile,
   importExtension: "js" | "ts" = "js",
-): string => {
+): ReadonlyArray<Printable> => {
   const usage = analyzeFileUsage(file);
   const pbImport = pbImportPath(file.protoFileName, importExtension);
   const descriptorImports = file.services.map((service) => service.name);
@@ -140,5 +147,5 @@ export const generateFile = (
     ...generateServer(file),
   ];
 
-  return `${lines.join("\n").trimEnd()}\n`;
+  return lines;
 };

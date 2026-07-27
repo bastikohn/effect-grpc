@@ -108,7 +108,7 @@ const messageSchema = (
   currentMessageName: string,
   recursiveEdges: ReadonlySet<string>,
 ) =>
-  field.source === "local"
+  field.importedFrom === undefined
     ? recursiveEdges.has(`${currentMessageName}->${field.messageName}`)
       ? `Schema.suspend((): Schema.Codec<unknown, unknown, never, never> => ${field.messageName}Schema)`
       : `Schema.suspend((): typeof ${field.messageName}Schema => ${field.messageName}Schema)`

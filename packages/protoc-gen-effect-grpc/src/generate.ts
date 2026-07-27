@@ -1,10 +1,62 @@
-import { analyzeFileUsage } from "./fileUsage.js";
+import { analyzeFileUsage, fieldValueOccurrences } from "./fileUsage.js";
 import { generateClient } from "./generateClient.js";
 import { generateRegistry } from "./generateRegistry.js";
 import { generateSchemas } from "./generateSchemas.js";
 import { generateServer } from "./generateServer.js";
 import { effectImportPath, pbImportPath } from "./naming.js";
 import type { GeneratorFile } from "./types.js";
+
+interface ImportGroup {
+  readonly protoFileName: string;
+  readonly messages: ReadonlyArray<string>;
+  readonly enums: ReadonlyArray<string>;
+}
+
+/** Imported message and enum names, grouped by the proto file declaring them. */
+const importGroups = (file: GeneratorFile): ReadonlyArray<ImportGroup> => {
+  const groups = new Map<
+    string,
+    { readonly messages: Set<string>; readonly enums: Set<string> }
+  >();
+  const record = (
+    importedFrom: string | undefined,
+    name: string,
+    kind: "message" | "enum",
+  ) => {
+    if (importedFrom === undefined) return;
+    const group = groups.get(importedFrom) ?? {
+      messages: new Set<string>(),
+      enums: new Set<string>(),
+    };
+    if (kind === "message") group.messages.add(name);
+    else group.enums.add(name);
+    groups.set(importedFrom, group);
+  };
+
+  for (const message of file.messages) {
+    for (const field of message.fields) {
+      for (const { value } of fieldValueOccurrences(field)) {
+        if (value.kind === "message") {
+          record(value.importedFrom, value.messageName, "message");
+        } else if (value.kind === "enum") {
+          record(value.importedFrom, value.enumName, "enum");
+        }
+      }
+    }
+  }
+  for (const service of file.services) {
+    for (const method of service.methods) {
+      for (const type of [method.inputType, method.outputType]) {
+        record(type.importedFrom, type.name, "message");
+      }
+    }
+  }
+  return [...groups.entries()].map(([protoFileName, group]) => ({
+    protoFileName,
+    messages: [...group.messages].sort(),
+    enums: [...group.enums].sort(),
+  }));
+};
 
 export const generateFile = (
   file: GeneratorFile,
@@ -65,7 +117,7 @@ export const generateFile = (
     // references them (see `FileUsage.usedImportedTypes`); everything else in
     // the file derives its types from the imported `Schema`/`from`/`to`
     // symbols, and an unreferenced alias fails `noUnusedLocals` in consumers.
-    ...file.imports.flatMap((imported) => [
+    ...importGroups(file).flatMap((imported) => [
       "import {",
       ...imported.enums.flatMap((enumName) => [
         `  ${enumName}Schema,`,

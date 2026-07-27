@@ -24,7 +24,6 @@ import type {
   FieldValueModel,
   FieldModel,
   GeneratorFile,
-  ImportModel,
   MapKeyModel,
   MessageModel,
   MethodModel,
@@ -89,7 +88,6 @@ const allEnums = (file: DescFile): ReadonlyArray<DescEnum> => [
 
 const modelFromFile = (file: DescFile): GeneratorFile => ({
   protoFileName: `${file.name}.proto`,
-  imports: importsFromFile(file),
   enums: allEnums(file).map(enumModel),
   messages: allMessages(file).map(messageModel),
   services: file.services
@@ -167,7 +165,12 @@ const valueModel = (
         unsigned: isUnsignedScalar(value.scalar),
       };
     case "enum":
-      return { kind: "enum", name, enumName: declName(value.enum) };
+      return {
+        kind: "enum",
+        name,
+        enumName: declName(value.enum),
+        importedFrom: importedFromFile(value.enum, value.parent.file),
+      };
     case "message": {
       const wellKnown = wellKnownKind(value.message.typeName);
       return wellKnown
@@ -176,14 +179,18 @@ const valueModel = (
             kind: "message",
             name,
             messageName: declName(value.message),
-            source:
-              value.message.file.name === value.parent.file.name
-                ? "local"
-                : "imported",
+            importedFrom: importedFromFile(value.message, value.parent.file),
           };
     }
   }
 };
+
+/** The declaring proto file's name, or `undefined` when declared locally. */
+const importedFromFile = (
+  desc: DescMessage | DescEnum,
+  file: DescFile,
+): string | undefined =>
+  desc.file.name === file.name ? undefined : `${desc.file.name}.proto`;
 
 const mapKeyModel = (
   field: Extract<DescField, { readonly fieldKind: "map" }>,
@@ -217,57 +224,6 @@ const oneofCaseModel = (field: DescField): OneofCaseModel => {
   return { name: field.localName, value: valueModel(field, field.fieldKind) };
 };
 
-const importsFromFile = (file: DescFile): ReadonlyArray<ImportModel> => {
-  const imports = new Map<
-    string,
-    { readonly messages: Set<string>; readonly enums: Set<string> }
-  >();
-  const record = (desc: DescMessage | DescEnum) => {
-    if (desc.file.name === file.name || isWellKnownType(desc)) return;
-    const protoFile = `${desc.file.name}.proto`;
-    const entry = imports.get(protoFile) ?? {
-      messages: new Set<string>(),
-      enums: new Set<string>(),
-    };
-    if (desc.kind === "message") entry.messages.add(declName(desc));
-    else entry.enums.add(declName(desc));
-    imports.set(protoFile, entry);
-  };
-
-  for (const message of allMessages(file)) {
-    for (const field of message.fields) {
-      supportedField(field);
-      for (const desc of referencedDescs(field)) record(desc);
-    }
-  }
-  for (const service of file.services) {
-    for (const method of service.methods) {
-      record(method.input);
-      record(method.output);
-    }
-  }
-  return [...imports.entries()].map(([protoFileName, entry]) => ({
-    protoFileName,
-    messages: [...entry.messages].sort(),
-    enums: [...entry.enums].sort(),
-  }));
-};
-
-const referencedDescs = (
-  field: DescField,
-): ReadonlyArray<DescMessage | DescEnum> => {
-  const value = field as unknown as ValueField;
-  const kind =
-    field.fieldKind === "list"
-      ? field.listKind
-      : field.fieldKind === "map"
-        ? field.mapKind
-        : field.fieldKind;
-  if (kind === "message") return [value.message];
-  if (kind === "enum") return [value.enum];
-  return [];
-};
-
 const isUnsignedScalar = (scalar: DescField["scalar"]) =>
   scalar === ScalarType.UINT64 ||
   scalar === ScalarType.FIXED64 ||
@@ -298,7 +254,10 @@ const methodTypeModel = (
       ].join("\n"),
     );
   }
-  return { name: declName(message) };
+  return {
+    name: declName(message),
+    importedFrom: importedFromFile(message, service.file),
+  };
 };
 
 const serviceModel = (service: DescService): ServiceModel => ({

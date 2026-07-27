@@ -52,11 +52,15 @@ export interface FileUsage {
 export const analyzeFileUsage = (file: GeneratorFile): FileUsage => {
   const wellKnownMethods = new Set<WellKnownKind>();
   const methodTypeNames = new Set<string>();
+  const importedMessageNames = new Set<string>();
   let usesGrpcEmpty = false;
   for (const service of file.services) {
     for (const method of service.methods) {
       for (const type of [method.inputType, method.outputType]) {
         methodTypeNames.add(type.name);
+        if (type.importedFrom !== undefined) {
+          importedMessageNames.add(type.name);
+        }
         if (type.wellKnown === "empty") usesGrpcEmpty = true;
         else if (type.wellKnown) wellKnownMethods.add(type.wellKnown);
       }
@@ -70,11 +74,16 @@ export const analyzeFileUsage = (file: GeneratorFile): FileUsage => {
     [...wrapperWellKnownKinds].filter((kind) => wellKnownMethods.has(kind)),
   );
   let usesBytesScalar = false;
-  const enumFieldTypeNames = new Set<string>();
+  const importedEnumFieldTypeNames = new Set<string>();
   for (const message of file.messages) {
     for (const field of message.fields) {
       for (const { value, boxed } of fieldValueOccurrences(field)) {
-        if (value.kind === "enum") enumFieldTypeNames.add(value.enumName);
+        if (value.kind === "enum" && value.importedFrom !== undefined) {
+          importedEnumFieldTypeNames.add(value.enumName);
+        }
+        if (value.kind === "message" && value.importedFrom !== undefined) {
+          importedMessageNames.add(value.messageName);
+        }
         if (value.kind === "well-known") {
           wellKnownFields.add(value.type);
           if (boxed && wrapperWellKnownKinds.has(value.type)) {
@@ -116,12 +125,10 @@ export const analyzeFileUsage = (file: GeneratorFile): FileUsage => {
     wellKnownUsed,
     boxedWrappers,
     jsonWellKnownImports,
-    usedImportedTypes: new Set(
-      file.imports.flatMap((imported) => [
-        ...imported.enums.filter((name) => enumFieldTypeNames.has(name)),
-        ...imported.messages.filter((name) => methodTypeNames.has(name)),
-      ]),
-    ),
+    usedImportedTypes: new Set([
+      ...importedEnumFieldTypeNames,
+      ...[...importedMessageNames].filter((name) => methodTypeNames.has(name)),
+    ]),
     recursiveEdges: findRecursiveEdges(file.messages),
   };
 };
@@ -131,7 +138,7 @@ export const isWrapperWellKnownKind = (
 ): boolean => wrapperWellKnownKinds.has(type as WellKnownKind);
 
 /** Every value position a field contributes, with its wrapper-boxing context. */
-const fieldValueOccurrences = (
+export const fieldValueOccurrences = (
   field: FieldModel,
 ): ReadonlyArray<{
   readonly value: FieldValueModel;
@@ -158,7 +165,7 @@ const fieldValueOccurrences = (
 const messageDependencies = (message: MessageModel) =>
   message.fields.flatMap((field) =>
     fieldValueOccurrences(field).flatMap(({ value }) =>
-      value.kind === "message" && value.source === "local"
+      value.kind === "message" && value.importedFrom === undefined
         ? [value.messageName]
         : [],
     ),

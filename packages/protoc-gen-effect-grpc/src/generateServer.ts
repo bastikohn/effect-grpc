@@ -6,37 +6,43 @@ import * as sym from "./symbols.js";
 import type { GeneratorFile, MethodModel } from "./types.js";
 
 export const generateServer = (file: GeneratorFile): ReadonlyArray<Printable> =>
-  file.services.flatMap((service): ReadonlyArray<Printable> => [
-    [
-      exportDecl("interface", serviceImplementationName(service.name)),
-      "<R = never> {",
+  file.services.flatMap(
+    (service): ReadonlyArray<Printable> => [
+      [
+        exportDecl("interface", serviceImplementationName(service.name)),
+        "<R = never> {",
+      ],
+      ...service.methods.map(
+        (method): Printable => [
+          `  readonly ${method.localName}: `,
+          implementationSignature(method),
+          ";",
+        ],
+      ),
+      "}",
+      "",
+      [exportDecl("const", serviceHandlersName(service.name)), " = <R>("],
+      `  implementation: ${serviceImplementationName(service.name)}<R>,`,
+      [
+        "): ",
+        sym.Effect,
+        ".Effect<",
+        sym.GrpcServerProtocol,
+        ".GrpcHandlers, never, R> =>",
+      ],
+      ["  ", sym.GrpcServerProtocol, ".handlersEffect<R>({"],
+      ...service.methods.flatMap(
+        (method): ReadonlyArray<Printable> => [
+          `    "${service.typeName}/${method.name}": {`,
+          `      kind: "${method.kind}",`,
+          ["      handler: ", handlerBinding(method), ","],
+          "    },",
+        ],
+      ),
+      "  });",
+      "",
     ],
-    ...service.methods.map((method): Printable => [
-      `  readonly ${method.localName}: `,
-      implementationSignature(method),
-      ";",
-    ]),
-    "}",
-    "",
-    [exportDecl("const", serviceHandlersName(service.name)), " = <R>("],
-    `  implementation: ${serviceImplementationName(service.name)}<R>,`,
-    [
-      "): ",
-      sym.Effect,
-      ".Effect<",
-      sym.GrpcServerProtocol,
-      ".GrpcHandlers, never, R> =>",
-    ],
-    ["  ", sym.GrpcServerProtocol, ".handlersEffect<R>({"],
-    ...service.methods.flatMap((method): ReadonlyArray<Printable> => [
-      `    "${service.typeName}/${method.name}": {`,
-      `      kind: "${method.kind}",`,
-      ["      handler: ", handlerBinding(method), ","],
-      "    },",
-    ]),
-    "  });",
-    "",
-  ]);
+  );
 
 const implementationSignature = (method: MethodModel): Printable => {
   const input = methodTypeRef(method.inputType);

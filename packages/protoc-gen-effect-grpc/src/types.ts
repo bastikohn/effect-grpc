@@ -2,16 +2,9 @@ import type { WellKnownKind } from "./wellKnown.js";
 
 export interface GeneratorFile {
   readonly protoFileName: string;
-  readonly imports: ReadonlyArray<ImportModel>;
   readonly enums: ReadonlyArray<EnumModel>;
   readonly messages: ReadonlyArray<MessageModel>;
   readonly services: ReadonlyArray<ServiceModel>;
-}
-
-export interface ImportModel {
-  readonly protoFileName: string;
-  readonly messages: ReadonlyArray<string>;
-  readonly enums: ReadonlyArray<string>;
 }
 
 export interface EnumModel {
@@ -50,7 +43,8 @@ export interface MessageFieldModel {
   readonly kind: "message";
   readonly name: string;
   readonly messageName: string;
-  readonly source: "local" | "imported";
+  /** Proto file declaring the message, when it is not the current file. */
+  readonly importedFrom?: string;
   readonly optional?: boolean;
 }
 
@@ -58,6 +52,8 @@ export interface EnumFieldModel {
   readonly kind: "enum";
   readonly name: string;
   readonly enumName: string;
+  /** Proto file declaring the enum, when it is not the current file. */
+  readonly importedFrom?: string;
   readonly optional?: boolean;
 }
 
@@ -130,6 +126,8 @@ export interface MethodModel {
 export interface MethodTypeModel {
   readonly name: string;
   readonly wellKnown?: MethodWellKnownKind;
+  /** Proto file declaring the type, when it is not the current file. */
+  readonly importedFrom?: string;
 }
 
 /**

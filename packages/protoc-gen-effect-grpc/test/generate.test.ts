@@ -30,7 +30,6 @@ import type { GeneratorFile } from "../src/types.js";
 
 const demoFile: GeneratorFile = {
   protoFileName: "demo/v1/user_service.proto",
-  imports: [],
   enums: [],
   messages: [
     {
@@ -44,7 +43,6 @@ const demoFile: GeneratorFile = {
           kind: "message",
           name: "user",
           messageName: "User",
-          source: "local",
           optional: true,
         },
       ],
@@ -132,7 +130,6 @@ describe("generateFile", () => {
   it("omits the Stream import for unary-only services", () => {
     const output = generateFile({
       protoFileName: "demo/v1/ping.proto",
-      imports: [],
       enums: [],
       messages: [
         {
@@ -170,7 +167,6 @@ describe("generateFile", () => {
   it("omits readField and compact when every message is empty", () => {
     const output = generateFile({
       protoFileName: "demo/v1/empty.proto",
-      imports: [],
       enums: [],
       messages: [
         { name: "VoidRequest", fields: [] },
@@ -206,7 +202,6 @@ describe("generateFile", () => {
   it("emits the annotated Schema.suspend for a recursive self-edge", () => {
     const output = generateFile({
       protoFileName: "demo/v1/node.proto",
-      imports: [],
       enums: [],
       messages: [
         {
@@ -216,7 +211,6 @@ describe("generateFile", () => {
               kind: "message",
               name: "next",
               messageName: "Node",
-              source: "local",
               optional: true,
             },
           ],
@@ -250,13 +244,6 @@ describe("generateFile", () => {
   it("omits the bare imported message type when only schema and converters are used", () => {
     const output = generateFile({
       protoFileName: "demo/v1/profile.proto",
-      imports: [
-        {
-          protoFileName: "demo/v1/common.proto",
-          messages: ["CommonUser"],
-          enums: [],
-        },
-      ],
       enums: [],
       messages: [
         {
@@ -266,7 +253,7 @@ describe("generateFile", () => {
               kind: "message",
               name: "user",
               messageName: "CommonUser",
-              source: "imported",
+              importedFrom: "demo/v1/common.proto",
               optional: true,
             },
           ],
@@ -301,18 +288,18 @@ describe("generateFile", () => {
   it("keeps bare imported types used by method signatures and enum casts", () => {
     const output = generateFile({
       protoFileName: "demo/v1/profile.proto",
-      imports: [
-        {
-          protoFileName: "demo/v1/common.proto",
-          messages: ["CommonUser"],
-          enums: ["CommonState"],
-        },
-      ],
       enums: [],
       messages: [
         {
           name: "Profile",
-          fields: [{ kind: "enum", name: "state", enumName: "CommonState" }],
+          fields: [
+            {
+              kind: "enum",
+              name: "state",
+              enumName: "CommonState",
+              importedFrom: "demo/v1/common.proto",
+            },
+          ],
         },
       ],
       services: [
@@ -324,8 +311,14 @@ describe("generateFile", () => {
               name: "GetUser",
               localName: "getUser",
               kind: "unary",
-              inputType: { name: "CommonUser" },
-              outputType: { name: "CommonUser" },
+              inputType: {
+                name: "CommonUser",
+                importedFrom: "demo/v1/common.proto",
+              },
+              outputType: {
+                name: "CommonUser",
+                importedFrom: "demo/v1/common.proto",
+              },
             },
           ],
         },
@@ -344,7 +337,6 @@ describe("generateFile", () => {
   it("omits client-only rpc imports for a streaming-only service", () => {
     const output = generateFile({
       protoFileName: "demo/v1/upload.proto",
-      imports: [],
       enums: [],
       messages: [
         {

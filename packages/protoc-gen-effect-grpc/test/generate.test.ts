@@ -28,6 +28,10 @@ import { generateFile } from "../src/generate.js";
 import { plugin } from "../src/pluginDefinition.js";
 import type { GeneratorFile } from "../src/types.js";
 
+// `generateFile` emits one Printable per line (plain strings for now);
+// protoplugin's print() appends the newlines when the plugin runs.
+const render = (file: GeneratorFile) => generateFile(file).join("\n");
+
 const demoFile: GeneratorFile = {
   protoFileName: "demo/v1/user_service.proto",
   enums: [],
@@ -115,7 +119,7 @@ describe("generateFile", () => {
   // `Schema.suspend` recursive edge, and that the server path routes through
   // `handlersEffect` rather than Effect RPC.
   it("generates schemas, registry, client, and server glue", () => {
-    const output = generateFile(demoFile);
+    const output = render(demoFile);
 
     expect(output).toContain(
       "user: Schema.optional(Schema.suspend((): typeof UserSchema => UserSchema))",
@@ -128,7 +132,7 @@ describe("generateFile", () => {
   });
 
   it("omits the Stream import for unary-only services", () => {
-    const output = generateFile({
+    const output = render({
       protoFileName: "demo/v1/ping.proto",
       enums: [],
       messages: [
@@ -165,7 +169,7 @@ describe("generateFile", () => {
   });
 
   it("omits readField and compact when every message is empty", () => {
-    const output = generateFile({
+    const output = render({
       protoFileName: "demo/v1/empty.proto",
       enums: [],
       messages: [
@@ -200,7 +204,7 @@ describe("generateFile", () => {
   });
 
   it("emits the annotated Schema.suspend for a recursive self-edge", () => {
-    const output = generateFile({
+    const output = render({
       protoFileName: "demo/v1/node.proto",
       enums: [],
       messages: [
@@ -242,7 +246,7 @@ describe("generateFile", () => {
   });
 
   it("omits the bare imported message type when only schema and converters are used", () => {
-    const output = generateFile({
+    const output = render({
       protoFileName: "demo/v1/profile.proto",
       enums: [],
       messages: [
@@ -286,7 +290,7 @@ describe("generateFile", () => {
   });
 
   it("keeps bare imported types used by method signatures and enum casts", () => {
-    const output = generateFile({
+    const output = render({
       protoFileName: "demo/v1/profile.proto",
       enums: [],
       messages: [
@@ -335,7 +339,7 @@ describe("generateFile", () => {
   });
 
   it("omits client-only rpc imports for a streaming-only service", () => {
-    const output = generateFile({
+    const output = render({
       protoFileName: "demo/v1/upload.proto",
       enums: [],
       messages: [

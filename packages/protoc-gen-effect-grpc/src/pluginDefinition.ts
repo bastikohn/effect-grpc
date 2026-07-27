@@ -53,8 +53,8 @@ export const plugin = createEcmaScriptPlugin({
       const generated = schema.generateFile(
         effectFileName(`${file.name}.proto`),
       );
-      for (const line of generateFile(model, importExtension).split("\n")) {
-        generated.print(line);
+      for (const entry of generateFile(model, importExtension)) {
+        generated.print(entry);
       }
     }
   },

@@ -314,11 +314,6 @@ describe("proto feature fixtures", () => {
         "",
       ].join("\n"),
     );
-    // Every message in this fixture is a legal proto name shadowing something
-    // the generator introduces itself: as a field it collided with a converter,
-    // and as a method input/output it was read back as the well-known it is
-    // named after, which declared its schema and type a second time. Only a
-    // typecheck sees those duplicate declarations.
     // Cross-package same-name collision: the importing file redeclares the
     // generated name `Widget`, so the foreign schema/type/converters arrive
     // under protoplugin's `$1` aliases. Only a typecheck proves the aliased
@@ -344,6 +339,11 @@ describe("proto feature fixtures", () => {
         "",
       ].join("\n"),
     );
+    // Every message in this fixture is a legal proto name shadowing something
+    // the generator introduces itself: as a field it collided with a converter,
+    // and as a method input/output it was read back as the well-known it is
+    // named after, which declared its schema and type a second time. Only a
+    // typecheck sees those duplicate declarations.
     writeTypecheckSource(
       generateProtoFeature("bytes_collision"),
       [

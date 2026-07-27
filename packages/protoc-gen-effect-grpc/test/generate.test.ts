@@ -28,9 +28,32 @@ import { generateFile } from "../src/generate.js";
 import { plugin } from "../src/pluginDefinition.js";
 import type { GeneratorFile } from "../src/types.js";
 
-// `generateFile` emits one Printable per line (plain strings for now);
-// protoplugin's print() appends the newlines when the plugin runs.
-const render = (file: GeneratorFile) => generateFile(file).join("\n");
+// `generateFile` emits one Printable per line; protoplugin's print() appends
+// the newlines when the plugin runs. This mirrors protoplugin's rendering for
+// the printables the emitters produce (strings, nested arrays, export
+// statements, import symbols by name) so the hand-built model tests can keep
+// asserting on text until they migrate to `plugin.run` fixtures.
+const render = (file: GeneratorFile) =>
+  generateFile(file).map(renderEntry).join("\n");
+
+const renderEntry = (entry: ReturnType<typeof generateFile>[number]): string => {
+  if (typeof entry === "string") return entry;
+  if (Array.isArray(entry)) return entry.map(renderEntry).join("");
+  if (typeof entry === "object" && entry !== null && "kind" in entry) {
+    const printable = entry as {
+      readonly kind: string;
+      readonly name?: string;
+      readonly declaration?: string;
+    };
+    if (printable.kind === "es_export_stmt") {
+      const declaration =
+        printable.declaration === undefined ? "" : `${printable.declaration} `;
+      return `export ${declaration}${printable.name}`;
+    }
+    if (printable.kind === "es_symbol") return printable.name ?? "";
+  }
+  throw new Error(`Unsupported printable: ${JSON.stringify(entry)}`);
+};
 
 const demoFile: GeneratorFile = {
   protoFileName: "demo/v1/user_service.proto",

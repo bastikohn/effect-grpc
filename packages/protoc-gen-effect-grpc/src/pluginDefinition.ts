@@ -1,3 +1,5 @@
+import { createRequire } from "node:module";
+
 import {
   ScalarType,
   type DescEnum,
@@ -33,9 +35,18 @@ import type {
 } from "./types.js";
 import { wellKnownKind } from "./wellKnown.js";
 
+// The version protoplugin stamps into every generated file's preamble. Read
+// from package.json at runtime (both src/ and dist/ sit one level below it) so
+// the advertised version can never drift from the published one. Version bumps
+// therefore churn the committed examples and snapshots; `changeset:version`
+// regenerates them so release PRs keep `check:ci` green.
+const packageVersion = (
+  createRequire(import.meta.url)("../package.json") as { version: string }
+).version;
+
 export const plugin = createEcmaScriptPlugin({
   name: "protoc-gen-effect-grpc",
-  version: "0.1.0-alpha.0",
+  version: packageVersion,
   generateTs(schema) {
     for (const file of schema.files) {
       const model = modelFromFile(file);

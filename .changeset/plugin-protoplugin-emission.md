@@ -13,7 +13,10 @@ hand-maintained prediction. Regenerate your protos. Three visible changes:
   recipe already does.
 - Generated file headers change format: protoplugin's standard preamble
   (plugin name and version, the sanitized parameter string, and the source
-  proto file) replaces the previous one-line `DO NOT EDIT` header.
+  proto file) replaces the previous one-line `DO NOT EDIT` header. The
+  version in the header is read from the plugin's own `package.json`, so it
+  always matches the installed release — expect the header line to change
+  when you regenerate after upgrading.
 - Import statements collapse to one line per source, type-only imports split
   into `import type` statements, and imported names that collide with a local
   declaration are aliased (`User$1`). The aliasing fixes a real bug: importing

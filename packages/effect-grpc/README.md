@@ -19,9 +19,9 @@ pnpm add @effect-grpc/effect-grpc @bufbuild/protobuf @connectrpc/connect effect
 dependencies. This package is ESM-only and requires Node.js >= 22.
 
 > [!NOTE]
-> The current prerelease line targets `effect@4.0.0-beta.92` exactly (it
+> The current prerelease line targets `effect@4.0.0-rc.112` exactly (it
 > builds on unstable Effect modules). Install from the `next` dist-tag for
-> Effect v4 betas, or `latest` for the Effect v3 line.
+> Effect v4 prereleases, or `latest` for the Effect v3 line.
 
 ## Quickstart
 

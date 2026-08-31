@@ -2,8 +2,8 @@ packages:
   - "packages/*"
   - "examples/*"
 catalog:
-  "@effect/platform-node": 4.0.0-beta.92
-  effect: 4.0.0-beta.92
+  "@effect/platform-node": 4.0.0-rc.112
+  effect: 4.0.0-rc.112
 allowBuilds:
   "@bufbuild/buf": true
   esbuild: true

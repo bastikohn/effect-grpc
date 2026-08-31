@@ -1,5 +1,94 @@
 # @effect-grpc/effect-grpc
 
+## 1.0.0-beta.4
+
+### Minor Changes
+
+- cfec645: Breaking: `GrpcStatusError.code` can no longer be `"ok"`, and call metadata is
+  carried once instead of per shape. Binary metadata is now symmetric across both
+  invoker adapters and keyed off the `-bin` suffix, a non-positive `timeoutMs`
+  uniformly means _no deadline_ on both, and client telemetry keeps `server.port`
+  for scheme-default ports (443/80). `GrpcStatusCode.schema`, the wide schema, is
+  removed — nothing decodes a status code that may be `"ok"`.
+- 60b8093: Breaking: generated service handlers are a plain `Effect`, not a `Layer`.
+
+  `GrpcServerProtocol.handlersLayer` becomes `handlersEffect`, returning
+  `Effect<GrpcHandlers, never, R>` instead of `Layer<GrpcHandlers, never, R>`,
+  and `GrpcNodeServer.ServeAllService.handlers` follows. Nothing ever consumed
+  `GrpcHandlers` as a service, so the layer round trip only cost a build and a
+  context read per service. The `GrpcHandlers` context key is gone.
+
+  Regenerate your protos: the emitted `<Service>HandlersLayer` is now
+  `<Service>Handlers`, and `GrpcHealth.HealthHandlersLayer` is
+  `GrpcHealth.HealthHandlers`.
+
+  Where you provided handler dependencies with `Layer.provide(deps)`, provide
+  them to the whole server program — the `serveAll` effect — instead:
+
+  ```ts
+  Effect.scoped(GrpcNodeServer.serveAll({ ... })).pipe(Effect.provide(DbLayer));
+  ```
+
+  Do **not** provide them to the handlers effect. `Effect.provide` on a handlers
+  effect builds the layer in a scope that closes as soon as that effect
+  completes, which is immediately — so a scoped dependency is acquired,
+  released, and only then handed to `serveAll`, and every request runs against a
+  finalized resource with no error at the seam. Leaving the requirement
+  unprovided lets it propagate through `serveAll`, where the server's own scope
+  keeps finalizers running at shutdown.
+
+  Also breaking: the four `GrpcUnary/ServerStreaming/ClientStreaming/
+BidiStreamingMethodEntry` interfaces collapse into one kind-parameterised
+  `GrpcMethodEntry<Kind, Request, Response>`; `GrpcStatusError` is a
+  `Data.TaggedError` (its schema, `GrpcStatusCode.errorSchema` and
+  `GrpcMetadata.schema` are gone), and `GrpcStatusError.unknown`,
+  `GrpcMethodRegistry.GrpcMethodEntryBase` and `CodegenSupport.serverContext`
+  are removed.
+
+- cfec645: Breaking: generated clients and server handlers no longer run on Effect RPC.
+  All four method kinds now go through the `GrpcInvoker` seam (`layerConnect` for
+  the wire, `layerInMemory` for socket-free tests) and the unified
+  `GrpcServerProtocol.GrpcHandlers` map. `GrpcMethodRegistry` owns tag lookup,
+  merging, and the four domain/wire conversions. Regenerate your protos.
+
+  Migration:
+
+  - `GrpcNodeServer.ServeAllService` loses its `group` field — drop `group:` from
+    every `serveAll` call site.
+  - `GrpcServerProtocol.GrpcStreamingHandlers`/`streamingHandlersLayer` are
+    replaced by the unified `GrpcHandlers` map.
+  - `GrpcClientProtocol.GrpcStreamingClient` is removed — provide a `GrpcInvoker`
+    (`layerConnect`, or `layerInMemory` for network-free tests) to run generated
+    clients.
+  - `GrpcClientProtocol.layer`/`layerFromTransport` no longer provide
+    `RpcClient.Protocol`; migrate hand-built `RpcClient.make(...)` callers to the
+    invoker.
+
+- eb0a26b: Breaking: the public surface shrinks to what is actually load-bearing.
+
+  - The generator drops the inert `errors`, `int64` and `methods` options; only
+    `import_extension` remains (now honoured, including `ts`). Remove the other
+    `opt:` entries from `buf.gen.yaml`.
+  - `tracestate` is no longer propagated and `GrpcTracing` is gone; `traceparent`
+    propagation and span parenting are unchanged.
+  - `GrpcReflection` request/response schemas use the generated `{case, value}`
+    oneof representation, `fileDescriptorProto` is `Uint8Array`, and the legacy
+    `grpc.reflection.v1alpha` alias is no longer registered.
+  - `GrpcHealth.make`/`layer` are nullary values, and `GrpcHealthService.statuses`
+    plus `GrpcHealthOptions.initialStatuses` are removed.
+  - The `@effect-grpc/codegen` package is discontinued and will not be published
+    again — it was a second front-end to this generator. `buf generate` with the
+    `protoc-gen-effect-grpc` plugin is the supported path; see the README for the
+    `buf.yaml`/`buf.gen.yaml` recipe.
+
+### Patch Changes
+
+- cfec645: Fixes in the shared `Stream` <-> `AsyncIterable` bridge, now the single home for
+  half-close vs. cancellation detection and outcome-preserving cleanup:
+  overlapping pulls no longer duplicate messages or leak a fiber past teardown; a
+  bidi call abandoned mid-pull no longer hangs connect's generator loop; and a
+  streaming handler that abandons its request stream no longer stalls the server.
+
 ## 1.0.0-beta.3
 
 ### Minor Changes

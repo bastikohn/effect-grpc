@@ -9,17 +9,24 @@
     "@effect-grpc/protoc-gen-effect-grpc": "0.1.0"
   },
   "changesets": [
+    "call-option-and-status-semantics",
     "client-and-bidi-streaming",
     "client-transport-options-and-metadata-interceptor",
     "effect-v4-one-oh",
     "empty-message-unused-params",
     "first-class-tls-mtls",
+    "generator-emission-fixes",
     "grpc-auth-bearer-tokens",
     "grpc-health-checking",
     "grpc-server-reflection",
     "grpc-status-error-schema-class",
+    "handlers-effect",
+    "invoker-seam-and-rpc-retirement",
     "otel-semconv-metrics-tracestate",
     "proto-matrix-expansion",
-    "tidy-moons-wonder"
+    "shrink-public-surface",
+    "stream-bridge-teardown-fixes",
+    "tidy-moons-wonder",
+    "well-known-method-identity"
   ]
 }

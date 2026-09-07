@@ -152,16 +152,24 @@ describe("GrpcInvoker (in-memory adapter)", () => {
     });
   });
 
-  it("bounds unary and client-streaming calls with deadline_exceeded", async () => {
-    const codes = await withInvoker(
+  it("bounds all four call shapes with deadline_exceeded", async () => {
+    const errors = await withInvoker(
       {
         "test.Svc/Unary": {
           kind: "unary",
           handler: () => Effect.never,
         },
+        "test.Svc/ServerStream": {
+          kind: "server-streaming",
+          handler: () => Stream.never,
+        },
         "test.Svc/ClientStream": {
           kind: "client-streaming",
           handler: () => Effect.never,
+        },
+        "test.Svc/BidiStream": {
+          kind: "bidi-streaming",
+          handler: () => Stream.never,
         },
       },
       (invoker) =>
@@ -169,20 +177,188 @@ describe("GrpcInvoker (in-memory adapter)", () => {
           const unary = yield* Effect.flip(
             invoker.unary("test.Svc/Unary", {}, { timeoutMs: 20 }),
           );
+          const server = yield* Effect.flip(
+            Stream.runCollect(
+              invoker.serverStream(
+                "test.Svc/ServerStream",
+                {},
+                {
+                  timeoutMs: 20,
+                },
+              ),
+            ),
+          );
           const client = yield* Effect.flip(
             invoker.clientStream("test.Svc/ClientStream", Stream.empty, {
               timeoutMs: 20,
             }),
           );
-          return [unary, client];
+          const bidi = yield* Effect.flip(
+            Stream.runCollect(
+              invoker.bidiStream("test.Svc/BidiStream", Stream.empty, {
+                timeoutMs: 20,
+              }),
+            ),
+          );
+          return [unary, server, client, bidi];
         }),
     );
 
-    for (const error of codes) {
+    expect(errors).toHaveLength(4);
+    for (const error of errors) {
+      expect(error).toBeInstanceOf(GrpcStatusError.GrpcStatusError);
       expect((error as GrpcStatusError.GrpcStatusError).code).toBe(
         "deadline_exceeded",
       );
+      expect((error as GrpcStatusError.GrpcStatusError).message).toBe(
+        "RPC deadline exceeded",
+      );
     }
+  });
+
+  // A gRPC deadline is `call start + timeoutMs`, not an inactivity window: a
+  // stream that keeps emitting faster than the deadline must still be cut off
+  // at the deadline. `Stream.timeout` resets per pull and would never fire.
+  it("measures a streaming deadline from call start, not from the last item", async () => {
+    let received = 0;
+    const error = await withInvoker(
+      {
+        "test.Svc/ServerStream": {
+          kind: "server-streaming",
+          handler: () =>
+            Stream.repeatEffect(Effect.sleep(5).pipe(Effect.as("tick"))),
+        },
+      },
+      (invoker) =>
+        Effect.flip(
+          Stream.runForEach(
+            invoker.serverStream(
+              "test.Svc/ServerStream",
+              {},
+              {
+                timeoutMs: 60,
+              },
+            ),
+            () =>
+              Effect.sync(() => {
+                received += 1;
+              }),
+          ),
+        ),
+    );
+
+    expect(received).toBeGreaterThan(0);
+    expect((error as GrpcStatusError.GrpcStatusError).code).toBe(
+      "deadline_exceeded",
+    );
+  });
+
+  it("finalizes a server-streaming handler when the deadline expires", async () => {
+    let finalized = 0;
+    const error = await withInvoker(
+      {
+        "test.Svc/ServerStream": {
+          kind: "server-streaming",
+          handler: () =>
+            Stream.never.pipe(
+              Stream.ensuring(
+                Effect.sync(() => {
+                  finalized += 1;
+                }),
+              ),
+            ),
+        },
+      },
+      (invoker) =>
+        Effect.flip(
+          Stream.runCollect(
+            invoker.serverStream(
+              "test.Svc/ServerStream",
+              {},
+              {
+                timeoutMs: 20,
+              },
+            ),
+          ),
+        ),
+    );
+
+    expect((error as GrpcStatusError.GrpcStatusError).code).toBe(
+      "deadline_exceeded",
+    );
+    expect(finalized).toBe(1);
+  });
+
+  // A bidi call has two live stream lifetimes; the deadline must end both.
+  it("finalizes both the request and response streams when a bidi deadline expires", async () => {
+    let requestsFinalized = 0;
+    let responsesFinalized = 0;
+    const error = await withInvoker(
+      {
+        "test.Svc/BidiStream": {
+          kind: "bidi-streaming",
+          handler: (requests) =>
+            requests.pipe(
+              Stream.ensuring(
+                Effect.sync(() => {
+                  responsesFinalized += 1;
+                }),
+              ),
+            ),
+        },
+      },
+      (invoker) =>
+        Effect.flip(
+          Stream.runCollect(
+            invoker.bidiStream(
+              "test.Svc/BidiStream",
+              Stream.never.pipe(
+                Stream.ensuring(
+                  Effect.sync(() => {
+                    requestsFinalized += 1;
+                  }),
+                ),
+              ),
+              { timeoutMs: 20 },
+            ),
+          ),
+        ),
+    );
+
+    expect((error as GrpcStatusError.GrpcStatusError).code).toBe(
+      "deadline_exceeded",
+    );
+    expect(requestsFinalized).toBe(1);
+    expect(responsesFinalized).toBe(1);
+  });
+
+  // The deadline wraps the whole bidi RPC, after source replay: a request
+  // stream failure that lands before the deadline still reaches the caller as
+  // its own error, never as `deadline_exceeded`.
+  it("keeps the caller's request-stream error ahead of a pending bidi deadline", async () => {
+    const boom = new Error("source boom");
+    const error = await withInvoker(
+      {
+        "test.Svc/BidiStream": {
+          kind: "bidi-streaming",
+          handler: (requests) => requests,
+        },
+      },
+      (invoker) =>
+        Effect.flip(
+          Stream.runCollect(
+            invoker.bidiStream(
+              "test.Svc/BidiStream",
+              Stream.fromEffect(Effect.sleep(5)).pipe(
+                Stream.concat(Stream.fail(boom)),
+              ),
+              { timeoutMs: 1000 },
+            ),
+          ),
+        ),
+    );
+
+    expect(error).toBe(boom);
   });
 
   // `timeoutMs <= 0` uniformly means *no deadline* — the connect adapter drops
@@ -190,32 +366,83 @@ describe("GrpcInvoker (in-memory adapter)", () => {
   // enforce it nor put it on the call context, or a zero would turn every call
   // into an instant `deadline_exceeded`.
   it("treats a non-positive timeoutMs as no deadline", async () => {
-    let seen: GrpcInvoker.GrpcInMemoryCall | undefined;
+    const seen: Array<GrpcInvoker.GrpcInMemoryCall> = [];
+    const observe = (call: GrpcInvoker.GrpcInMemoryCall) =>
+      Effect.sync(() => {
+        seen.push(call);
+      });
     const result = await withInvoker(
       {
         "test.Svc/Unary": {
           kind: "unary",
           handler: (request, call) =>
-            Effect.sync(() => {
-              seen = call;
-            }).pipe(Effect.andThen(Effect.sleep(20)), Effect.as(request)),
+            observe(call).pipe(
+              Effect.andThen(Effect.sleep(20)),
+              Effect.as(request),
+            ),
+        },
+        "test.Svc/ServerStream": {
+          kind: "server-streaming",
+          handler: (request, call) =>
+            Stream.fromEffect(observe(call)).pipe(
+              Stream.drain,
+              Stream.concat(
+                Stream.fromEffect(Effect.sleep(20).pipe(Effect.as(request))),
+              ),
+            ),
         },
         "test.Svc/ClientStream": {
           kind: "client-streaming",
-          handler: () => Effect.sleep(20).pipe(Effect.as("client response")),
+          handler: (_requests, call) =>
+            observe(call).pipe(
+              Effect.andThen(Effect.sleep(20)),
+              Effect.as("client response"),
+            ),
+        },
+        "test.Svc/BidiStream": {
+          kind: "bidi-streaming",
+          handler: (_requests, call) =>
+            Stream.fromEffect(observe(call)).pipe(
+              Stream.drain,
+              Stream.concat(
+                Stream.fromEffect(
+                  Effect.sleep(20).pipe(Effect.as("bidi response")),
+                ),
+              ),
+            ),
         },
       },
       (invoker) =>
         Effect.all([
           invoker.unary("test.Svc/Unary", "unary response", { timeoutMs: 0 }),
+          Stream.runCollect(
+            invoker.serverStream("test.Svc/ServerStream", "server response", {
+              timeoutMs: 0,
+            }),
+          ),
           invoker.clientStream("test.Svc/ClientStream", Stream.empty, {
             timeoutMs: 0,
           }),
+          Stream.runCollect(
+            invoker.bidiStream("test.Svc/BidiStream", Stream.empty, {
+              timeoutMs: 0,
+            }),
+          ),
         ]),
     );
 
-    expect(result).toEqual(["unary response", "client response"]);
-    expect(seen).toEqual({ tag: "test.Svc/Unary", metadata: [] });
+    expect(result).toEqual([
+      "unary response",
+      ["server response"],
+      "client response",
+      ["bidi response"],
+    ]);
+    expect(seen).toEqual([
+      { tag: "test.Svc/Unary", metadata: [] },
+      { tag: "test.Svc/ServerStream", metadata: [] },
+      { tag: "test.Svc/ClientStream", metadata: [] },
+      { tag: "test.Svc/BidiStream", metadata: [] },
+    ]);
   });
 
   it("terminates the handler when the caller interrupts", async () => {

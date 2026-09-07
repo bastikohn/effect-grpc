@@ -225,8 +225,7 @@ describe("GrpcInvoker (in-memory adapter)", () => {
       {
         "test.Svc/ServerStream": {
           kind: "server-streaming",
-          handler: () =>
-            Stream.repeatEffect(Effect.sleep(5).pipe(Effect.as("tick"))),
+          handler: () => Stream.tick(5),
         },
       },
       (invoker) =>

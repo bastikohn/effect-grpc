@@ -58,14 +58,27 @@ export const makeInMemory = (
       ? effect
       : Effect.timeoutOrElse(effect, {
           duration: timeoutMs,
-          orElse: () =>
-            Effect.fail(
-              GrpcStatusError.make({
-                code: "deadline_exceeded",
-                message: "RPC deadline exceeded",
-              }),
-            ),
+          orElse: () => Effect.fail(deadlineExceeded()),
         });
+
+  // The stream counterpart of `withDeadline`: one timer for the whole call,
+  // started when the stream starts and raced against it. `Stream.timeout`
+  // would not do — it restarts per pull, turning the deadline into an
+  // inactivity window that a chatty stream never trips. When the timer wins
+  // the producer is interrupted, so its finalizers run before the caller
+  // sees `deadline_exceeded`.
+  const withStreamDeadline = <A, E>(
+    stream: Stream.Stream<A, E>,
+    timeoutMs: number | undefined,
+  ): Stream.Stream<A, E | GrpcStatusError.GrpcStatusError> =>
+    timeoutMs === undefined
+      ? stream
+      : Stream.interruptWhen(
+          stream,
+          Effect.sleep(timeoutMs).pipe(
+            Effect.andThen(Effect.fail(deadlineExceeded())),
+          ),
+        );
 
   const unary: GrpcInvokerService["unary"] = (tag, request, options) => {
     const method = lookup(tag, "unary");
@@ -91,7 +104,12 @@ export const makeInMemory = (
     if (!method) return Stream.fail(unknownTag(tag));
     return Stream.unwrap(
       validateCallMetadata(options).pipe(
-        Effect.map(() => method.handler(request, callContext(tag, options))),
+        Effect.map(() =>
+          withStreamDeadline(
+            method.handler(request, callContext(tag, options)),
+            callTimeoutMs(options),
+          ),
+        ),
       ),
     );
   };
@@ -134,7 +152,7 @@ export const makeInMemory = (
         Effect.as(
           Stream.suspend(() => {
             const replay = sourceReplay<A, E>(requests);
-            return method
+            const response = method
               .handler(replay.requests, callContext(tag, options))
               .pipe(
                 Stream.mapError(replay.restore),
@@ -145,6 +163,9 @@ export const makeInMemory = (
                   Stream.fromEffect(replay.failIfCaptured).pipe(Stream.drain),
                 ),
               );
+            // The deadline bounds the whole RPC — request and response work
+            // alike — so it wraps the assembled call, outside source replay.
+            return withStreamDeadline(response, callTimeoutMs(options));
           }),
         ),
       ),
@@ -153,6 +174,10 @@ export const makeInMemory = (
 
   return { unary, serverStream, clientStream, bidiStream };
 };
+
+/** The one status every shape fails with when its deadline expires. */
+const deadlineExceeded = () =>
+  GrpcStatusError.deadlineExceeded("RPC deadline exceeded");
 
 /**
  * Mirrors the wire's source-failure policy: gRPC has no channel for an

@@ -125,10 +125,9 @@ export type GrpcInMemoryHandlers = Record<string, GrpcInMemoryHandler>;
  * invocation semantics as the connect adapter — unknown or kind-mismatched
  * tags fail with `unimplemented`, a failed request stream replays the
  * caller's original error, call metadata is validated and normalized through
- * the same wire codec, and a positive `timeoutMs` bounds unary and
- * client-streaming calls with `deadline_exceeded`. Stream-shaped calls expose
- * `timeoutMs` on the call context but leave mid-stream deadline enforcement
- * to transports.
+ * the same wire codec, and a positive `timeoutMs` bounds the lifetime of
+ * every call shape with `deadline_exceeded` while a non-positive one means no
+ * deadline.
  */
 export const layerInMemory = (
   handlers: GrpcInMemoryHandlers,

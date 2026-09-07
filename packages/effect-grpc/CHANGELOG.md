@@ -1,5 +1,7 @@
 # @effect-grpc/effect-grpc
 
+## 1.0.0-beta.5
+
 ## 1.0.0-beta.4
 
 ### Minor Changes

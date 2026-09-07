@@ -23,6 +23,7 @@
     "handlers-effect",
     "invoker-seam-and-rpc-retirement",
     "otel-semconv-metrics-tracestate",
+    "plugin-protoplugin-emission",
     "proto-matrix-expansion",
     "shrink-public-surface",
     "stream-bridge-teardown-fixes",

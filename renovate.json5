@@ -1,0 +1,48 @@
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: [
+    "config:recommended",
+    // Pin GitHub Actions to commit SHAs (with the tag as a comment) so a
+    // moved tag can't silently change what runs in CI.
+    "helpers:pinGitHubActionDigests",
+  ],
+  timezone: "Europe/Berlin",
+  // One batch per week keeps review load predictable; urgent security
+  // updates bypass the schedule via vulnerabilityAlerts below.
+  schedule: ["before 6am on monday"],
+  labels: ["dependencies"],
+  prConcurrentLimit: 5,
+  packageRules: [
+    {
+      description: "Group all non-major npm updates into a single weekly PR",
+      matchManagers: ["npm"],
+      matchUpdateTypes: ["minor", "patch"],
+      groupName: "npm dependencies (non-major)",
+    },
+    {
+      description: "Group GitHub Actions updates",
+      matchManagers: ["github-actions"],
+      groupName: "github actions",
+    },
+    {
+      // effect and @effect/platform-node are deliberately pinned to an exact
+      // v4 beta (see catalog in pnpm-workspace.yaml and the effect peer
+      // dependency): each bump is a coordinated upgrade of tests, generated
+      // code, and package smoke. Surface new betas on the Dependency
+      // Dashboard but only open a PR after manual approval there.
+      description: "Effect upgrades are manual and coordinated",
+      matchPackageNames: ["effect", "@effect/platform-node"],
+      groupName: "effect (pinned beta)",
+      dependencyDashboardApproval: true,
+    },
+  ],
+  lockFileMaintenance: {
+    enabled: true,
+    schedule: ["before 6am on the first day of the month"],
+  },
+  vulnerabilityAlerts: {
+    // Security fixes should not wait for the weekly window.
+    schedule: ["at any time"],
+    labels: ["dependencies", "security"],
+  },
+}

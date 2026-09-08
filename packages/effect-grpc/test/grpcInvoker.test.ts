@@ -331,6 +331,139 @@ describe("GrpcInvoker (in-memory adapter)", () => {
     expect(responsesFinalized).toBe(1);
   });
 
+  // A pull-based consumer may hold the stream open without pulling — e.g.
+  // while it processes the previous response. The deadline must still tear the
+  // producer down at expiry, not at the consumer's next pull.
+  it("interrupts a server-streaming producer at the deadline while the consumer is not pulling", async () => {
+    let finalized = 0;
+    const result = await withInvoker(
+      {
+        "test.Svc/ServerStream": {
+          kind: "server-streaming",
+          handler: () =>
+            Stream.make("first").pipe(
+              Stream.concat(Stream.never),
+              Stream.ensuring(
+                Effect.sync(() => {
+                  finalized += 1;
+                }),
+              ),
+            ),
+        },
+      },
+      (invoker) =>
+        Effect.scoped(
+          Effect.gen(function* () {
+            const pull = yield* Stream.toPull(
+              invoker.serverStream(
+                "test.Svc/ServerStream",
+                {},
+                {
+                  timeoutMs: 30,
+                },
+              ),
+            );
+            const first = yield* pull;
+            yield* Effect.sleep(100);
+            const finalizedBeforeNextPull = finalized;
+            const error = yield* Effect.flip(pull);
+            return { first, finalizedBeforeNextPull, error };
+          }),
+        ),
+    );
+
+    expect(result.first).toEqual(["first"]);
+    expect(result.finalizedBeforeNextPull).toBe(1);
+    expect((result.error as GrpcStatusError.GrpcStatusError).code).toBe(
+      "deadline_exceeded",
+    );
+    expect(finalized).toBe(1);
+  });
+
+  it("interrupts both bidi streams at the deadline while the consumer is not pulling", async () => {
+    let requestsFinalized = 0;
+    let responsesFinalized = 0;
+    const result = await withInvoker(
+      {
+        "test.Svc/BidiStream": {
+          kind: "bidi-streaming",
+          handler: (requests) =>
+            requests.pipe(
+              Stream.ensuring(
+                Effect.sync(() => {
+                  responsesFinalized += 1;
+                }),
+              ),
+            ),
+        },
+      },
+      (invoker) =>
+        Effect.scoped(
+          Effect.gen(function* () {
+            const pull = yield* Stream.toPull(
+              invoker.bidiStream(
+                "test.Svc/BidiStream",
+                Stream.make(1).pipe(
+                  Stream.concat(Stream.never),
+                  Stream.ensuring(
+                    Effect.sync(() => {
+                      requestsFinalized += 1;
+                    }),
+                  ),
+                ),
+                { timeoutMs: 30 },
+              ),
+            );
+            const first = yield* pull;
+            yield* Effect.sleep(100);
+            const finalizedBeforeNextPull = [
+              requestsFinalized,
+              responsesFinalized,
+            ];
+            const error = yield* Effect.flip(pull);
+            return { first, finalizedBeforeNextPull, error };
+          }),
+        ),
+    );
+
+    expect(result.first).toEqual([1]);
+    expect(result.finalizedBeforeNextPull).toEqual([1, 1]);
+    expect((result.error as GrpcStatusError.GrpcStatusError).code).toBe(
+      "deadline_exceeded",
+    );
+    expect([requestsFinalized, responsesFinalized]).toEqual([1, 1]);
+  });
+
+  // Once the caller's request stream has failed, that failure owns the call —
+  // as for client-streaming, a deadline that expires while the handler is
+  // still recovering from the resulting `cancelled` must not displace it.
+  it("restores a captured request-stream error when the bidi deadline expires during recovery", async () => {
+    const boom = new Error("source boom");
+    const error = await withInvoker(
+      {
+        "test.Svc/BidiStream": {
+          kind: "bidi-streaming",
+          handler: (requests) =>
+            requests.pipe(
+              Stream.catch(() =>
+                Stream.fromEffect(Effect.sleep(1000)).pipe(Stream.drain),
+              ),
+            ),
+        },
+      },
+      (invoker) =>
+        Effect.flip(
+          Stream.runCollect(
+            invoker.bidiStream("test.Svc/BidiStream", Stream.fail(boom), {
+              timeoutMs: 30,
+            }),
+          ),
+        ),
+    );
+
+    expect(error).toBe(boom);
+  });
+
   // The deadline wraps the whole bidi RPC, after source replay: a request
   // stream failure that lands before the deadline still reaches the caller as
   // its own error, never as `deadline_exceeded`.

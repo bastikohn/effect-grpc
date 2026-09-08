@@ -1,4 +1,5 @@
-import { Effect, Stream } from "effect";
+import type { Cause } from "effect";
+import { Channel, Effect, Exit, Fiber, Scope, Stream } from "effect";
 
 import type { GrpcCallOptions } from "../CodegenSupport.js";
 import type {
@@ -62,21 +63,67 @@ export const makeInMemory = (
         });
 
   // The stream counterpart of `withDeadline`: one timer for the whole call,
-  // started when the stream starts and raced against it. `Stream.timeout`
-  // would not do — it restarts per pull, turning the deadline into an
-  // inactivity window that a chatty stream never trips. When the timer wins
-  // the producer is interrupted, so its finalizers run before the caller
-  // sees `deadline_exceeded`.
+  // started when the stream starts. `Stream.timeout` would not do — it
+  // restarts per pull, turning the deadline into an inactivity window that a
+  // chatty stream never trips. Nor would `Stream.interruptWhen`: it only
+  // surfaces the timer's failure on the consumer's next pull, so a consumer
+  // holding the stream open while it processes a response would leave the
+  // producer running past the deadline. Instead the producer gets a scope of
+  // its own that the timer closes at expiry, whether or not anyone is
+  // pulling: a pull in flight is interrupted, then the producer's finalizers
+  // run, and every pull from then on fails with `deadline_exceeded`.
   const withStreamDeadline = <A, E>(
     stream: Stream.Stream<A, E>,
     timeoutMs: number | undefined,
   ): Stream.Stream<A, E | GrpcStatusError.GrpcStatusError> =>
     timeoutMs === undefined
       ? stream
-      : Stream.interruptWhen(
-          stream,
-          Effect.sleep(timeoutMs).pipe(
-            Effect.andThen(Effect.fail(deadlineExceeded())),
+      : Stream.fromChannel(
+          Channel.fromTransform((_upstream, scope) =>
+            Effect.gen(function* () {
+              const producer = yield* Scope.fork(scope);
+              const pull = yield* Stream.toPull(stream).pipe(
+                Scope.provide(producer),
+              );
+              let expired: GrpcStatusError.GrpcStatusError | undefined;
+              // Bound to the call's scope, so completion or an early
+              // consumer close cancels the timer along with everything else.
+              yield* Effect.forkIn(
+                Effect.sleep(timeoutMs).pipe(
+                  Effect.andThen(
+                    Effect.suspend(() => {
+                      expired = deadlineExceeded();
+                      return Scope.close(producer, Exit.fail(expired));
+                    }),
+                  ),
+                ),
+                scope,
+                { startImmediately: true },
+              );
+              // Each pull runs in a fiber the producer scope owns, so closing
+              // the scope interrupts a pull in flight before the producer's
+              // finalizers run. `expired` is set before the close, so an
+              // interrupted pull reports the deadline, not a bare
+              // interruption.
+              return Effect.suspend(() =>
+                expired
+                  ? Effect.fail(expired)
+                  : Effect.forkIn(pull, producer).pipe(
+                      Effect.flatMap(Fiber.join),
+                      Effect.catchCause(
+                        (
+                          cause,
+                        ): Effect.Effect<
+                          never,
+                          E | GrpcStatusError.GrpcStatusError | Cause.Done<void>
+                        > =>
+                          expired
+                            ? Effect.fail(expired)
+                            : Effect.failCause(cause),
+                      ),
+                    ),
+              );
+            }),
           ),
         );
 
@@ -152,20 +199,22 @@ export const makeInMemory = (
         Effect.as(
           Stream.suspend(() => {
             const replay = sourceReplay<A, E>(requests);
-            const response = method
-              .handler(replay.requests, callContext(tag, options))
-              .pipe(
-                Stream.mapError(replay.restore),
-                Stream.mapEffect((value) =>
-                  replay.failIfCaptured.pipe(Effect.as(value)),
-                ),
-                Stream.concat(
-                  Stream.fromEffect(replay.failIfCaptured).pipe(Stream.drain),
-                ),
-              );
-            // The deadline bounds the whole RPC — request and response work
-            // alike — so it wraps the assembled call, outside source replay.
-            return withStreamDeadline(response, callTimeoutMs(options));
+            // As for client-streaming, the deadline sits inside source
+            // replay: it bounds the handler — request and response work
+            // alike — while a request-stream failure already captured still
+            // reaches the caller as its own error, not as `deadline_exceeded`.
+            return withStreamDeadline(
+              method.handler(replay.requests, callContext(tag, options)),
+              callTimeoutMs(options),
+            ).pipe(
+              Stream.mapError(replay.restore),
+              Stream.mapEffect((value) =>
+                replay.failIfCaptured.pipe(Effect.as(value)),
+              ),
+              Stream.concat(
+                Stream.fromEffect(replay.failIfCaptured).pipe(Stream.drain),
+              ),
+            );
           }),
         ),
       ),

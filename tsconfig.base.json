@@ -5,11 +5,10 @@
     "moduleResolution": "Bundler",
     "lib": ["ESNext"],
     "types": ["node"],
-    "baseUrl": ".",
     "paths": {
-      "@effect-grpc/effect-grpc": ["packages/effect-grpc/src/index.ts"],
-      "@effect-grpc/effect-grpc/*": ["packages/effect-grpc/src/*"],
-      "@effect-grpc/simple-proto/*": ["examples/simple-proto/src/*"]
+      "@effect-grpc/effect-grpc": ["./packages/effect-grpc/src/index.ts"],
+      "@effect-grpc/effect-grpc/*": ["./packages/effect-grpc/src/*"],
+      "@effect-grpc/simple-proto/*": ["./examples/simple-proto/src/*"]
     },
     "allowImportingTsExtensions": true,
     "strict": true,

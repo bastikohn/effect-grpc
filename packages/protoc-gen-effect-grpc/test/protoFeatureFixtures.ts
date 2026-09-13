@@ -152,13 +152,15 @@ export const runTypecheck = () => {
           // imported `type` aliases) — consumers compile with this flag.
           noUnusedLocals: true,
           paths: {
-            "@effect-grpc/effect-grpc": ["packages/effect-grpc/src/index.ts"],
-            "@effect-grpc/effect-grpc/*": ["packages/effect-grpc/src/*"],
+            "@effect-grpc/effect-grpc": [
+              "../../../../effect-grpc/src/index.ts",
+            ],
+            "@effect-grpc/effect-grpc/*": ["../../../../effect-grpc/src/*"],
             effect: [
-              "packages/effect-grpc/node_modules/effect/dist/index.d.ts",
+              "../../../../effect-grpc/node_modules/effect/dist/index.d.ts",
             ],
             "effect/unstable/http/*": [
-              "packages/effect-grpc/node_modules/effect/dist/unstable/http/*.d.ts",
+              "../../../../effect-grpc/node_modules/effect/dist/unstable/http/*.d.ts",
             ],
           },
         },

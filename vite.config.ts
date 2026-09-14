@@ -14,6 +14,9 @@ const generatedPatterns = [
   "COMPLEXITY-REDUCTION-PLAN.md",
   "pnpm-lock.yaml",
   "*.tsbuildinfo",
+  // Vendored read-only reference repositories (see AGENTS.md); they keep
+  // their own formatting and lint rules.
+  "repos/**",
 ];
 
 export default defineConfig({

@@ -14,6 +14,8 @@ const generatedPatterns = [
   "COMPLEXITY-REDUCTION-PLAN.md",
   "pnpm-lock.yaml",
   "*.tsbuildinfo",
+  // Read-only vendored reference repositories (see AGENTS.md).
+  "repos/**",
 ];
 
 export default defineConfig({

@@ -1,5 +1,5 @@
+import { assert, describe, it } from "@effect/vitest";
 import { Effect, Layer, Result, Stream } from "effect";
-import { describe, expect, it } from "vitest";
 
 import { GrpcInvoker, GrpcStatusError } from "@effect-grpc/effect-grpc";
 import {
@@ -79,15 +79,16 @@ const clientLayer = Layer.mergeAll(
 ).pipe(Layer.provide(GrpcInvoker.layerInMemory(handlers)));
 
 describe("generated clients over GrpcInvoker.layerInMemory", () => {
-  it("round-trips all four call shapes", async () => {
-    // One test, four independent shapes. `mode: "result"` runs every effect
-    // regardless of the others' outcomes and collects each one as a `Result`
-    // (plain `Effect.all` would short-circuit on the first failure). Unwrapping
-    // with `Result.merge` puts a failure in the value slot, and `expect.soft`
-    // keeps going after a mismatch — so every broken shape is reported, and no
-    // shape can hide another.
-    const result = await Effect.runPromise(
-      Effect.all(
+  it.effect("round-trips all four call shapes", () =>
+    Effect.gen(function* () {
+      // One test, four independent shapes. `mode: "result"` runs every effect
+      // regardless of the others' outcomes and collects each one as a `Result`
+      // (plain `Effect.all` would short-circuit on the first failure).
+      // Unwrapping with `Result.merge` puts a failure in the value slot, and
+      // comparing all four in a single object shows every mismatch in one
+      // diff — so every broken shape is reported, and no shape can hide
+      // another.
+      const result = yield* Effect.all(
         {
           unary: Effect.gen(function* () {
             const client = yield* UserServiceClient;
@@ -122,56 +123,73 @@ describe("generated clients over GrpcInvoker.layerInMemory", () => {
           }),
         },
         { mode: "result" },
-      ).pipe(Effect.provide(clientLayer)),
-    );
+      ).pipe(Effect.provide(clientLayer));
 
-    expect.soft(Result.merge(result.unary)).toEqual({
-      user: { id: "123", name: "In-Memory User" },
-    });
-    expect.soft(Result.merge(result.server)).toEqual([
-      { id: "demo", name: "In-Memory User", action: "created", sequence: 1 },
-      { id: "demo", name: "In-Memory User", action: "updated", sequence: 2 },
-    ]);
-    expect.soft(Result.merge(result.client)).toEqual({
-      count: 3,
-      joined: "alpha,beta,gamma",
-    });
-    expect.soft(Result.merge(result.bidi)).toEqual([
-      { text: "echo:hi", sequence: 2 },
-      { text: "echo:there", sequence: 3 },
-    ]);
-  });
+      assert.deepStrictEqual(
+        {
+          unary: Result.merge(result.unary),
+          server: Result.merge(result.server),
+          client: Result.merge(result.client),
+          bidi: Result.merge(result.bidi),
+        },
+        {
+          unary: { user: { id: "123", name: "In-Memory User" } },
+          server: [
+            {
+              id: "demo",
+              name: "In-Memory User",
+              action: "created",
+              sequence: 1,
+            },
+            {
+              id: "demo",
+              name: "In-Memory User",
+              action: "updated",
+              sequence: 2,
+            },
+          ],
+          client: { count: 3, joined: "alpha,beta,gamma" },
+          bidi: [
+            { text: "echo:hi", sequence: 2 },
+            { text: "echo:there", sequence: 3 },
+          ],
+        },
+      );
+    }),
+  );
 
-  it("surfaces a handler failure through the generated client's narrowed error channel", async () => {
-    // A handler that fails with a `GrpcStatusError`; the failure must reach the
-    // caller through the generated client's `<Service>ClientError` channel,
-    // which is now narrowed to `GrpcStatusError` alone.
-    const failingHandlers: GrpcInvoker.GrpcInMemoryHandlers = {
-      "demo.v1.UserService/GetUser": {
-        kind: "unary",
-        handler: (request) =>
-          Effect.fail(
-            GrpcStatusError.notFound(
-              `no such user: ${(request as { readonly id: string }).id}`,
-            ),
-          ),
-      },
-    };
-    const failingLayer = UserServiceClientLayer.pipe(
-      Layer.provide(GrpcInvoker.layerInMemory(failingHandlers)),
-    );
-
-    const error = await Effect.runPromise(
+  it.effect(
+    "surfaces a handler failure through the generated client's narrowed error channel",
+    () =>
       Effect.gen(function* () {
-        const client = yield* UserServiceClient;
-        // The error channel here is `UserServiceClientError`
-        // (= `GrpcStatusError`); `Effect.flip` moves it into the success slot.
-        return yield* Effect.flip(client.getUser({ id: "404" }));
-      }).pipe(Effect.provide(failingLayer)),
-    );
+        // A handler that fails with a `GrpcStatusError`; the failure must reach
+        // the caller through the generated client's `<Service>ClientError`
+        // channel, which is now narrowed to `GrpcStatusError` alone.
+        const failingHandlers: GrpcInvoker.GrpcInMemoryHandlers = {
+          "demo.v1.UserService/GetUser": {
+            kind: "unary",
+            handler: (request) =>
+              Effect.fail(
+                GrpcStatusError.notFound(
+                  `no such user: ${(request as { readonly id: string }).id}`,
+                ),
+              ),
+          },
+        };
+        const failingLayer = UserServiceClientLayer.pipe(
+          Layer.provide(GrpcInvoker.layerInMemory(failingHandlers)),
+        );
 
-    expect(error._tag).toBe("GrpcStatusError");
-    expect(error.code).toBe("not_found");
-    expect(error.message).toBe("no such user: 404");
-  });
+        const error = yield* Effect.gen(function* () {
+          const client = yield* UserServiceClient;
+          // The error channel here is `UserServiceClientError`
+          // (= `GrpcStatusError`); `Effect.flip` moves it into the success slot.
+          return yield* Effect.flip(client.getUser({ id: "404" }));
+        }).pipe(Effect.provide(failingLayer));
+
+        assert.strictEqual(error._tag, "GrpcStatusError");
+        assert.strictEqual(error.code, "not_found");
+        assert.strictEqual(error.message, "no such user: 404");
+      }),
+  );
 });

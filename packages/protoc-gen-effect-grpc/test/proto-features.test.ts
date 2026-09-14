@@ -1,6 +1,6 @@
 import { pathToFileURL } from "node:url";
 
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "@effect/vitest";
 
 import {
   generateProtoFeature,
@@ -408,7 +408,7 @@ describe("proto feature fixtures", () => {
       "features.v1.RepeatedScalarFeature/Echo",
     );
 
-    expect(entry.fromGrpcRequest({})).toEqual({
+    assert.deepStrictEqual(entry.fromGrpcRequest({}), {
       tags: [],
       flags: [],
       blobs: [],
@@ -417,7 +417,7 @@ describe("proto feature fixtures", () => {
       ratios: [],
       weights: [],
     });
-    expect(
+    assert.deepStrictEqual(
       entry.toGrpcRequest({
         tags: undefined,
         flags: undefined,
@@ -427,15 +427,16 @@ describe("proto feature fixtures", () => {
         ratios: undefined,
         weights: undefined,
       }),
-    ).toEqual({
-      tags: [],
-      flags: [],
-      blobs: [],
-      scores: [],
-      counts: [],
-      ratios: [],
-      weights: [],
-    });
+      {
+        tags: [],
+        flags: [],
+        blobs: [],
+        scores: [],
+        counts: [],
+        ratios: [],
+        weights: [],
+      },
+    );
 
     const grpcValue = {
       tags: ["alpha", "beta"],
@@ -451,8 +452,8 @@ describe("proto feature fixtures", () => {
       blobs: ["AQI="],
     };
 
-    expect(entry.fromGrpcRequest(grpcValue)).toEqual(encodedValue);
-    expect(entry.toGrpcRequest(encodedValue)).toEqual(grpcValue);
+    assert.deepStrictEqual(entry.fromGrpcRequest(grpcValue), encodedValue);
+    assert.deepStrictEqual(entry.toGrpcRequest(encodedValue), grpcValue);
   });
 
   it("converts repeated same-file message fields", async () => {
@@ -462,24 +463,28 @@ describe("proto feature fixtures", () => {
       "features.v1.RepeatedMessageFeature/Echo",
     );
 
-    expect(entry.fromGrpcRequest({})).toEqual({ users: [] });
-    expect(entry.fromGrpcRequest({ users: [] })).toEqual({ users: [] });
-    expect(entry.toGrpcRequest({ users: undefined })).toEqual({ users: [] });
-    expect(entry.toGrpcRequest({ users: [] })).toEqual({ users: [] });
-    expect(
+    assert.deepStrictEqual(entry.fromGrpcRequest({}), { users: [] });
+    assert.deepStrictEqual(entry.fromGrpcRequest({ users: [] }), { users: [] });
+    assert.deepStrictEqual(entry.toGrpcRequest({ users: undefined }), {
+      users: [],
+    });
+    assert.deepStrictEqual(entry.toGrpcRequest({ users: [] }), { users: [] });
+    assert.deepStrictEqual(
       entry.fromGrpcRequest({
         users: [{ id: "1", addresses: [{ city: "Berlin" }] }],
       }),
-    ).toEqual({
-      users: [{ id: "1", addresses: [{ city: "Berlin" }] }],
-    });
-    expect(
+      {
+        users: [{ id: "1", addresses: [{ city: "Berlin" }] }],
+      },
+    );
+    assert.deepStrictEqual(
       entry.toGrpcRequest({
         users: [{ id: "1", addresses: [{ city: "Berlin" }] }],
       }),
-    ).toEqual({
-      users: [{ id: "1", addresses: [{ city: "Berlin" }] }],
-    });
+      {
+        users: [{ id: "1", addresses: [{ city: "Berlin" }] }],
+      },
+    );
   });
 
   it("converts enum fields and accepts forward-compatible values", async () => {
@@ -489,29 +494,32 @@ describe("proto feature fixtures", () => {
       "features.v1.EnumFeature/Echo",
     );
 
-    expect(entry.fromGrpcRequest({ id: "1", state: 1 })).toEqual({
+    assert.deepStrictEqual(entry.fromGrpcRequest({ id: "1", state: 1 }), {
       id: "1",
       state: 1,
       history: [],
     });
-    expect(entry.fromGrpcRequest({ id: "1", state: 99 })).toEqual({
+    assert.deepStrictEqual(entry.fromGrpcRequest({ id: "1", state: 99 }), {
       id: "1",
       state: 99,
       history: [],
     });
-    expect(
+    assert.deepStrictEqual(
       entry.fromGrpcRequest({ id: "1", state: 1, history: [1, 2, 99] }),
-    ).toEqual({ id: "1", state: 1, history: [1, 2, 99] });
-    expect(
+      { id: "1", state: 1, history: [1, 2, 99] },
+    );
+    assert.deepStrictEqual(
       entry.toGrpcRequest({ id: "1", state: 1, history: [1, 2, 99] }),
-    ).toEqual({ id: "1", state: 1, history: [1, 2, 99] });
-    expect(
+      { id: "1", state: 1, history: [1, 2, 99] },
+    );
+    assert.deepStrictEqual(
       Schema.decodeUnknownSync(generated.EnumUserSchema)({
         id: "1",
         state: 99,
         history: [99],
       }),
-    ).toEqual({ id: "1", state: 99, history: [99] });
+      { id: "1", state: 99, history: [99] },
+    );
   });
 
   it("converts imported same-package message fields", async () => {
@@ -525,8 +533,8 @@ describe("proto feature fixtures", () => {
     );
 
     const value = { user: { id: "1", name: "Ada" }, state: 1 };
-    expect(entry.fromGrpcRequest(value)).toEqual(value);
-    expect(entry.toGrpcRequest(value)).toEqual(value);
+    assert.deepStrictEqual(entry.fromGrpcRequest(value), value);
+    assert.deepStrictEqual(entry.toGrpcRequest(value), value);
   });
 
   it("converts 64-bit scalar fields as bigint by default", async () => {
@@ -550,14 +558,14 @@ describe("proto feature fixtures", () => {
       value: "-5",
     };
 
-    expect(entry.fromGrpcRequest(grpcValue)).toEqual(encodedValue);
-    expect(entry.toGrpcRequest(encodedValue)).toEqual(grpcValue);
-    expect(() =>
+    assert.deepStrictEqual(entry.fromGrpcRequest(grpcValue), encodedValue);
+    assert.deepStrictEqual(entry.toGrpcRequest(encodedValue), grpcValue);
+    assert.throws(() =>
       Schema.decodeUnknownSync(generated.Int64ScalarsSchema)({
         ...grpcValue,
         count: -1n,
       }),
-    ).toThrow();
+    );
   });
 
   it("converts Timestamp and Duration fields", async () => {
@@ -574,80 +582,91 @@ describe("proto feature fixtures", () => {
       enabled: { value: true },
     });
 
-    expect(decoded).toEqual({
+    assert.deepStrictEqual(decoded, {
       createdAt: "1970-01-01T00:00:01.500Z",
       timeout: { _tag: "Millis", value: 2250 },
       enabled: true,
     });
-    expect(
+    assert.strictEqual(
       (
         entry.fromGrpcRequest({
           createdAt: { seconds: 0n, nanos: 1_999_999 },
         }) as { readonly createdAt?: unknown }
       ).createdAt,
-    ).toBe("1970-01-01T00:00:00.001Z");
-    expect(entry.fromGrpcRequest({})).toEqual({
-      createdAt: undefined,
-      timeout: undefined,
-      enabled: undefined,
-    });
-    expect(
+      "1970-01-01T00:00:00.001Z",
+    );
+    // `compact` drops the unset wrapper fields rather than emitting them as
+    // explicit `undefined` keys.
+    assert.deepStrictEqual(entry.fromGrpcRequest({}), {});
+    assert.deepStrictEqual(
       entry.toGrpcRequest({
         createdAt: "1970-01-01T00:00:00.000Z",
         timeout: { _tag: "Millis", value: 0 },
         enabled: true,
       }),
-    ).toEqual({
-      createdAt: { seconds: 0n, nanos: 0 },
-      timeout: { seconds: 0n, nanos: 0 },
-      enabled: true,
-    });
-    expect(
+      {
+        createdAt: { seconds: 0n, nanos: 0 },
+        timeout: { seconds: 0n, nanos: 0 },
+        enabled: true,
+      },
+    );
+    assert.deepStrictEqual(
       entry.toGrpcRequest({
         createdAt: "1970-01-01T00:00:00.000Z",
         timeout: { _tag: "Nanos", value: "1" },
         enabled: false,
       }),
-    ).toEqual({
-      createdAt: { seconds: 0n, nanos: 0 },
-      timeout: { seconds: 0n, nanos: 1 },
-      enabled: false,
-    });
+      {
+        createdAt: { seconds: 0n, nanos: 0 },
+        timeout: { seconds: 0n, nanos: 1 },
+        enabled: false,
+      },
+    );
 
     const { entry: timestampEntry } = await registryEntry(
       feature,
       "WellKnownTypeFeatureGrpcRegistry",
       "features.v1.WellKnownTypeFeature/EchoTimestamp",
     );
-    expect(
+    assert.strictEqual(
       timestampEntry.fromGrpcRequest({ seconds: 1n, nanos: 500_000_000 }),
-    ).toBe("1970-01-01T00:00:01.500Z");
-    expect(timestampEntry.toGrpcRequest("1970-01-01T00:00:00.000Z")).toEqual({
-      seconds: 0n,
-      nanos: 0,
-    });
+      "1970-01-01T00:00:01.500Z",
+    );
+    assert.deepStrictEqual(
+      timestampEntry.toGrpcRequest("1970-01-01T00:00:00.000Z"),
+      {
+        seconds: 0n,
+        nanos: 0,
+      },
+    );
 
     const { entry: durationEntry } = await registryEntry(
       feature,
       "WellKnownTypeFeatureGrpcRegistry",
       "features.v1.WellKnownTypeFeature/EchoDuration",
     );
-    expect(
+    assert.deepStrictEqual(
       durationEntry.fromGrpcRequest({ seconds: 2n, nanos: 250_000_000 }),
-    ).toEqual({ _tag: "Millis", value: 2250 });
-    expect(durationEntry.toGrpcRequest({ _tag: "Nanos", value: "1" })).toEqual({
-      seconds: 0n,
-      nanos: 1,
-    });
+      { _tag: "Millis", value: 2250 },
+    );
+    assert.deepStrictEqual(
+      durationEntry.toGrpcRequest({ _tag: "Nanos", value: "1" }),
+      {
+        seconds: 0n,
+        nanos: 1,
+      },
+    );
 
     const { entry: boolValueEntry } = await registryEntry(
       feature,
       "WellKnownTypeFeatureGrpcRegistry",
       "features.v1.WellKnownTypeFeature/EchoBoolValue",
     );
-    expect(boolValueEntry.fromGrpcRequest({ value: true })).toBe(true);
-    expect(boolValueEntry.fromGrpcRequest({})).toBe(false);
-    expect(boolValueEntry.toGrpcRequest(false)).toEqual({ value: false });
+    assert.isTrue(boolValueEntry.fromGrpcRequest({ value: true }));
+    assert.isFalse(boolValueEntry.fromGrpcRequest({}));
+    assert.deepStrictEqual(boolValueEntry.toGrpcRequest(false), {
+      value: false,
+    });
   });
 
   it("converts comprehensive field shapes", async () => {
@@ -682,7 +701,7 @@ describe("proto feature fixtures", () => {
 
     const grpcValue = entry.toGrpcRequest(value);
 
-    expect(grpcValue).toMatchObject({
+    assert.deepInclude(grpcValue, {
       ratio: 1.5,
       score: 2.5,
       count: 3,
@@ -701,28 +720,31 @@ describe("proto feature fixtures", () => {
       statesByName: { ready: 1 },
       childrenByNumber: { 3: { id: "child" } },
     });
-    expect(entry.fromGrpcRequest(grpcValue)).toEqual(value);
-    expect(
+    assert.deepStrictEqual(entry.fromGrpcRequest(grpcValue), value);
+    assert.deepStrictEqual(
       (
         entry.fromGrpcRequest({
           choice: { case: "timeout", value: { seconds: 1n, nanos: 0 } },
         }) as { readonly choice?: unknown }
       ).choice,
-    ).toEqual({ case: "timeout", value: { _tag: "Millis", value: 1000 } });
-    expect(
+      { case: "timeout", value: { _tag: "Millis", value: 1000 } },
+    );
+    assert.deepStrictEqual(
       (
         entry.fromGrpcRequest({
           choice: { case: "note", value: { value: "hello" } },
         }) as { readonly choice?: unknown }
       ).choice,
-    ).toEqual({ case: "note", value: "hello" });
-    expect(
+      { case: "note", value: "hello" },
+    );
+    assert.deepStrictEqual(
       (
         entry.toGrpcRequest({
           choice: { case: "note", value: "hello" },
         }) as { readonly choice?: unknown }
       ).choice,
-    ).toEqual({ case: "note", value: { value: "hello" } });
+      { case: "note", value: { value: "hello" } },
+    );
   });
 
   it("converts string-key map fields", async () => {
@@ -737,13 +759,13 @@ describe("proto feature fixtures", () => {
       users: { one: { id: "1" } },
     };
 
-    expect(entry.fromGrpcRequest({})).toEqual({
+    assert.deepStrictEqual(entry.fromGrpcRequest({}), {
       labels: {},
       counts: {},
       users: {},
     });
-    expect(entry.fromGrpcRequest(value)).toEqual(value);
-    expect(entry.toGrpcRequest(value)).toEqual(value);
+    assert.deepStrictEqual(entry.fromGrpcRequest(value), value);
+    assert.deepStrictEqual(entry.toGrpcRequest(value), value);
   });
 
   it("converts oneof fields", async () => {
@@ -755,21 +777,27 @@ describe("proto feature fixtures", () => {
 
     // The unset oneof case encodes as `null` (the JSON codec's `Schema.Undefined`
     // representation), so it decodes back to the `undefined` case.
-    expect(entry.fromGrpcRequest({})).toEqual({ query: { case: null } });
-    expect(
+    assert.deepStrictEqual(entry.fromGrpcRequest({}), {
+      query: { case: null },
+    });
+    assert.deepStrictEqual(
       entry.fromGrpcRequest({ query: { case: "id", value: "1" } }),
-    ).toEqual({ query: { case: "id", value: "1" } });
-    expect(
+      { query: { case: "id", value: "1" } },
+    );
+    assert.deepStrictEqual(
       entry.fromGrpcRequest({
         query: { case: "email", value: "a@example.com" },
       }),
-    ).toEqual({ query: { case: "email", value: "a@example.com" } });
-    expect(
+      { query: { case: "email", value: "a@example.com" } },
+    );
+    assert.deepStrictEqual(
       entry.fromGrpcRequest({ query: { case: "user", value: { id: "1" } } }),
-    ).toEqual({ query: { case: "user", value: { id: "1" } } });
-    expect(() =>
-      entry.toGrpcRequest({ query: { case: "missing", value: "x" } }),
-    ).toThrow("Unknown oneof case query");
+      { query: { case: "user", value: { id: "1" } } },
+    );
+    assert.throws(
+      () => entry.toGrpcRequest({ query: { case: "missing", value: "x" } }),
+      "Unknown oneof case query",
+    );
   });
 
   it("converts nested message and nested enum fields", async () => {
@@ -786,9 +814,9 @@ describe("proto feature fixtures", () => {
       byId: { one: inner },
       choice: { case: "picked", value: inner },
     };
-    expect(entry.fromGrpcRequest(value)).toEqual(value);
-    expect(entry.toGrpcRequest(value)).toEqual(value);
-    expect(entry.fromGrpcRequest({})).toEqual({
+    assert.deepStrictEqual(entry.fromGrpcRequest(value), value);
+    assert.deepStrictEqual(entry.toGrpcRequest(value), value);
+    assert.deepStrictEqual(entry.fromGrpcRequest({}), {
       items: [],
       byId: {},
       choice: { case: null },
@@ -814,9 +842,9 @@ describe("proto feature fixtures", () => {
       states: [1, 99],
       choice: { case: "picked", value: user },
     };
-    expect(entry.fromGrpcRequest(value)).toEqual(value);
-    expect(entry.toGrpcRequest(value)).toEqual(value);
-    expect(entry.fromGrpcRequest({})).toEqual({
+    assert.deepStrictEqual(entry.fromGrpcRequest(value), value);
+    assert.deepStrictEqual(entry.toGrpcRequest(value), value);
+    assert.deepStrictEqual(entry.fromGrpcRequest({}), {
       users: [],
       byId: {},
       states: [],
@@ -835,8 +863,8 @@ describe("proto feature fixtures", () => {
     );
 
     const user = { id: "1", state: 1 };
-    expect(entry.fromGrpcRequest(user)).toEqual(user);
-    expect(entry.toGrpcRequest(user)).toEqual(user);
+    assert.deepStrictEqual(entry.fromGrpcRequest(user), user);
+    assert.deepStrictEqual(entry.toGrpcRequest(user), user);
   });
 
   // Not a regression guard — pre-fix the duplicate declarations break the
@@ -855,28 +883,32 @@ describe("proto feature fixtures", () => {
 
     // The wrapper boxing converter would have made this `{ value: true }`, the
     // Empty converter `{}` — neither shape a typecheck can rule out.
-    expect(
+    assert.deepStrictEqual(
       (await entryFor("EchoShadowedBoolValue")).toGrpcRequest({
         enabled: true,
       }),
-    ).toEqual({ enabled: true });
-    expect(
+      { enabled: true },
+    );
+    assert.deepStrictEqual(
       (await entryFor("EchoShadowedEmpty")).toGrpcRequest({ label: "b" }),
-    ).toEqual({ label: "b" });
+      { label: "b" },
+    );
 
     // The shadow's `at` field and the well-known it is named after are the
     // same real Timestamp, converted the same way from either direction.
-    expect(
+    assert.deepStrictEqual(
       (await entryFor("EchoShadowedTimestamp")).fromGrpcRequest({
         at: { seconds: 1n, nanos: 0 },
       }),
-    ).toEqual({ at: "1970-01-01T00:00:01.000Z" });
-    expect(
+      { at: "1970-01-01T00:00:01.000Z" },
+    );
+    assert.strictEqual(
       (await entryFor("EchoTimestamp")).fromGrpcRequest({
         seconds: 1n,
         nanos: 0,
       }),
-    ).toBe("1970-01-01T00:00:01.000Z");
+      "1970-01-01T00:00:01.000Z",
+    );
   });
 
   it("converts optional scalar and enum fields", async () => {
@@ -899,21 +931,17 @@ describe("proto feature fixtures", () => {
       blob: "AQI=",
       total: "2",
     };
-    const absent = {
-      name: undefined,
-      enabled: undefined,
-      blob: undefined,
-      score: undefined,
-      total: undefined,
-      state: undefined,
-    };
+    // Both converters `compact` away unset optionals, so an empty message
+    // stays empty in either direction (no explicit `undefined` keys).
+    const absent = {};
 
-    expect(entry.fromGrpcRequest(grpcValue)).toEqual(encodedValue);
-    expect(entry.toGrpcRequest(encodedValue)).toEqual(grpcValue);
-    expect(entry.fromGrpcRequest({})).toEqual(absent);
-    expect(entry.toGrpcRequest({})).toEqual(absent);
-    expect(
+    assert.deepStrictEqual(entry.fromGrpcRequest(grpcValue), encodedValue);
+    assert.deepStrictEqual(entry.toGrpcRequest(encodedValue), grpcValue);
+    assert.deepStrictEqual(entry.fromGrpcRequest({}), absent);
+    assert.deepStrictEqual(entry.toGrpcRequest({}), absent);
+    assert.deepStrictEqual(
       Schema.decodeUnknownSync(generated.OptionalScalarsSchema)({}),
-    ).toEqual({});
+      {},
+    );
   });
 });

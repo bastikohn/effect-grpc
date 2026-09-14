@@ -4,6 +4,7 @@ packages:
 catalog:
   "@effect/platform-node": 4.0.0-rc.112
   effect: 4.0.0-rc.112
+  "@effect/vitest": 4.0.0-rc.112
 allowBuilds:
   "@bufbuild/buf": true
   esbuild: true

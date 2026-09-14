@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { assert, describe, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
-import { describe, expect, it } from "vitest";
 
 import { GrpcClientProtocol, GrpcNodeServer } from "@effect-grpc/effect-grpc";
 import {
@@ -34,82 +34,96 @@ const implementation: UserServiceImplementation = {
 };
 
 describe("TLS e2e", () => {
-  it("round-trips a unary call over TLS", async () => {
-    const response = await Effect.runPromise(
-      withServer({ tls: serverTls }, (baseUrl) =>
+  it.live("round-trips a unary call over TLS", () =>
+    Effect.gen(function* () {
+      const response = yield* withServer({ tls: serverTls }, (baseUrl) =>
         getUser(baseUrl, { tls: { ca } }),
-      ),
-    );
+      );
 
-    expect(response).toEqual({ user: { id: "123", name: "User 123" } });
-  });
+      assert.deepStrictEqual(response, {
+        user: { id: "123", name: "User 123" },
+      });
+    }),
+  );
 
-  it("rejects a server that is not trusted by the configured CA", async () => {
-    const error = await Effect.runPromise(
-      withServer({ tls: serverTls }, (baseUrl) =>
+  it.live("rejects a server that is not trusted by the configured CA", () =>
+    Effect.gen(function* () {
+      const error = yield* withServer({ tls: serverTls }, (baseUrl) =>
         getUser(baseUrl, { tls: {} }).pipe(Effect.flip),
-      ),
-    );
+      );
 
-    // connect-node surfaces TLS handshake failures as code `internal`.
-    expect(error).toMatchObject({
-      _tag: "GrpcStatusError",
-      code: "internal",
-    });
-  });
+      // connect-node surfaces TLS handshake failures as code `internal`.
+      assert.deepInclude(error, {
+        _tag: "GrpcStatusError",
+        code: "internal",
+      });
+    }),
+  );
 
-  it("connects to an untrusted server when rejectUnauthorized is false", async () => {
-    const response = await Effect.runPromise(
-      withServer({ tls: serverTls }, (baseUrl) =>
-        getUser(baseUrl, { tls: { rejectUnauthorized: false } }),
-      ),
-    );
+  it.live(
+    "connects to an untrusted server when rejectUnauthorized is false",
+    () =>
+      Effect.gen(function* () {
+        const response = yield* withServer({ tls: serverTls }, (baseUrl) =>
+          getUser(baseUrl, { tls: { rejectUnauthorized: false } }),
+        );
 
-    expect(response).toEqual({ user: { id: "123", name: "User 123" } });
-  });
+        assert.deepStrictEqual(response, {
+          user: { id: "123", name: "User 123" },
+        });
+      }),
+  );
 
-  it("round-trips a unary call over mTLS", async () => {
-    const response = await Effect.runPromise(
-      withServer({ tls: { ...serverTls, clientCa: ca } }, (baseUrl) =>
-        getUser(baseUrl, { tls: { ca, ...clientCert } }),
-      ),
-    );
+  it.live("round-trips a unary call over mTLS", () =>
+    Effect.gen(function* () {
+      const response = yield* withServer(
+        { tls: { ...serverTls, clientCa: ca } },
+        (baseUrl) => getUser(baseUrl, { tls: { ca, ...clientCert } }),
+      );
 
-    expect(response).toEqual({ user: { id: "123", name: "User 123" } });
-  });
+      assert.deepStrictEqual(response, {
+        user: { id: "123", name: "User 123" },
+      });
+    }),
+  );
 
-  it("rejects mTLS clients that present no certificate", async () => {
-    const error = await Effect.runPromise(
-      withServer({ tls: { ...serverTls, clientCa: ca } }, (baseUrl) =>
-        getUser(baseUrl, { tls: { ca } }).pipe(Effect.flip),
-      ),
-    );
+  it.live("rejects mTLS clients that present no certificate", () =>
+    Effect.gen(function* () {
+      const error = yield* withServer(
+        { tls: { ...serverTls, clientCa: ca } },
+        (baseUrl) => getUser(baseUrl, { tls: { ca } }).pipe(Effect.flip),
+      );
 
-    // connect-node surfaces TLS handshake failures as code `internal`.
-    expect(error).toMatchObject({
-      _tag: "GrpcStatusError",
-      code: "internal",
-    });
-  });
+      // connect-node surfaces TLS handshake failures as code `internal`.
+      assert.deepInclude(error, {
+        _tag: "GrpcStatusError",
+        code: "internal",
+      });
+    }),
+  );
 });
 
 describe("makeTransport TLS validation", () => {
   it("requires an https baseUrl when tls is set", () => {
-    expect(() =>
-      GrpcClientProtocol.makeTransport({
-        baseUrl: "http://127.0.0.1:1",
-        tls: { ca },
-      }),
-    ).toThrowError(/requires an https:\/\/ baseUrl/);
+    assert.throws(
+      () =>
+        GrpcClientProtocol.makeTransport({
+          baseUrl: "http://127.0.0.1:1",
+          tls: { ca },
+        }),
+      /requires an https:\/\/ baseUrl/,
+    );
   });
 
   it("requires cert and key together", () => {
-    expect(() =>
-      GrpcClientProtocol.makeTransport({
-        baseUrl: "https://127.0.0.1:1",
-        tls: { cert: clientCert.cert },
-      }),
-    ).toThrowError(/both 'cert' and 'key'/);
+    assert.throws(
+      () =>
+        GrpcClientProtocol.makeTransport({
+          baseUrl: "https://127.0.0.1:1",
+          tls: { cert: clientCert.cert },
+        }),
+      /both 'cert' and 'key'/,
+    );
   });
 });
 

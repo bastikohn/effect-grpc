@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { assert, describe, it } from "@effect/vitest";
-import { Effect, Layer } from "effect";
+import { Effect, Exit, Layer } from "effect";
 
 import { GrpcClientProtocol, GrpcNodeServer } from "@effect-grpc/effect-grpc";
 import {
@@ -104,27 +104,34 @@ describe("TLS e2e", () => {
 });
 
 describe("makeTransport TLS validation", () => {
-  it("requires an https baseUrl when tls is set", () => {
-    assert.throws(
-      () =>
+  it.effect("requires an https baseUrl when tls is set", () =>
+    Effect.gen(function* () {
+      const exit = yield* Effect.exit(
         GrpcClientProtocol.makeTransport({
           baseUrl: "http://127.0.0.1:1",
           tls: { ca },
         }),
-      /requires an https:\/\/ baseUrl/,
-    );
-  });
+      );
 
-  it("requires cert and key together", () => {
-    assert.throws(
-      () =>
+      // A contradictory `tls` block is a wiring defect, not a typed failure.
+      assert.isTrue(Exit.isFailure(exit));
+      assert.match(String(exit), /requires an https:\/\/ baseUrl/);
+    }),
+  );
+
+  it.effect("requires cert and key together", () =>
+    Effect.gen(function* () {
+      const exit = yield* Effect.exit(
         GrpcClientProtocol.makeTransport({
           baseUrl: "https://127.0.0.1:1",
-          tls: { cert: clientCert.cert },
+          tls: { ca, cert: clientCert.cert },
         }),
-      /both 'cert' and 'key'/,
-    );
-  });
+      );
+
+      assert.isTrue(Exit.isFailure(exit));
+      assert.match(String(exit), /both 'cert' and 'key'/);
+    }),
+  );
 });
 
 const getUser = (

@@ -43,20 +43,20 @@ export const handlerContext = (options?: {
   }) as HandlerContext;
 
 /** A loopback port nothing is listening on, for tests that boot a server. */
-export const freePort = Effect.promise(
-  () =>
-    new Promise<number>((resolve, reject) => {
-      const server = net.createServer();
-      server.once("error", reject);
-      server.listen(0, "127.0.0.1", () => {
-        const address = server.address();
-        server.close(() => {
-          if (address && typeof address === "object") resolve(address.port);
-          else reject(new Error("Unable to allocate a local port"));
-        });
-      });
-    }),
-);
+export const freePort = Effect.callback<number>((resume) => {
+  const server = net.createServer();
+  server.once("error", (error) => resume(Effect.die(error)));
+  server.listen(0, "127.0.0.1", () => {
+    const address = server.address();
+    server.close(() =>
+      resume(
+        address && typeof address === "object"
+          ? Effect.succeed(address.port)
+          : Effect.die(new Error("Unable to allocate a local port")),
+      ),
+    );
+  });
+});
 
 /**
  * A four-shape method fixture for one service: a shared descriptor plus a

@@ -1,4 +1,5 @@
 import * as net from "node:net";
+import type { Interceptor } from "@connectrpc/connect";
 import { Effect } from "effect";
 
 import { GrpcNodeServer } from "@effect-grpc/effect-grpc";
@@ -31,6 +32,7 @@ export const withServer = <A, E, R>(
   options: {
     readonly services: ReadonlyArray<GrpcNodeServer.ServeAllService>;
     readonly tls?: GrpcNodeServer.GrpcServerTlsOptions;
+    readonly interceptors?: ReadonlyArray<Interceptor>;
   },
   use: (baseUrl: URL) => Effect.Effect<A, E, R>,
 ): Effect.Effect<A, E, R> =>
@@ -41,6 +43,7 @@ export const withServer = <A, E, R>(
         host: "127.0.0.1",
         port,
         tls: options.tls,
+        interceptors: options.interceptors,
         services: options.services,
       }).pipe(Effect.forkScoped);
       yield* Effect.sleep("50 millis");

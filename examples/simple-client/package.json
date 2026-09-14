@@ -19,6 +19,7 @@
   },
   "devDependencies": {
     "@effect/opentelemetry": "4.0.0-rc.112",
+    "@effect/vitest": "catalog:",
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/sdk-trace-base": "^2.0.0"
   }

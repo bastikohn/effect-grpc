@@ -6,6 +6,7 @@ import { Effect, Layer } from "effect";
 import * as GrpcInvoker from "./GrpcInvoker.js";
 import * as GrpcMetadata from "./GrpcMetadata.js";
 import type { GrpcMethodRegistry } from "./GrpcMethodRegistry.js";
+import * as GrpcStatusError from "./GrpcStatusError.js";
 import { metadataViolation } from "./internal/invoker.js";
 
 export type { GrpcTransportOptions } from "@connectrpc/connect-node";
@@ -64,37 +65,45 @@ export type GrpcClientProtocolTransportOptions =
  *
  * Whether the connection uses TLS is decided by the `baseUrl` scheme
  * (`https://` vs `http://`); `tls` refines the handshake — trust anchor,
- * client certificate for mTLS — and therefore requires `https://`.
+ * client certificate for mTLS — and therefore requires `https://`. A `tls`
+ * block that contradicts either rule is a wiring defect: the effect dies.
  */
 export const makeTransport = (
   options: GrpcClientTransportOptions,
-): Transport => {
-  const { tls, ...transportOptions } = options;
-  if (tls === undefined) {
-    return createGrpcTransport(transportOptions);
-  }
-  if (new URL(options.baseUrl).protocol !== "https:") {
-    throw new Error(
-      `GrpcClientProtocol: 'tls' requires an https:// baseUrl, got '${options.baseUrl}'`,
+): Effect.Effect<Transport> =>
+  Effect.suspend(() => {
+    const { tls, ...transportOptions } = options;
+    if (tls === undefined) {
+      return Effect.succeed(createGrpcTransport(transportOptions));
+    }
+    if (new URL(options.baseUrl).protocol !== "https:") {
+      return Effect.die(
+        new Error(
+          `GrpcClientProtocol: 'tls' requires an https:// baseUrl, got '${options.baseUrl}'`,
+        ),
+      );
+    }
+    if ((tls.cert === undefined) !== (tls.key === undefined)) {
+      return Effect.die(
+        new Error(
+          "GrpcClientProtocol: mTLS requires both 'cert' and 'key' (got only one)",
+        ),
+      );
+    }
+    return Effect.succeed(
+      createGrpcTransport({
+        ...transportOptions,
+        nodeOptions: {
+          ...transportOptions.nodeOptions,
+          ...(tls.ca !== undefined ? { ca: tls.ca } : {}),
+          ...(tls.cert !== undefined ? { cert: tls.cert, key: tls.key } : {}),
+          ...(tls.rejectUnauthorized !== undefined
+            ? { rejectUnauthorized: tls.rejectUnauthorized }
+            : {}),
+        },
+      }),
     );
-  }
-  if ((tls.cert === undefined) !== (tls.key === undefined)) {
-    throw new Error(
-      "GrpcClientProtocol: mTLS requires both 'cert' and 'key' (got only one)",
-    );
-  }
-  return createGrpcTransport({
-    ...transportOptions,
-    nodeOptions: {
-      ...transportOptions.nodeOptions,
-      ...(tls.ca !== undefined ? { ca: tls.ca } : {}),
-      ...(tls.cert !== undefined ? { cert: tls.cert, key: tls.key } : {}),
-      ...(tls.rejectUnauthorized !== undefined
-        ? { rejectUnauthorized: tls.rejectUnauthorized }
-        : {}),
-    },
   });
-};
 
 /**
  * Adapts an Effect that resolves gRPC metadata into a connect `Interceptor`,
@@ -110,8 +119,9 @@ export const makeTransport = (
  * Resolved metadata is treated as defaults: a header already present on the
  * call — per-call `GrpcCallOptions.metadata`, or the injected `traceparent` —
  * is left untouched. Reserved `x-effect-grpc-*` keys, and values contradicting
- * their key's `-bin` suffix, are rejected as on the per-call path — here as a
- * throw, since a connect interceptor has no typed error channel.
+ * their key's `-bin` suffix, fail the call with `invalid_argument` as on the
+ * per-call path — thrown as a connect error, since an interceptor has no typed
+ * error channel, so the caller still sees it as a `GrpcStatusError`.
  *
  * Pass the result via `interceptors` on {@link layer} or {@link makeTransport}.
  */
@@ -124,7 +134,11 @@ export const metadataInterceptor = <R>(
       return (next) => async (req) => {
         const metadata = await run(resolve);
         const violation = metadataViolation(metadata);
-        if (violation !== undefined) throw new Error(violation);
+        if (violation !== undefined) {
+          throw GrpcStatusError.toConnectError(
+            GrpcStatusError.invalidArgument(violation),
+          );
+        }
         const present = new Set<string>();
         req.header.forEach((_value, key) => present.add(key.toLowerCase()));
         GrpcMetadata.toHeaders(metadata).forEach((value, key) => {
@@ -143,11 +157,15 @@ export const metadataInterceptor = <R>(
 export const layer = (
   options: GrpcClientProtocolOptions,
 ): Layer.Layer<GrpcInvoker.GrpcInvoker> =>
-  layerFromTransport({
-    registry: options.registry,
-    transport: makeTransport(options),
-    serverAddress: options.serverAddress ?? new URL(options.baseUrl),
-  });
+  Layer.unwrap(
+    Effect.map(makeTransport(options), (transport) =>
+      layerFromTransport({
+        registry: options.registry,
+        transport,
+        serverAddress: options.serverAddress ?? new URL(options.baseUrl),
+      }),
+    ),
+  );
 
 /**
  * Builds the client layer from an existing transport. Use this to share one

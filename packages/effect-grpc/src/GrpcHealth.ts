@@ -221,26 +221,24 @@ export const HealthHandlers: Effect.Effect<
 > = GrpcServerProtocol.handlersEffect<GrpcHealth>({
   "grpc.health.v1.Health/Check": {
     kind: "unary",
-    handler: (request) =>
-      Effect.gen(function* () {
-        const health = yield* GrpcHealth;
-        const status = yield* health.check(
-          (request as HealthCheckRequest).service,
-        );
-        return { status } satisfies HealthCheckResponse;
-      }),
+    handler: Effect.fnUntraced(function* (request: unknown) {
+      const health = yield* GrpcHealth;
+      const status = yield* health.check(
+        (request as HealthCheckRequest).service,
+      );
+      return { status } satisfies HealthCheckResponse;
+    }),
   },
   "grpc.health.v1.Health/Watch": {
     kind: "server-streaming",
     handler: (request) =>
       Stream.unwrap(
-        Effect.gen(function* () {
-          const health = yield* GrpcHealth;
-          return Stream.map(
+        Effect.map(GrpcHealth, (health) =>
+          Stream.map(
             health.watch((request as HealthCheckRequest).service),
             (status): HealthCheckResponse => ({ status }),
-          );
-        }),
+          ),
+        ),
       ),
   },
 });

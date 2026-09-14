@@ -1,7 +1,7 @@
 import { fromBinary } from "@bufbuild/protobuf";
 import { FileDescriptorProtoSchema } from "@bufbuild/protobuf/wkt";
+import { assert, describe, it } from "@effect/vitest";
 import { Effect, Layer, Stream } from "effect";
-import { describe, expect, it } from "vitest";
 
 import {
   GrpcClientProtocol,
@@ -31,9 +31,9 @@ const decodeFileName = (bytes: Uint8Array): string =>
   fromBinary(FileDescriptorProtoSchema, bytes).name;
 
 describe("grpc.reflection.v1 e2e", () => {
-  it("lists every served service over the wire", async () => {
-    const response = await Effect.runPromise(
-      withReflectionServer(
+  it.live("lists every served service over the wire", () =>
+    Effect.gen(function* () {
+      const response = yield* withReflectionServer(
         Effect.gen(function* () {
           const client = yield* GrpcReflection.ReflectionClient;
           return yield* firstResponse(
@@ -45,20 +45,20 @@ describe("grpc.reflection.v1 e2e", () => {
             ),
           );
         }),
-      ),
-    );
+      );
 
-    expect(response.validHost).toBe("localhost");
-    expect(listedServices(response)).toEqual([
-      "demo.v1.UserService",
-      "grpc.health.v1.Health",
-      "grpc.reflection.v1.ServerReflection",
-    ]);
-  });
+      assert.strictEqual(response.validHost, "localhost");
+      assert.deepStrictEqual(listedServices(response), [
+        "demo.v1.UserService",
+        "grpc.health.v1.Health",
+        "grpc.reflection.v1.ServerReflection",
+      ]);
+    }),
+  );
 
-  it("serves the descriptors of a generated service", async () => {
-    const response = await Effect.runPromise(
-      withReflectionServer(
+  it.live("serves the descriptors of a generated service", () =>
+    Effect.gen(function* () {
+      const response = yield* withReflectionServer(
         Effect.gen(function* () {
           const client = yield* GrpcReflection.ReflectionClient;
           return yield* firstResponse(
@@ -73,15 +73,17 @@ describe("grpc.reflection.v1 e2e", () => {
             ),
           );
         }),
-      ),
-    );
+      );
 
-    expect(descriptorNames(response)).toEqual(["demo/v1/user_service.proto"]);
-  });
+      assert.deepStrictEqual(descriptorNames(response), [
+        "demo/v1/user_service.proto",
+      ]);
+    }),
+  );
 
-  it("answers unknown symbols in-band and keeps the stream alive", async () => {
-    const responses = await Effect.runPromise(
-      withReflectionServer(
+  it.live("answers unknown symbols in-band and keeps the stream alive", () =>
+    Effect.gen(function* () {
+      const responses = yield* withReflectionServer(
         Effect.gen(function* () {
           const client = yield* GrpcReflection.ReflectionClient;
           return yield* client
@@ -105,22 +107,23 @@ describe("grpc.reflection.v1 e2e", () => {
             )
             .pipe(Stream.take(2), Stream.runCollect);
         }),
-      ),
-    );
+      );
 
-    expect(responses).toHaveLength(2);
-    expect(responses[0]?.messageResponse).toMatchObject({
-      case: "errorResponse",
-      value: { errorCode: 5 },
-    });
-    expect(responses[0]?.originalRequest?.messageRequest).toEqual({
-      case: "fileContainingSymbol",
-      value: "demo.v1.Missing",
-    });
-    expect(descriptorNames(responses[1]!)).toEqual([
-      "demo/v1/user_service.proto",
-    ]);
-  });
+      assert.lengthOf(responses, 2);
+      const first = responses[0]?.messageResponse;
+      assert.strictEqual(first?.case, "errorResponse");
+      if (first?.case === "errorResponse") {
+        assert.strictEqual(first.value.errorCode, 5);
+      }
+      assert.deepStrictEqual(responses[0]?.originalRequest?.messageRequest, {
+        case: "fileContainingSymbol",
+        value: "demo.v1.Missing",
+      });
+      assert.deepStrictEqual(descriptorNames(responses[1]!), [
+        "demo/v1/user_service.proto",
+      ]);
+    }),
+  );
 });
 
 const listedServices = (

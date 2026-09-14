@@ -33,6 +33,11 @@ reaching the server as something it cannot interpret.
 A non-positive `timeoutMs` means _no deadline_, not one that has already
 expired.
 
+Generated server handlers receive a `CodegenSupport.GrpcServerContext` with
+the call's metadata, method identity, signal, remaining deadline, and typed
+values set by native server interceptors — see
+[server call context and interceptors](server-context.md).
+
 ## Bearer Authentication
 
 `GrpcAuth` attaches `authorization: Bearer <token>` metadata to every outgoing

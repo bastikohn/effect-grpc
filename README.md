@@ -39,6 +39,11 @@ Shipped:
 - [x] Bearer authentication via `GrpcAuth` with static and auto-refreshing
       token layers.
 - [x] Custom client interceptors and per-call/default timeouts.
+- [x] Custom server interceptors (native connect `Interceptor`s on
+      `GrpcNodeServer.serve`/`serveAll`) and a per-call handler context:
+      method identity, the call signal, the remaining deadline, and typed
+      values set by interceptors (see
+      [server context](docs/users/server-context.md)).
 - [x] gRPC health checking protocol (`grpc.health.v1`) via `GrpcHealth`.
 - [x] gRPC server reflection (`grpc.reflection.v1`) via `GrpcReflection`.
 - [x] OpenTelemetry tracing and metrics for clients and servers
@@ -49,7 +54,6 @@ Shipped:
 
 Planned:
 
-- [ ] Custom server-side interceptors.
 - [ ] Client retry policies.
 - [ ] gRPC-Web support.
 - [ ] Track Effect v4 to a stable release and drop the beta pin.
@@ -105,6 +109,7 @@ options.
 ## Docs
 
 - [Getting started](docs/users/getting-started.md)
+- [Server call context and interceptors](docs/users/server-context.md)
 - [Observability](docs/users/observability.md)
 - [Current limitations](docs/users/limitations.md)
 - [Architecture](docs/contributors/architecture.md)

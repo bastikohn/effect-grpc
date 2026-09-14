@@ -1,6 +1,10 @@
 import type { DescService } from "@bufbuild/protobuf";
-import type { ConnectRouter, Interceptor } from "@connectrpc/connect";
-import { Effect, Layer, Stream } from "effect";
+import {
+  type ConnectRouter,
+  createContextKey,
+  type Interceptor,
+} from "@connectrpc/connect";
+import { Context, Effect, Layer, Stream } from "effect";
 import { describe, expect, it } from "tstyche";
 
 import {
@@ -298,6 +302,102 @@ describe("public API", () => {
     });
   });
 
+  it("types the server call context and interceptor registration", () => {
+    expect(context.method).type.toBe<{
+      readonly tag: string;
+      readonly kind: GrpcMethodRegistry.GrpcMethodKind;
+    }>();
+    expect(context.signal).type.toBe<AbortSignal>();
+    expect(context.remainingTimeoutMs()).type.toBe<number | undefined>();
+    // A typed value is exactly its key's type, defaults included — no
+    // `unknown` to narrow and no cast to reach for.
+    const requestIdKey = createContextKey<string | undefined>(undefined);
+    const attemptsKey = createContextKey(0);
+    expect(context.getContextValue(requestIdKey)).type.toBe<
+      string | undefined
+    >();
+    expect(context.getContextValue(attemptsKey)).type.toBe<number>();
+    // The context exposes a getter only: interceptors own the store.
+    expect(context).type.not.toHaveProperty("setContextValue");
+    expect(context).type.not.toHaveProperty("values");
+
+    // Both serving helpers take a readonly interceptor array.
+    const interceptors: ReadonlyArray<Interceptor> = [];
+    expect(GrpcNodeServer.serve).type.toBeCallableWith({
+      host: "127.0.0.1",
+      port: 50051,
+      routes: (router: ConnectRouter) => router,
+      interceptors,
+    });
+    expect(GrpcNodeServer.serveAll).type.toBeCallableWith({
+      host: "127.0.0.1",
+      port: 50051,
+      interceptors,
+      services: [
+        {
+          registry: UserServiceGrpcRegistry,
+          handlers: UserServiceHandlers(implementation),
+        },
+      ],
+    });
+
+    // The application-level provision pattern: a typed call value becomes
+    // the application's own Effect service, provided per call around the
+    // domain effect/stream. Only that requirement is discharged — unrelated
+    // dependencies still flow through the generated handler builder.
+    class CurrentRequest extends Context.Service<
+      CurrentRequest,
+      { readonly requestId: string | undefined }
+    >()("test/CurrentRequest") {}
+    class Users extends Context.Service<
+      Users,
+      { readonly find: (id: string) => Effect.Effect<string> }
+    >()("test/Users") {}
+    const currentRequest = (context: CodegenSupport.GrpcServerContext) => ({
+      requestId: context.getContextValue(requestIdKey),
+    });
+    const domain: Effect.Effect<string, never, CurrentRequest | Users> =
+      Effect.gen(function* () {
+        const { requestId } = yield* CurrentRequest;
+        const users = yield* Users;
+        return `${requestId}:${yield* users.find("1")}`;
+      });
+    const events: Stream.Stream<string, never, CurrentRequest | Users> =
+      Stream.fromEffect(domain);
+
+    expect(
+      domain.pipe(
+        Effect.provideService(CurrentRequest, currentRequest(context)),
+      ),
+    ).type.toBe<Effect.Effect<string, never, Users>>();
+    expect(
+      events.pipe(
+        Stream.provideService(CurrentRequest, currentRequest(context)),
+      ),
+    ).type.toBe<Stream.Stream<string, never, Users>>();
+    const provided: UserServiceImplementation<Users> = {
+      ...implementation,
+      getUser: (request, context) =>
+        domain.pipe(
+          Effect.map((name) => ({ user: { id: request.id, name } })),
+          Effect.provideService(CurrentRequest, currentRequest(context)),
+        ),
+    };
+    expect(UserServiceHandlers(provided)).type.toBe<
+      Effect.Effect<GrpcServerProtocol.GrpcHandlers, never, Users>
+    >();
+    // Handlers that only read `metadata` still typecheck: the new fields are
+    // additive on the context the server delivers.
+    const metadataOnly: UserServiceImplementation = {
+      ...implementation,
+      getUser: (request, { metadata }) =>
+        Effect.succeed({
+          user: { id: request.id, name: String(metadata.length) },
+        }),
+    };
+    expect(UserServiceHandlers).type.toBeCallableWith(metadataOnly);
+  });
+
   it("types generated clients and handlers", () => {
     // Regression pin: the generated handlers effect publishes the unified
     // 4-kind handler map — the Effect RPC server path
@@ -306,8 +406,8 @@ describe("public API", () => {
       Effect.Effect<GrpcServerProtocol.GrpcHandlers>
     >();
 
-    // Regression pin: `GrpcServerContext` is narrowed to metadata — the
-    // Effect RPC `client`/`requestId` fields are gone.
+    // Regression pin: the Effect RPC `client`/`requestId` fields are gone
+    // from `GrpcServerContext`.
     expect(context.metadata).type.toBe<GrpcMetadata.GrpcMetadata>();
     expect(context).type.not.toHaveProperty("client");
     expect(context).type.not.toHaveProperty("requestId");

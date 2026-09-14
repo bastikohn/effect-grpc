@@ -56,6 +56,28 @@ describe("metadataInterceptor", () => {
         );
       }),
   );
+
+  it.effect(
+    "fails the call with invalid_argument when resolved metadata is unsendable",
+    () =>
+      Effect.gen(function* () {
+        const interceptor = yield* GrpcClientProtocol.metadataInterceptor(
+          Effect.succeed([["x-effect-grpc-custom", "value"]] as const),
+        );
+        const next = ((req: { header: Headers }) =>
+          Promise.resolve(req)) as unknown as Parameters<typeof interceptor>[0];
+
+        const error = yield* Effect.flip(
+          Effect.tryPromise({
+            try: () => interceptor(next)({ header: new Headers() } as never),
+            catch: GrpcStatusError.fromConnectError,
+          }),
+        );
+
+        assert.strictEqual(error.code, "invalid_argument");
+        assert.include(error.message, "Reserved gRPC metadata key");
+      }),
+  );
 });
 
 describe("GrpcServerProtocol", () => {

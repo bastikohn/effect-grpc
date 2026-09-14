@@ -442,7 +442,7 @@ export const respond = (
  * service describes itself, so it does not need to appear in its own input.
  */
 export const service = (
-  services: ReadonlyArray<ServeAllService<any>>,
+  services: ReadonlyArray<ServeAllService<unknown>>,
 ): ServeAllService => {
   const index = makeIndex([
     ...services.map((entry) => entry.registry),

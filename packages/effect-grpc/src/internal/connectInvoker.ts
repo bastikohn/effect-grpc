@@ -36,38 +36,43 @@ export const makeConnect = Effect.fnUntraced(function* (
   >();
 
   /**
-   * @throws `Error` when the entry names a method the service descriptor
-   * does not declare. Registry entries carry `localName` verbatim — the
-   * built-in services hand-write it — so a mismatch is a wiring defect, not
-   * a status a caller could act on. The call is still recorded as
-   * `unimplemented` first: the defect kills the fiber, which would
-   * otherwise close the span OK, attributeless and without a duration
-   * observation, hiding the broken wiring from telemetry entirely.
+   * Dies when the entry names a method the service descriptor does not
+   * declare. Registry entries carry `localName` verbatim — the built-in
+   * services hand-write it — so a mismatch is a wiring defect, not a status
+   * a caller could act on. The call is still recorded as `unimplemented`
+   * first: the defect kills the fiber, which would otherwise close the span
+   * OK, attributeless and without a duration observation, hiding the broken
+   * wiring from telemetry entirely.
    */
   const resolveMethod = (
     entry: GrpcMethodEntry,
     record: GrpcTracing.StatusRecorder,
-  ) => {
-    let client = clients.get(entry.service);
-    if (!client) {
-      client = createClient(entry.service, transport) as Record<
-        string,
-        unknown
-      >;
-      clients.set(entry.service, client);
-    }
-    const method = client[entry.localName];
-    if (typeof method !== "function") {
-      record("unimplemented");
-      throw new Error(
-        `gRPC client for ${entry.service.typeName} has no method '${entry.localName}' (tag ${entry.tag})`,
+  ): Effect.Effect<(input: unknown, options?: CallOptions) => unknown> =>
+    Effect.suspend(() => {
+      let client = clients.get(entry.service);
+      if (!client) {
+        client = createClient(entry.service, transport) as Record<
+          string,
+          unknown
+        >;
+        clients.set(entry.service, client);
+      }
+      const method = client[entry.localName];
+      if (typeof method !== "function") {
+        record("unimplemented");
+        return Effect.die(
+          new Error(
+            `gRPC client for ${entry.service.typeName} has no method '${entry.localName}' (tag ${entry.tag})`,
+          ),
+        );
+      }
+      return Effect.succeed(
+        method.bind(client) as (
+          input: unknown,
+          options?: CallOptions,
+        ) => unknown,
       );
-    }
-    return method.bind(client) as (
-      input: unknown,
-      options?: CallOptions,
-    ) => unknown;
-  };
+    });
 
   const openRequests = (
     entry: GrpcMethodEntry,
@@ -233,7 +238,7 @@ export const makeConnect = Effect.fnUntraced(function* (
     return withCallSpanEffect(entry, ({ span, record }) =>
       Effect.gen(function* () {
         yield* recordMetadata(callOptions, record);
-        const method = resolveMethod(entry, record);
+        const method = yield* resolveMethod(entry, record);
         const grpcRequest = yield* MethodRegistry.encodeRequest(
           entry,
           request,
@@ -276,7 +281,7 @@ export const makeConnect = Effect.fnUntraced(function* (
       ({ span, record }) =>
         Effect.gen(function* () {
           yield* recordMetadata(callOptions, record);
-          const method = resolveMethod(entry, record);
+          const method = yield* resolveMethod(entry, record);
           const grpcRequest = yield* MethodRegistry.encodeRequest(
             entry,
             request,
@@ -328,7 +333,7 @@ export const makeConnect = Effect.fnUntraced(function* (
       ({ span, record }) =>
         Effect.gen(function* () {
           yield* recordMetadata(callOptions, record);
-          const method = resolveMethod(entry, record);
+          const method = yield* resolveMethod(entry, record);
           const controller = new AbortController();
           const pump = openRequests(
             entry,
@@ -389,7 +394,7 @@ export const makeConnect = Effect.fnUntraced(function* (
       ({ span, record }) =>
         Effect.gen(function* () {
           yield* recordMetadata(callOptions, record);
-          const method = resolveMethod(entry, record);
+          const method = yield* resolveMethod(entry, record);
           const controller = new AbortController();
           const pump = openRequests(
             entry,

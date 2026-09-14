@@ -92,37 +92,33 @@ export const serve = Effect.fnUntraced(function* (
     // Copy the readonly caller array for the native adapter.
     interceptors: [...(options.interceptors ?? [])],
   });
+  // A bind failure (port in use, bad TLS material) is an environment defect
+  // the program cannot recover from at this seam, so it dies.
   yield* Effect.acquireRelease(
-    Effect.promise(
-      () =>
-        new Promise<ListeningServer>((resolve, reject) => {
-          const sessions = new Set<http2.ServerHttp2Session>();
-          const server =
-            options.tls === undefined
-              ? http2.createServer(handler)
-              : http2.createSecureServer(
-                  secureServerOptions(options.tls),
-                  handler,
-                );
-          server.on("session", (session) => {
-            sessions.add(session);
-            session.once("close", () => {
-              sessions.delete(session);
-            });
-          });
-          const onError = (error: Error) => {
-            server.off("listening", onListening);
-            reject(error);
-          };
-          const onListening = () => {
-            server.off("error", onError);
-            resolve({ server, sessions });
-          };
-          server.once("error", onError);
-          server.once("listening", onListening);
-          server.listen(options.port, options.host);
-        }),
-    ),
+    Effect.callback<ListeningServer>((resume) => {
+      const sessions = new Set<http2.ServerHttp2Session>();
+      const server =
+        options.tls === undefined
+          ? http2.createServer(handler)
+          : http2.createSecureServer(secureServerOptions(options.tls), handler);
+      server.on("session", (session) => {
+        sessions.add(session);
+        session.once("close", () => {
+          sessions.delete(session);
+        });
+      });
+      const onError = (error: Error) => {
+        server.off("listening", onListening);
+        resume(Effect.die(error));
+      };
+      const onListening = () => {
+        server.off("error", onError);
+        resume(Effect.succeed({ server, sessions }));
+      };
+      server.once("error", onError);
+      server.once("listening", onListening);
+      server.listen(options.port, options.host);
+    }),
     ({ server, sessions }) =>
       Effect.promise(() => closeServer(server, sessions, options)),
   );

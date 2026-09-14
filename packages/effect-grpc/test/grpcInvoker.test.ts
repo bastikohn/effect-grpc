@@ -1120,11 +1120,9 @@ describe("GrpcInvoker (connect adapter)", () => {
           });
         }).pipe(
           Effect.provide(
-            GrpcInvoker.layerConnect({
+            GrpcClientProtocol.layer({
               registry: new Map(),
-              transport: GrpcClientProtocol.makeTransport({
-                baseUrl: "http://127.0.0.1:1",
-              }),
+              baseUrl: "http://127.0.0.1:1",
             }),
           ),
         );
@@ -1154,11 +1152,9 @@ describe("GrpcInvoker (connect adapter)", () => {
             ),
           ),
           Effect.provide(
-            GrpcInvoker.layerConnect({
+            GrpcClientProtocol.layer({
               registry,
-              transport: GrpcClientProtocol.makeTransport({
-                baseUrl: "http://127.0.0.1:1",
-              }),
+              baseUrl: "http://127.0.0.1:1",
             }),
           ),
         );
@@ -1192,11 +1188,9 @@ describe("GrpcInvoker (connect adapter)", () => {
             ),
           ),
           Effect.provide(
-            GrpcInvoker.layerConnect({
+            GrpcClientProtocol.layer({
               registry,
-              transport: GrpcClientProtocol.makeTransport({
-                baseUrl: "http://127.0.0.1:1",
-              }),
+              baseUrl: "http://127.0.0.1:1",
             }),
           ),
         );
@@ -1221,11 +1215,9 @@ describe("GrpcInvoker (connect adapter)", () => {
             GrpcInvoker.GrpcInvoker.pipe(
               Effect.flatMap((invoker) => invoker.unary(entry.tag, {})),
               Effect.provide(
-                GrpcInvoker.layerConnect({
+                GrpcClientProtocol.layer({
                   registry: new Map([[entry.tag, entry]]),
-                  transport: GrpcClientProtocol.makeTransport({
-                    baseUrl: "http://127.0.0.1:1",
-                  }),
+                  baseUrl: "http://127.0.0.1:1",
                 }),
               ),
             ),

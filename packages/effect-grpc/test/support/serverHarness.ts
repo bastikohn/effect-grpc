@@ -1,6 +1,11 @@
 import * as net from "node:net";
 
-import type { ConnectRouter, HandlerContext } from "@connectrpc/connect";
+import {
+  type ConnectRouter,
+  type ContextValues,
+  createContextValues,
+  type HandlerContext,
+} from "@connectrpc/connect";
 import { Effect, Schema } from "effect";
 
 import type { GrpcMethodEntry } from "../../src/GrpcMethodRegistry.js";
@@ -32,14 +37,23 @@ export const captureImplementation = (
   return implementation;
 };
 
-/** The connect handler context a captured implementation is called with. */
+/**
+ * The connect handler context a captured implementation is called with: the
+ * fields the server protocol reads, each fresh per fixture. `timeoutMs` is
+ * connect's live remaining-time getter, so a test can move the clock between
+ * a handler's reads; `values` is the per-call typed store interceptors fill.
+ */
 export const handlerContext = (options?: {
   readonly headers?: ConstructorParameters<typeof Headers>[0];
   readonly signal?: AbortSignal;
+  readonly timeoutMs?: () => number | undefined;
+  readonly values?: ContextValues;
 }): HandlerContext =>
   ({
     requestHeader: new Headers(options?.headers),
     signal: options?.signal ?? new AbortController().signal,
+    timeoutMs: options?.timeoutMs ?? (() => undefined),
+    values: options?.values ?? createContextValues(),
   }) as HandlerContext;
 
 /** A loopback port nothing is listening on, for tests that boot a server. */

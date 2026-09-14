@@ -1,5 +1,5 @@
 import * as http2 from "node:http2";
-import type { ConnectRouter } from "@connectrpc/connect";
+import type { ConnectRouter, Interceptor } from "@connectrpc/connect";
 import { connectNodeAdapter } from "@connectrpc/connect-node";
 import { Effect, Scope } from "effect";
 
@@ -32,6 +32,14 @@ export interface ServeOptions {
   readonly shutdownTimeoutMs?: number;
   /** Terminate TLS (and optionally require client certificates, i.e. mTLS). */
   readonly tls?: GrpcServerTlsOptions;
+  /**
+   * Native connect server interceptors, installed once for every service the
+   * server routes (health and reflection included) and run once per RPC —
+   * not per streamed message. The first interceptor sees a request first and
+   * its response last. Values they attach with `request.contextValues` reach
+   * handlers through `GrpcServerContext.getContextValue`.
+   */
+  readonly interceptors?: ReadonlyArray<Interceptor>;
 }
 
 export interface ServeAllService<R = never> {
@@ -70,6 +78,7 @@ export const serveAll = <
       port: options.port,
       shutdownTimeoutMs: options.shutdownTimeoutMs,
       tls: options.tls,
+      interceptors: options.interceptors,
       routes,
     });
   });
@@ -82,6 +91,8 @@ export const serve = (
       routes: (router) => {
         options.routes(router);
       },
+      // connect wants a mutable array; copy so the caller's stays untouched.
+      interceptors: [...(options.interceptors ?? [])],
     });
     const { server } = yield* Effect.acquireRelease(
       Effect.promise(

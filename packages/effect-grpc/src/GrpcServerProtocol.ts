@@ -89,15 +89,16 @@ export type GrpcHandlers = ReadonlyMap<string, GrpcHandler>;
 export const handlersEffect = <R = never>(
   handlers: Record<string, GrpcHandler<R>>,
 ): Effect.Effect<GrpcHandlers, never, R> =>
-  Effect.gen(function* () {
-    const context = yield* Effect.context<R>();
-    return new Map(
-      Object.entries(handlers).map(([tag, handler]) => [
-        tag,
-        bindHandler(handler, context),
-      ]),
-    );
-  });
+  Effect.map(
+    Effect.context<R>(),
+    (context) =>
+      new Map(
+        Object.entries(handlers).map(([tag, handler]) => [
+          tag,
+          bindHandler(handler, context),
+        ]),
+      ),
+  );
 
 const bindHandler = <R>(
   entry: GrpcHandler<R>,
@@ -129,245 +130,243 @@ export interface GrpcServerProtocolResult {
   readonly routes: (router: ConnectRouter) => ConnectRouter;
 }
 
-export const make = (
+export const make = Effect.fnUntraced(function* (
   options: GrpcServerProtocolOptions,
-): Effect.Effect<GrpcServerProtocolResult> =>
-  Effect.gen(function* () {
-    const context = yield* Effect.context<never>();
-    const run = Effect.runPromiseWith(context);
-    const serverRecorder = (entry: GrpcMethodEntry, span: Tracer.Span) =>
-      GrpcTracing.serverCallRecorder({ entry, span, context });
-    const handlers = options.handlers ?? emptyHandlers;
+): Effect.fn.Return<GrpcServerProtocolResult> {
+  const context = yield* Effect.context<never>();
+  const run = Effect.runPromiseWith(context);
+  const serverRecorder = (entry: GrpcMethodEntry, span: Tracer.Span) =>
+    GrpcTracing.serverCallRecorder({ entry, span, context });
+  const handlers = options.handlers ?? emptyHandlers;
 
-    /**
-     * Execution template for effect-shaped calls (unary, client-streaming):
-     * one server span, semconv status recording, and non-server-fault
-     * failures carried as values so the span closes cleanly before the error
-     * reaches connect. The connect `signal` interrupts only the handler body
-     * (raced against {@link abortFailure}), never the surrounding spanned
-     * effect: a signal abort must record its status while the
-     * span is still open — exporters serialize a span when it ends, so
-     * attributes written after an interrupt-torn span end are lost.
-     */
-    const handleEffectCall = async (
-      entry: GrpcMethodEntry,
-      handlerContext: HandlerContext,
-      body: (
-        serverContext: GrpcServerContext,
-      ) => Effect.Effect<unknown, GrpcStatusError.GrpcStatusError>,
-    ): Promise<unknown> => {
-      const headers = Array.from(handlerContext.requestHeader.entries());
-      let record: GrpcTracing.StatusRecorder | undefined;
-      let outcome: ServerCallOutcome;
-      try {
-        outcome = await run(
-          Effect.gen(function* () {
-            const span = yield* Effect.currentSpan.pipe(Effect.orDie);
-            const recordStatus = serverRecorder(entry, span);
-            record = recordStatus;
-            const result = yield* Effect.raceFirst(
-              body(makeServerContext(entry, handlerContext)),
-              abortFailure(handlerContext.signal),
-            ).pipe(Effect.exit);
-            if (result._tag === "Failure") {
-              const error = causeError(result.cause);
-              recordStatus(error.code);
-              // Per semconv, only server-fault codes end the server span in
-              // an error state.
-              if (GrpcTracing.isServerError(error.code)) {
-                return yield* Effect.fail(error);
-              }
-              return { ok: false, error } satisfies ServerCallOutcome;
+  /**
+   * Execution template for effect-shaped calls (unary, client-streaming):
+   * one server span, semconv status recording, and non-server-fault
+   * failures carried as values so the span closes cleanly before the error
+   * reaches connect. The connect `signal` interrupts only the handler body
+   * (raced against {@link abortFailure}), never the surrounding spanned
+   * effect: a signal abort must record its status while the
+   * span is still open — exporters serialize a span when it ends, so
+   * attributes written after an interrupt-torn span end are lost.
+   */
+  const handleEffectCall = async (
+    entry: GrpcMethodEntry,
+    handlerContext: HandlerContext,
+    body: (
+      serverContext: GrpcServerContext,
+    ) => Effect.Effect<unknown, GrpcStatusError.GrpcStatusError>,
+  ): Promise<unknown> => {
+    const headers = Array.from(handlerContext.requestHeader.entries());
+    let record: GrpcTracing.StatusRecorder | undefined;
+    let outcome: ServerCallOutcome;
+    try {
+      outcome = await run(
+        Effect.gen(function* () {
+          const span = yield* Effect.currentSpan.pipe(Effect.orDie);
+          const recordStatus = serverRecorder(entry, span);
+          record = recordStatus;
+          const result = yield* Effect.raceFirst(
+            body(makeServerContext(entry, handlerContext)),
+            abortFailure(handlerContext.signal),
+          ).pipe(Effect.exit);
+          if (result._tag === "Failure") {
+            const error = causeError(result.cause);
+            recordStatus(error.code);
+            // Per semconv, only server-fault codes end the server span in
+            // an error state.
+            if (GrpcTracing.isServerError(error.code)) {
+              return yield* Effect.fail(error);
             }
-            recordStatus("ok");
-            return {
-              ok: true,
-              value: result.value,
-            } satisfies ServerCallOutcome;
-          }).pipe(
-            Effect.withSpan(
-              GrpcTracing.spanName(entry),
-              GrpcTracing.serverSpanOptions(
-                entry,
-                GrpcTracing.externalSpanFromHeaders(headers),
-              ),
-            ),
-            Effect.catch((error) =>
-              Effect.succeed<ServerCallOutcome>({ ok: false, error }),
-            ),
-          ),
-        );
-      } catch (cause) {
-        const error = rejectionError(cause, handlerContext.signal);
-        record?.(error.code);
-        throw GrpcStatusError.toConnectError(error);
-      }
-      if (!outcome.ok) {
-        throw GrpcStatusError.toConnectError(outcome.error);
-      }
-      return outcome.value;
-    };
-
-    /**
-     * Execution template for stream-shaped calls (server-streaming,
-     * bidi-streaming): a scoped server span, semconv status recording, and
-     * the response stream pulled through `StreamBridge.responsePump` so
-     * demand follows connect's iteration (HTTP/2 flow control) and the
-     * handler fiber is interrupted when the client goes away.
-     */
-    const handleStreamCall = async function* (
-      entry: GrpcMethodEntry,
-      handlerContext: HandlerContext,
-      body: (
-        serverContext: GrpcServerContext,
-      ) => Stream.Stream<unknown, GrpcStatusError.GrpcStatusError>,
-    ): AsyncIterable<unknown> {
-      const headers = Array.from(handlerContext.requestHeader.entries());
-      const spanScope = await run(Scope.make());
-      const span = await run(
-        Effect.makeSpanScoped(
-          GrpcTracing.spanName(entry),
-          GrpcTracing.serverSpanOptions(
-            entry,
-            GrpcTracing.externalSpanFromHeaders(headers),
-          ),
-        ).pipe(Scope.provide(spanScope)),
-      );
-      const recordStatus = serverRecorder(entry, span);
-      let spanExit: Exit.Exit<void, GrpcStatusError.GrpcStatusError> =
-        Exit.void;
-      let completed = false;
-      // The stream adapters invoke user handler code eagerly, so `body` can
-      // throw synchronously. `Stream.suspend` moves that throw into the
-      // stream's cause channel, where the pump normalizes it (-> INTERNAL)
-      // and the `finally` below still closes the span scope.
-      const responses = Stream.suspend(() =>
-        body(makeServerContext(entry, handlerContext)),
-      );
-      // The pump spawns the handler fiber with this context, so the scoped
-      // span parents the handler's spans.
-      const handlerFiberContext = Context.add(context, Tracer.ParentSpan, span);
-      // Closing the pump interrupts the handler fiber, so a pending pull
-      // settles when the client goes away mid-stream.
-      const pump = StreamBridge.responsePump(
-        responses,
-        handlerFiberContext,
-        handlerContext.signal,
-      );
-
-      // Records the status of a signal-aborted or abandoned call: a deadline
-      // expiry is a server fault and must also end the span in an error
-      // state, while a client cancellation closes it cleanly.
-      const recordAbort = () => {
-        const error = abortError(handlerContext.signal);
-        recordStatus(error.code);
-        if (GrpcTracing.isServerError(error.code)) {
-          spanExit = Exit.fail(error);
-        }
-      };
-
-      try {
-        while (true) {
-          const next = await pump.next();
-          if (next.done) break;
-          yield next.value;
-        }
-        completed = true;
-        if (handlerContext.signal.aborted) {
-          recordAbort();
-        } else {
+            return { ok: false, error } satisfies ServerCallOutcome;
+          }
           recordStatus("ok");
-        }
-      } catch (cause) {
-        completed = true;
-        // The pump surfaces the handler stream's real `Cause` so the shared
-        // mapper sees interrupts as interrupts (-> `cancelled`), not as a
-        // squashed generic error (-> `internal`).
-        const error =
-          cause instanceof StreamBridge.PumpFailure
-            ? causeError(cause.cause)
-            : rejectionError(cause, handlerContext.signal);
-        recordStatus(error.code);
-        // Per semconv, only server-fault codes end the server span in an
-        // error state; a cancelled or otherwise client-caused end closes
-        // the span cleanly with the status attributes recorded.
-        if (GrpcTracing.isServerError(error.code)) {
-          spanExit = Exit.fail(error);
-        }
-        throw GrpcStatusError.toConnectError(error);
+          return {
+            ok: true,
+            value: result.value,
+          } satisfies ServerCallOutcome;
+        }).pipe(
+          Effect.withSpan(
+            GrpcTracing.spanName(entry),
+            GrpcTracing.serverSpanOptions(
+              entry,
+              GrpcTracing.externalSpanFromHeaders(headers),
+            ),
+          ),
+          Effect.catch((error) =>
+            Effect.succeed<ServerCallOutcome>({ ok: false, error }),
+          ),
+        ),
+      );
+    } catch (cause) {
+      const error = rejectionError(cause, handlerContext.signal);
+      record?.(error.code);
+      throw GrpcStatusError.toConnectError(error);
+    }
+    if (!outcome.ok) {
+      throw GrpcStatusError.toConnectError(outcome.error);
+    }
+    return outcome.value;
+  };
+
+  /**
+   * Execution template for stream-shaped calls (server-streaming,
+   * bidi-streaming): a scoped server span, semconv status recording, and
+   * the response stream pulled through `StreamBridge.responsePump` so
+   * demand follows connect's iteration (HTTP/2 flow control) and the
+   * handler fiber is interrupted when the client goes away.
+   */
+  const handleStreamCall = async function* (
+    entry: GrpcMethodEntry,
+    handlerContext: HandlerContext,
+    body: (
+      serverContext: GrpcServerContext,
+    ) => Stream.Stream<unknown, GrpcStatusError.GrpcStatusError>,
+  ): AsyncIterable<unknown> {
+    const headers = Array.from(handlerContext.requestHeader.entries());
+    const spanScope = await run(Scope.make());
+    const span = await run(
+      Effect.makeSpanScoped(
+        GrpcTracing.spanName(entry),
+        GrpcTracing.serverSpanOptions(
+          entry,
+          GrpcTracing.externalSpanFromHeaders(headers),
+        ),
+      ).pipe(Scope.provide(spanScope)),
+    );
+    const recordStatus = serverRecorder(entry, span);
+    let spanExit: Exit.Exit<void, GrpcStatusError.GrpcStatusError> = Exit.void;
+    let completed = false;
+    // The stream adapters invoke user handler code eagerly, so `body` can
+    // throw synchronously. `Stream.suspend` moves that throw into the
+    // stream's cause channel, where the pump normalizes it (-> INTERNAL)
+    // and the `finally` below still closes the span scope.
+    const responses = Stream.suspend(() =>
+      body(makeServerContext(entry, handlerContext)),
+    );
+    // The pump spawns the handler fiber with this context, so the scoped
+    // span parents the handler's spans.
+    const handlerFiberContext = Context.add(context, Tracer.ParentSpan, span);
+    // Closing the pump interrupts the handler fiber, so a pending pull
+    // settles when the client goes away mid-stream.
+    const pump = StreamBridge.responsePump(
+      responses,
+      handlerFiberContext,
+      handlerContext.signal,
+    );
+
+    // Records the status of a signal-aborted or abandoned call: a deadline
+    // expiry is a server fault and must also end the span in an error
+    // state, while a client cancellation closes it cleanly.
+    const recordAbort = () => {
+      const error = abortError(handlerContext.signal);
+      recordStatus(error.code);
+      if (GrpcTracing.isServerError(error.code)) {
+        spanExit = Exit.fail(error);
+      }
+    };
+
+    try {
+      while (true) {
+        const next = await pump.next();
+        if (next.done) break;
+        yield next.value;
+      }
+      completed = true;
+      if (handlerContext.signal.aborted) {
+        recordAbort();
+      } else {
+        recordStatus("ok");
+      }
+    } catch (cause) {
+      completed = true;
+      // The pump surfaces the handler stream's real `Cause` so the shared
+      // mapper sees interrupts as interrupts (-> `cancelled`), not as a
+      // squashed generic error (-> `internal`).
+      const error =
+        cause instanceof StreamBridge.PumpFailure
+          ? causeError(cause.cause)
+          : rejectionError(cause, handlerContext.signal);
+      recordStatus(error.code);
+      // Per semconv, only server-fault codes end the server span in an
+      // error state; a cancelled or otherwise client-caused end closes
+      // the span cleanly with the status attributes recorded.
+      if (GrpcTracing.isServerError(error.code)) {
+        spanExit = Exit.fail(error);
+      }
+      throw GrpcStatusError.toConnectError(error);
+    } finally {
+      if (!completed) {
+        recordAbort();
+      }
+      try {
+        await pump.close();
       } finally {
-        if (!completed) {
-          recordAbort();
-        }
-        try {
-          await pump.close();
-        } finally {
-          await run(Scope.close(spanScope, spanExit));
-        }
+        await run(Scope.close(spanScope, spanExit));
       }
-    };
+    }
+  };
 
-    // connect imposes four handler signatures, but the only real axis is how
-    // the response is shaped (Promise vs async-generator); the request axis
-    // is folded into {@link handlerInput}, which yields either the decoded
-    // message or the decoded request stream.
+  // connect imposes four handler signatures, but the only real axis is how
+  // the response is shaped (Promise vs async-generator); the request axis
+  // is folded into {@link handlerInput}, which yields either the decoded
+  // message or the decoded request stream.
 
-    const effectImplementation =
-      (entry: GrpcMethodEntry, handler: GrpcHandler) =>
-      (request: unknown, handlerContext: HandlerContext) =>
-        handleEffectCall(entry, handlerContext, (serverContext) =>
+  const effectImplementation =
+    (entry: GrpcMethodEntry, handler: GrpcHandler) =>
+    (request: unknown, handlerContext: HandlerContext) =>
+      handleEffectCall(entry, handlerContext, (serverContext) =>
+        handlerInput(entry, request, handlerContext.signal).pipe(
+          Effect.flatMap((input) =>
+            (handler.handler as EffectHandler)(input, serverContext),
+          ),
+          Effect.flatMap((value) =>
+            MethodRegistry.encodeResponse(entry, value),
+          ),
+        ),
+      );
+
+  const streamImplementation =
+    (entry: GrpcMethodEntry, handler: GrpcHandler) =>
+    (request: unknown, handlerContext: HandlerContext) =>
+      handleStreamCall(entry, handlerContext, (serverContext) =>
+        Stream.unwrap(
           handlerInput(entry, request, handlerContext.signal).pipe(
-            Effect.flatMap((input) =>
-              (handler.handler as EffectHandler)(input, serverContext),
-            ),
-            Effect.flatMap((value) =>
-              MethodRegistry.encodeResponse(entry, value),
+            Effect.map((input) =>
+              (handler.handler as StreamHandler)(input, serverContext),
             ),
           ),
-        );
-
-    const streamImplementation =
-      (entry: GrpcMethodEntry, handler: GrpcHandler) =>
-      (request: unknown, handlerContext: HandlerContext) =>
-        handleStreamCall(entry, handlerContext, (serverContext) =>
-          Stream.unwrap(
-            handlerInput(entry, request, handlerContext.signal).pipe(
-              Effect.map((input) =>
-                (handler.handler as StreamHandler)(input, serverContext),
-              ),
-            ),
-          ).pipe(
-            Stream.mapEffect((value) =>
-              MethodRegistry.encodeResponse(entry, value),
-            ),
+        ).pipe(
+          Stream.mapEffect((value) =>
+            MethodRegistry.encodeResponse(entry, value),
           ),
-        );
+        ),
+      );
 
-    const methodImplementation = (entry: GrpcMethodEntry) => {
-      const handler = handlers.get(entry.tag);
-      if (!handler || handler.kind !== entry.kind) {
-        return missingImplementation(entry);
+  const methodImplementation = (entry: GrpcMethodEntry) => {
+    const handler = handlers.get(entry.tag);
+    if (!handler || handler.kind !== entry.kind) {
+      return missingImplementation(entry);
+    }
+    return isEffectKind(handler.kind)
+      ? effectImplementation(entry, handler)
+      : streamImplementation(entry, handler);
+  };
+
+  const routes = (router: ConnectRouter) => {
+    for (const [service, entries] of MethodRegistry.groupByService(
+      options.registry,
+    )) {
+      const implementation: Record<string, unknown> = {};
+      for (const entry of entries) {
+        implementation[entry.localName] = methodImplementation(entry);
       }
-      return isEffectKind(handler.kind)
-        ? effectImplementation(entry, handler)
-        : streamImplementation(entry, handler);
-    };
+      router.service(service as never, implementation as never);
+    }
+    return router;
+  };
 
-    const routes = (router: ConnectRouter) => {
-      for (const [service, entries] of MethodRegistry.groupByService(
-        options.registry,
-      )) {
-        const implementation: Record<string, unknown> = {};
-        for (const entry of entries) {
-          implementation[entry.localName] = methodImplementation(entry);
-        }
-        router.service(service as never, implementation as never);
-      }
-      return router;
-    };
-
-    return { routes };
-  });
+  return { routes };
+});
 
 const emptyHandlers: GrpcHandlers = new Map();
 

@@ -2,7 +2,10 @@ import { NodeRuntime, NodeServices } from "@effect/platform-node";
 import { Console, Duration, Effect, Layer, Stream } from "effect";
 import { CliError, Command, Flag } from "effect/unstable/cli";
 
-import { GrpcClientProtocol } from "@effect-grpc/effect-grpc";
+import {
+  GrpcClientProtocol,
+  GrpcMethodRegistry,
+} from "@effect-grpc/effect-grpc";
 import {
   UserServiceClient,
   UserServiceClientLayer,
@@ -14,20 +17,25 @@ import {
   FeatureShowcaseServiceGrpcRegistry,
 } from "@effect-grpc/simple-proto/generated/features/v1/showcase_effect_grpc";
 
+// One transport serves both demo services: the generated client layers share
+// the `GrpcInvoker` built from the merged registry.
 const clientLayer = (baseUrl: URL) =>
-  UserServiceClientLayer.pipe(
+  Layer.mergeAll(
+    UserServiceClientLayer,
+    FeatureShowcaseServiceClientLayer,
+  ).pipe(
     Layer.provide(
       GrpcClientProtocol.layer({
         baseUrl: baseUrl.toString().replace(/\/$/, ""),
-        registry: UserServiceGrpcRegistry,
+        registry: GrpcMethodRegistry.merge([
+          UserServiceGrpcRegistry,
+          FeatureShowcaseServiceGrpcRegistry,
+        ]),
       }),
     ),
   );
 
-const withClient = <A, E, R>(
-  baseUrl: URL,
-  effect: Effect.Effect<A, E, R>,
-): Effect.Effect<A, E, Exclude<R, UserServiceClient>> =>
+const withClient = <A, E, R>(baseUrl: URL, effect: Effect.Effect<A, E, R>) =>
   effect.pipe(Effect.provide(clientLayer(baseUrl)));
 
 const reportError = (error: {
@@ -40,86 +48,67 @@ const reportError = (error: {
       : `error: unknown ${error.message}`,
   );
 
-const getUser = (baseUrl: URL, id: string) =>
-  withClient(
-    baseUrl,
-    Effect.gen(function* () {
-      const client = yield* UserServiceClient;
+const getUser = Effect.fn("getUser")(function* (id: string) {
+  const client = yield* UserServiceClient;
 
-      yield* client.getUser({ id }).pipe(
-        Effect.matchEffect({
-          onFailure: reportError,
-          onSuccess: ({ user }) =>
-            user === undefined
-              ? Console.error(
-                  "error: internal missing user in get-user response",
-                )
-              : Console.log(`user: ${user.id} ${user.name}`),
-        }),
-      );
+  yield* client.getUser({ id }).pipe(
+    Effect.matchEffect({
+      onFailure: reportError,
+      onSuccess: ({ user }) =>
+        user === undefined
+          ? Console.error("error: internal missing user in get-user response")
+          : Console.log(`user: ${user.id} ${user.name}`),
     }),
   );
+});
 
-const watchUsers = (baseUrl: URL, tenantId: string, count: number) =>
-  withClient(
-    baseUrl,
-    Effect.gen(function* () {
-      const client = yield* UserServiceClient;
+const watchUsers = Effect.fn("watchUsers")(function* (
+  tenantId: string,
+  count: number,
+) {
+  const client = yield* UserServiceClient;
 
-      yield* client.watchUsers({ tenantId, count }).pipe(
-        Stream.runForEach((event) =>
-          Console.log(
-            `${event.sequence}: ${event.id} ${event.name} ${event.action}`,
-          ),
-        ),
-        Effect.matchEffect({
-          onFailure: reportError,
-          onSuccess: () => Effect.void,
-        }),
-      );
+  yield* client.watchUsers({ tenantId, count }).pipe(
+    Stream.runForEach((event) =>
+      Console.log(
+        `${event.sequence}: ${event.id} ${event.name} ${event.action}`,
+      ),
+    ),
+    Effect.matchEffect({
+      onFailure: reportError,
+      onSuccess: () => Effect.void,
     }),
   );
+});
 
 // The feature showcase service on the same server: every supported field shape
 // in one request.
-const describeFeatures = (baseUrl: URL) =>
-  Effect.gen(function* () {
-    const client = yield* FeatureShowcaseServiceClient;
+const describeFeatures = Effect.fn("describeFeatures")(function* () {
+  const client = yield* FeatureShowcaseServiceClient;
 
-    yield* client
-      .describe({
-        tags: ["alpha", "beta"],
-        scores: [10, 20],
-        notes: [{ text: "generated feature demo" }],
-        state: 1,
-        owner: { id: "user-1", name: "Ada" },
-        labels: { env: "demo" },
-        counts: { attempts: 1 },
-        reviewers: { primary: { id: "reviewer-1", role: "owner" } },
-        createdAt: new Date(0),
-        ttl: Duration.seconds(30),
-        payload: new Uint8Array([1, 2, 3]),
-        sequence: 42n,
-        contact: { case: "contactEmail", value: "ada@example.com" },
-      })
-      .pipe(
-        Effect.matchEffect({
-          onFailure: reportError,
-          onSuccess: (response) => Console.log(response.summary),
-        }),
-      );
-  }).pipe(
-    Effect.provide(
-      FeatureShowcaseServiceClientLayer.pipe(
-        Layer.provide(
-          GrpcClientProtocol.layer({
-            baseUrl: baseUrl.toString().replace(/\/$/, ""),
-            registry: FeatureShowcaseServiceGrpcRegistry,
-          }),
-        ),
-      ),
-    ),
-  );
+  yield* client
+    .describe({
+      tags: ["alpha", "beta"],
+      scores: [10, 20],
+      notes: [{ text: "generated feature demo" }],
+      state: 1,
+      owner: { id: "user-1", name: "Ada" },
+      labels: { env: "demo" },
+      counts: { attempts: 1 },
+      reviewers: { primary: { id: "reviewer-1", role: "owner" } },
+      createdAt: new Date(0),
+      ttl: Duration.seconds(30),
+      payload: new Uint8Array([1, 2, 3]),
+      sequence: 42n,
+      contact: { case: "contactEmail", value: "ada@example.com" },
+    })
+    .pipe(
+      Effect.matchEffect({
+        onFailure: reportError,
+        onSuccess: (response) => Console.log(response.summary),
+      }),
+    );
+});
 
 const baseUrl = Flag.String("base-url").pipe(
   Flag.mapTryCatch(
@@ -133,7 +122,7 @@ const baseUrl = Flag.String("base-url").pipe(
 
 const simpleClient = Command.make("effect-grpc-simple-client").pipe(
   Command.withSharedFlags({ baseUrl }),
-  Command.withHandler(({ baseUrl }) => getUser(baseUrl, "123")),
+  Command.withHandler(({ baseUrl }) => withClient(baseUrl, getUser("123"))),
   Command.withDescription("Call the effect-grpc simple demo service"),
 );
 
@@ -146,10 +135,9 @@ const getUserCommand = Command.make(
     ),
   },
   ({ id }) =>
-    Effect.gen(function* () {
-      const { baseUrl } = yield* simpleClient;
-      yield* getUser(baseUrl, id);
-    }),
+    Effect.flatMap(simpleClient, ({ baseUrl }) =>
+      withClient(baseUrl, getUser(id)),
+    ),
 ).pipe(Command.withDescription("Fetch one user"));
 
 const watchUsersCommand = Command.make(
@@ -165,17 +153,15 @@ const watchUsersCommand = Command.make(
     ),
   },
   ({ tenantId, count }) =>
-    Effect.gen(function* () {
-      const { baseUrl } = yield* simpleClient;
-      yield* watchUsers(baseUrl, tenantId, count);
-    }),
+    Effect.flatMap(simpleClient, ({ baseUrl }) =>
+      withClient(baseUrl, watchUsers(tenantId, count)),
+    ),
 ).pipe(Command.withDescription("Stream user events"));
 
 const describeFeaturesCommand = Command.make("describe-features", {}, () =>
-  Effect.gen(function* () {
-    const { baseUrl } = yield* simpleClient;
-    yield* describeFeatures(baseUrl);
-  }),
+  Effect.flatMap(simpleClient, ({ baseUrl }) =>
+    withClient(baseUrl, describeFeatures()),
+  ),
 ).pipe(Command.withDescription("Round-trip the feature showcase request"));
 
 const setFailureExitCode = Effect.sync(() => {

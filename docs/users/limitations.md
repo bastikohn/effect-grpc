@@ -8,9 +8,16 @@ client-streaming, and bidi-streaming.
 Consequences of bridging `Stream` and connect `AsyncIterable` directly over
 one transport and registry:
 
-- There is no Effect RPC middleware hook on either side; cross-cutting
-  behavior belongs in connect interceptors (client) or in the handler
-  implementations (server).
+- There is no Effect-native middleware hook on either side; cross-cutting
+  behavior belongs in connect interceptors — `interceptors` on
+  `GrpcClientProtocol.layer` and on `GrpcNodeServer.serve`/`serveAll` (see
+  [server context](server-context.md)). Server interceptors run after
+  connect has parsed the request, so they are not an early admission layer,
+  and they are not run by `GrpcInvoker.layerInMemory`.
+- Handlers observe the incoming deadline through
+  `GrpcServerContext.remainingTimeoutMs()` but nothing propagates it to
+  outgoing calls automatically; response headers and trailers cannot be set
+  from a handler yet.
 - gRPC has no channel for a client-side error other than cancelling the call.
   If the request `Stream` passed to a generated client method fails, the call
   is cancelled (the server observes `cancelled` or an interrupted handler) and

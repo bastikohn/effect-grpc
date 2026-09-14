@@ -18,7 +18,11 @@ messages are decoded (`invalid_argument` on failure) and response values are
 encoded (`internal` on failure) per message around the handler.
 
 Execution runs through two templates, one per connect response shape (Promise
-vs async-generator); each picks its request source by call kind:
+vs async-generator); each picks its request source by call kind and builds
+the handler's `GrpcServerContext` from connect's `HandlerContext` with one
+private per-call mapper — the context interceptors have already run on, so
+its metadata reflects post-interceptor headers, its signal is connect's own,
+and its remaining-time and typed-value reads delegate to the live call:
 
 - Effect-shaped calls (unary, client-streaming) run the handler effect with
   the connect `signal` bound to the running fiber, inside one server span.
@@ -48,4 +52,6 @@ semantics on both sides:
 
 Because every call shape shares the transport and the same handler seam,
 interceptors, metadata, status mapping, and telemetry behave identically
-across all four kinds.
+across all four kinds. Server interceptors sit outside both templates, in
+connect's own chain: they run once per RPC before the template starts, so
+a refusal there happens before the server span exists.

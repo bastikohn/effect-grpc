@@ -2,7 +2,7 @@ import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import { fileDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import { base64Encode } from "@bufbuild/protobuf/wire";
 import { FileDescriptorProtoSchema } from "@bufbuild/protobuf/wkt";
-import { describe, expect, it } from "vitest";
+import { assert, describe, it } from "@effect/vitest";
 
 import * as GrpcHealth from "../src/GrpcHealth.js";
 import type * as GrpcMethodRegistry from "../src/GrpcMethodRegistry.js";
@@ -29,8 +29,8 @@ describe("GrpcReflection index", () => {
       messageRequest: { case: "listServices", value: "*" },
     });
 
-    expect(response.validHost).toBe("localhost");
-    expect(response.messageResponse).toEqual({
+    assert.strictEqual(response.validHost, "localhost");
+    assert.deepStrictEqual(response.messageResponse, {
       case: "listServicesResponse",
       value: {
         service: [
@@ -53,7 +53,7 @@ describe("GrpcReflection index", () => {
       messageRequest: { case: "fileContainingSymbol", value: symbol },
     });
 
-    expect(descriptorNames(response)).toEqual([HEALTH_PROTO]);
+    assert.deepStrictEqual(descriptorNames(response), [HEALTH_PROTO]);
   });
 
   it("resolves file_by_filename", () => {
@@ -62,7 +62,7 @@ describe("GrpcReflection index", () => {
       messageRequest: { case: "fileByFilename", value: HEALTH_PROTO },
     });
 
-    expect(descriptorNames(response)).toEqual([HEALTH_PROTO]);
+    assert.deepStrictEqual(descriptorNames(response), [HEALTH_PROTO]);
   });
 
   it("answers an unknown filename with an in-band NOT_FOUND", () => {
@@ -71,7 +71,7 @@ describe("GrpcReflection index", () => {
       messageRequest: { case: "fileByFilename", value: "missing.proto" },
     });
 
-    expect(response.messageResponse).toEqual({
+    assert.deepStrictEqual(response.messageResponse, {
       case: "errorResponse",
       value: {
         errorCode: NOT_FOUND,
@@ -90,14 +90,14 @@ describe("GrpcReflection index", () => {
     } as const;
     const response = GrpcReflection.respond(index, request);
 
-    expect(response.messageResponse).toEqual({
+    assert.deepStrictEqual(response.messageResponse, {
       case: "errorResponse",
       value: {
         errorCode: NOT_FOUND,
         errorMessage: "symbol not found: no.such.Symbol",
       },
     });
-    expect(response.originalRequest).toEqual(request);
+    assert.deepStrictEqual(response.originalRequest, request);
   });
 
   it("answers a request without a message_request with INVALID_ARGUMENT", () => {
@@ -106,9 +106,9 @@ describe("GrpcReflection index", () => {
       messageRequest: { case: undefined },
     });
 
-    expect(response.messageResponse).toMatchObject({
+    assert.deepStrictEqual(errorOf(response), {
       case: "errorResponse",
-      value: { errorCode: INVALID_ARGUMENT },
+      errorCode: INVALID_ARGUMENT,
     });
   });
 });
@@ -171,7 +171,10 @@ describe("GrpcReflection index with imports and extensions", () => {
       },
     });
 
-    expect(descriptorNames(response)).toEqual(["test/a.proto", "test/b.proto"]);
+    assert.deepStrictEqual(descriptorNames(response), [
+      "test/a.proto",
+      "test/b.proto",
+    ]);
   });
 
   it("imported files are themselves queryable", () => {
@@ -180,7 +183,7 @@ describe("GrpcReflection index with imports and extensions", () => {
       messageRequest: { case: "fileContainingSymbol", value: "test.b.BMsg" },
     });
 
-    expect(descriptorNames(response)).toEqual(["test/b.proto"]);
+    assert.deepStrictEqual(descriptorNames(response), ["test/b.proto"]);
   });
 
   it("resolves file_containing_extension", () => {
@@ -192,7 +195,10 @@ describe("GrpcReflection index with imports and extensions", () => {
       },
     });
 
-    expect(descriptorNames(response)).toEqual(["test/a.proto", "test/b.proto"]);
+    assert.deepStrictEqual(descriptorNames(response), [
+      "test/a.proto",
+      "test/b.proto",
+    ]);
 
     const missing = GrpcReflection.respond(index, {
       host: "",
@@ -201,9 +207,9 @@ describe("GrpcReflection index with imports and extensions", () => {
         value: { containingType: "test.b.BMsg", extensionNumber: 101 },
       },
     });
-    expect(missing.messageResponse).toMatchObject({
+    assert.deepStrictEqual(errorOf(missing), {
       case: "errorResponse",
-      value: { errorCode: NOT_FOUND },
+      errorCode: NOT_FOUND,
     });
   });
 
@@ -215,7 +221,7 @@ describe("GrpcReflection index with imports and extensions", () => {
         value: "test.b.BMsg",
       },
     });
-    expect(known.messageResponse).toEqual({
+    assert.deepStrictEqual(known.messageResponse, {
       case: "allExtensionNumbersResponse",
       value: { baseTypeName: "test.b.BMsg", extensionNumber: [100] },
     });
@@ -227,7 +233,7 @@ describe("GrpcReflection index with imports and extensions", () => {
         value: "test.a.Req",
       },
     });
-    expect(noExtensions.messageResponse).toEqual({
+    assert.deepStrictEqual(noExtensions.messageResponse, {
       case: "allExtensionNumbersResponse",
       value: { baseTypeName: "test.a.Req", extensionNumber: [] },
     });
@@ -239,9 +245,9 @@ describe("GrpcReflection index with imports and extensions", () => {
         value: "test.Missing",
       },
     });
-    expect(unknown.messageResponse).toMatchObject({
+    assert.deepStrictEqual(errorOf(unknown), {
       case: "errorResponse",
-      value: { errorCode: NOT_FOUND },
+      errorCode: NOT_FOUND,
     });
   });
 });
@@ -252,3 +258,14 @@ const descriptorNames = (
   response.messageResponse.case === "fileDescriptorResponse"
     ? response.messageResponse.value.fileDescriptorProto.map(decodeFileName)
     : [];
+
+/** The response's variant and, for an error response, its status code. */
+const errorOf = (
+  response: GrpcReflection.ServerReflectionResponse,
+): { readonly case: string | undefined; readonly errorCode?: number } =>
+  response.messageResponse.case === "errorResponse"
+    ? {
+        case: response.messageResponse.case,
+        errorCode: response.messageResponse.value.errorCode,
+      }
+    : { case: response.messageResponse.case };

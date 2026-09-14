@@ -1,4 +1,5 @@
 import * as OtelTracer from "@effect/opentelemetry/OtelTracer";
+import { assert, describe, it } from "@effect/vitest";
 import { SpanKind, SpanStatusCode } from "@opentelemetry/api";
 import {
   BasicTracerProvider,
@@ -7,7 +8,6 @@ import {
   type ReadableSpan,
 } from "@opentelemetry/sdk-trace-base";
 import { Deferred, Effect, Exit, Fiber, Layer, Scope, Stream } from "effect";
-import { describe, expect, it } from "vitest";
 
 import {
   GrpcClientProtocol,
@@ -46,65 +46,64 @@ const defaultImplementation: UserServiceImplementation = {
     ),
 };
 
+// Every test boots a real node http2 server and talks to it over real
+// sockets, so they all run under `it.live`: the TestClock would freeze the
+// connect transport's deadlines and the server startup sleep.
 describe("simple demo e2e", () => {
-  it("calls get-user successfully", async () => {
-    const response = await Effect.runPromise(
-      withServer((baseUrl) =>
+  it.live("calls get-user successfully", () =>
+    Effect.gen(function* () {
+      const response = yield* withServer((baseUrl) =>
         Effect.gen(function* () {
           const client = yield* UserServiceClient;
           return yield* client.getUser({ id: "123" });
         }).pipe(Effect.provide(clientLayer(baseUrl))),
-      ),
-    );
+      );
 
-    expect(response).toEqual({ user: { id: "123", name: "User 123" } });
-  });
+      assert.deepStrictEqual(response, {
+        user: { id: "123", name: "User 123" },
+      });
+    }),
+  );
 
-  it("maps missing get-user to not_found", async () => {
-    const error = await Effect.runPromise(
-      withServer((baseUrl) =>
+  it.live("maps missing get-user to not_found", () =>
+    Effect.gen(function* () {
+      const error = yield* withServer((baseUrl) =>
         Effect.gen(function* () {
           const client = yield* UserServiceClient;
-          return yield* client.getUser({ id: "missing" }).pipe(
-            Effect.match({
-              onFailure: (error) => error,
-              onSuccess: () => {
-                throw new Error("Expected getUser to fail");
-              },
-            }),
-          );
+          return yield* client.getUser({ id: "missing" }).pipe(Effect.flip);
         }).pipe(Effect.provide(clientLayer(baseUrl))),
-      ),
-    );
+      );
 
-    expect(error).toMatchObject({
-      _tag: "GrpcStatusError",
-      code: "not_found",
-      message: "User not found: missing",
-    });
-  });
+      assert.deepInclude(error, {
+        _tag: "GrpcStatusError",
+        code: "not_found",
+        message: "User not found: missing",
+      });
+    }),
+  );
 
-  it("streams watch-users results", async () => {
-    const events = await Effect.runPromise(
-      withServer((baseUrl) =>
+  it.live("streams watch-users results", () =>
+    Effect.gen(function* () {
+      const events = yield* withServer((baseUrl) =>
         Effect.gen(function* () {
           const client = yield* UserServiceClient;
           return yield* client
             .watchUsers({ tenantId: "demo", count: 3 })
             .pipe(Stream.runCollect);
         }).pipe(Effect.provide(clientLayer(baseUrl))),
-      ),
-    );
+      );
 
-    expect(events).toEqual([
-      { id: "demo-1", name: "User 1", action: "created", sequence: 1 },
-      { id: "demo-2", name: "User 2", action: "updated", sequence: 2 },
-      { id: "demo-3", name: "User 3", action: "created", sequence: 3 },
-    ]);
-  });
+      assert.deepStrictEqual(events, [
+        { id: "demo-1", name: "User 1", action: "created", sequence: 1 },
+        { id: "demo-2", name: "User 2", action: "updated", sequence: 2 },
+        { id: "demo-3", name: "User 3", action: "created", sequence: 3 },
+      ]);
+    }),
+  );
 
-  it("passes request metadata and Effect trace context to the server handler", async () => {
-    const result = await Effect.runPromise(
+  it.live(
+    "passes request metadata and Effect trace context to the server handler",
+    () =>
       Effect.gen(function* () {
         const seenMetadata =
           yield* Deferred.make<ReadonlyArray<readonly [string, unknown]>>();
@@ -137,59 +136,40 @@ describe("simple demo e2e", () => {
           { implementation },
         );
 
-        return {
-          clientTraceId: yield* Deferred.await(clientTrace),
-          metadata: yield* Deferred.await(seenMetadata),
-          serverTraceId: yield* Deferred.await(seenTrace),
-        };
+        const clientTraceId = yield* Deferred.await(clientTrace);
+        const metadata = yield* Deferred.await(seenMetadata);
+        const serverTraceId = yield* Deferred.await(seenTrace);
+
+        assert.deepInclude(metadata, ["x-demo", "metadata"]);
+        assert.strictEqual(serverTraceId, clientTraceId);
       }),
-    );
+  );
 
-    expect(result.metadata).toContainEqual(["x-demo", "metadata"]);
-    expect(result.serverTraceId).toBe(result.clientTraceId);
-  });
-
-  it("exports native gRPC protocol spans through OpenTelemetry", async () => {
+  it.live("exports native gRPC protocol spans through OpenTelemetry", () => {
     const exporter = new InMemorySpanExporter();
     const provider = new BasicTracerProvider({
       spanProcessors: [new SimpleSpanProcessor(exporter)],
     });
 
-    try {
-      await Effect.runPromise(
-        withServer(
-          (baseUrl) =>
-            Effect.gen(function* () {
-              const client = yield* UserServiceClient;
-              yield* client.getUser({ id: "123" });
-              yield* client.getUser({ id: "missing" }).pipe(
-                Effect.match({
-                  onFailure: () => undefined,
-                  onSuccess: () => {
-                    throw new Error("Expected getUser to fail");
-                  },
-                }),
-              );
-              yield* client.watchUsers({ tenantId: "demo", count: 1 }).pipe(
-                Stream.runDrain,
-                Effect.match({
-                  onFailure: () => undefined,
-                  onSuccess: () => {
-                    throw new Error("Expected watchUsers to fail");
-                  },
-                }),
-              );
-            }).pipe(Effect.provide(clientLayer(baseUrl))),
-          {
-            implementation: {
-              ...defaultImplementation,
-              watchUsers: () =>
-                Stream.fail(GrpcStatusError.unavailable("down")),
-            },
+    return Effect.gen(function* () {
+      yield* withServer(
+        (baseUrl) =>
+          Effect.gen(function* () {
+            const client = yield* UserServiceClient;
+            yield* client.getUser({ id: "123" });
+            yield* client.getUser({ id: "missing" }).pipe(Effect.flip);
+            yield* client
+              .watchUsers({ tenantId: "demo", count: 1 })
+              .pipe(Stream.runDrain, Effect.flip);
+          }).pipe(Effect.provide(clientLayer(baseUrl))),
+        {
+          implementation: {
+            ...defaultImplementation,
+            watchUsers: () => Stream.fail(GrpcStatusError.unavailable("down")),
           },
-        ).pipe(Effect.provide(otelTestLayer(provider))),
-      );
-      await provider.forceFlush();
+        },
+      ).pipe(Effect.provide(otelTestLayer(provider)));
+      yield* Effect.promise(() => provider.forceFlush());
 
       const spans = exporter.getFinishedSpans();
       const successClient = protocolSpan(
@@ -223,28 +203,28 @@ describe("simple demo e2e", () => {
         "UNAVAILABLE",
       );
 
-      expect(successClient.attributes).toMatchObject({
+      assert.deepInclude(successClient.attributes, {
         "rpc.system.name": "grpc",
         "rpc.method": "demo.v1.UserService/GetUser",
         "rpc.response.status_code": "OK",
         "server.address": "127.0.0.1",
       });
-      expect(successClient.attributes["server.port"]).toEqual(
-        expect.any(Number),
-      );
-      expect(successServer.attributes).toMatchObject({
+      assert.typeOf(successClient.attributes["server.port"], "number");
+      assert.deepInclude(successServer.attributes, {
         "rpc.system.name": "grpc",
         "rpc.method": "demo.v1.UserService/GetUser",
         "rpc.response.status_code": "OK",
       });
-      expect(successServer.parentSpanContext?.spanId).toBe(
+      assert.strictEqual(
+        successServer.parentSpanContext?.spanId,
         successClient.spanContext().spanId,
       );
-      expect(successServer.spanContext().traceId).toBe(
+      assert.strictEqual(
+        successServer.spanContext().traceId,
         successClient.spanContext().traceId,
       );
 
-      expect(failedClient.attributes).toMatchObject({
+      assert.deepInclude(failedClient.attributes, {
         "rpc.response.status_code": "NOT_FOUND",
         "error.type": "NOT_FOUND",
       });
@@ -252,37 +232,30 @@ describe("simple demo e2e", () => {
       // but is not marked as an error (per semconv, servers only flag
       // UNKNOWN, DEADLINE_EXCEEDED, UNIMPLEMENTED, INTERNAL, UNAVAILABLE,
       // and DATA_LOSS).
-      expect(failedServer.attributes).toMatchObject({
+      assert.deepInclude(failedServer.attributes, {
         "rpc.response.status_code": "NOT_FOUND",
       });
-      expect(failedServer.attributes["error.type"]).toBeUndefined();
+      assert.isUndefined(failedServer.attributes["error.type"]);
       // UNAVAILABLE is a server fault and stays an error on the server span.
-      expect(failedStreamServer.attributes).toMatchObject({
+      assert.deepInclude(failedStreamServer.attributes, {
         "rpc.response.status_code": "UNAVAILABLE",
         "error.type": "UNAVAILABLE",
       });
-      expect(failedClient.status.code).toBe(SpanStatusCode.ERROR);
-      expect(failedServer.status.code).not.toBe(SpanStatusCode.ERROR);
-      expect(failedStreamServer.status.code).toBe(SpanStatusCode.ERROR);
-    } finally {
-      await provider.shutdown();
-    }
+      assert.strictEqual(failedClient.status.code, SpanStatusCode.ERROR);
+      assert.notStrictEqual(failedServer.status.code, SpanStatusCode.ERROR);
+      assert.strictEqual(failedStreamServer.status.code, SpanStatusCode.ERROR);
+    }).pipe(Effect.ensuring(Effect.promise(() => provider.shutdown())));
   });
 
-  it("maps client deadlines to deadline_exceeded", async () => {
-    const error = await Effect.runPromise(
-      withServer(
+  it.live("maps client deadlines to deadline_exceeded", () =>
+    Effect.gen(function* () {
+      const error = yield* withServer(
         (baseUrl) =>
           Effect.gen(function* () {
             const client = yield* UserServiceClient;
-            return yield* client.getUser({ id: "slow" }, { timeoutMs: 5 }).pipe(
-              Effect.match({
-                onFailure: (error) => error,
-                onSuccess: () => {
-                  throw new Error("Expected getUser to time out");
-                },
-              }),
-            );
+            return yield* client
+              .getUser({ id: "slow" }, { timeoutMs: 5 })
+              .pipe(Effect.flip);
           }).pipe(Effect.provide(clientLayer(baseUrl))),
         {
           implementation: {
@@ -293,32 +266,24 @@ describe("simple demo e2e", () => {
               ),
           },
         },
-      ),
-    );
+      );
 
-    expect(error).toMatchObject({
-      _tag: "GrpcStatusError",
-      code: "deadline_exceeded",
-    });
-  });
+      assert.deepInclude(error, {
+        _tag: "GrpcStatusError",
+        code: "deadline_exceeded",
+      });
+    }),
+  );
 
-  it("maps server-stream failure before the first chunk", async () => {
-    const error = await Effect.runPromise(
-      withServer(
+  it.live("maps server-stream failure before the first chunk", () =>
+    Effect.gen(function* () {
+      const error = yield* withServer(
         (baseUrl) =>
           Effect.gen(function* () {
             const client = yield* UserServiceClient;
             return yield* client
               .watchUsers({ tenantId: "demo", count: 3 })
-              .pipe(
-                Stream.runCollect,
-                Effect.match({
-                  onFailure: (error) => error,
-                  onSuccess: () => {
-                    throw new Error("Expected watchUsers to fail");
-                  },
-                }),
-              );
+              .pipe(Stream.runCollect, Effect.flip);
           }).pipe(Effect.provide(clientLayer(baseUrl))),
         {
           implementation: {
@@ -326,19 +291,19 @@ describe("simple demo e2e", () => {
             watchUsers: () => Stream.fail(GrpcStatusError.unavailable("down")),
           },
         },
-      ),
-    );
+      );
 
-    expect(error).toMatchObject({
-      _tag: "GrpcStatusError",
-      code: "unavailable",
-      message: "down",
-    });
-  });
+      assert.deepInclude(error, {
+        _tag: "GrpcStatusError",
+        code: "unavailable",
+        message: "down",
+      });
+    }),
+  );
 
-  it("maps server-stream failure after at least one chunk", async () => {
-    const result = await Effect.runPromise(
-      withServer(
+  it.live("maps server-stream failure after at least one chunk", () =>
+    Effect.gen(function* () {
+      const result = yield* withServer(
         (baseUrl) =>
           Effect.gen(function* () {
             const client = yield* UserServiceClient;
@@ -351,12 +316,7 @@ describe("simple demo e2e", () => {
                     values.push(event);
                   }),
                 ),
-                Effect.match({
-                  onFailure: (error) => error,
-                  onSuccess: () => {
-                    throw new Error("Expected watchUsers to fail");
-                  },
-                }),
+                Effect.flip,
               );
             return { values, error };
           }).pipe(Effect.provide(clientLayer(baseUrl))),
@@ -374,18 +334,18 @@ describe("simple demo e2e", () => {
               ),
           },
         },
-      ),
-    );
+      );
 
-    expect(result.values).toEqual([
-      { id: "demo-1", name: "User 1", action: "created", sequence: 1 },
-    ]);
-    expect(result.error).toMatchObject({
-      _tag: "GrpcStatusError",
-      code: "unavailable",
-      message: "down",
-    });
-  });
+      assert.deepStrictEqual(result.values, [
+        { id: "demo-1", name: "User 1", action: "created", sequence: 1 },
+      ]);
+      assert.deepInclude(result.error, {
+        _tag: "GrpcStatusError",
+        code: "unavailable",
+        message: "down",
+      });
+    }),
+  );
 
   // Signal `started`, block until torn down, then signal `cancelled` from the
   // finalizer. Both termination modes below assert the same fact — the
@@ -419,76 +379,69 @@ describe("simple demo e2e", () => {
     },
   } as const;
 
-  const shapes = [["unary"], ["server stream"]] as const;
+  // `it.live.each` hands each case to the test whole (vitest's `it.for`), so
+  // the shapes are plain values rather than argument tuples.
+  const shapes = ["unary", "server stream"] as const;
 
-  it.each(shapes)(
+  it.live.each(shapes)(
     "client-side Effect interruption cancels native %s calls",
-    async (shape) => {
-      const { call, implementation } = hangingCall[shape];
-      await Effect.runPromise(
-        Effect.gen(function* () {
-          const started = yield* Deferred.make<void>();
-          const cancelled = yield* Deferred.make<void>();
+    (shape) =>
+      Effect.gen(function* () {
+        const { call, implementation } = hangingCall[shape];
+        const started = yield* Deferred.make<void>();
+        const cancelled = yield* Deferred.make<void>();
 
-          yield* withServer(
-            (baseUrl) =>
-              Effect.gen(function* () {
-                const client = yield* UserServiceClient;
-                const fiber = yield* call(client).pipe(Effect.forkChild);
-                yield* Deferred.await(started).pipe(Effect.timeout("1 second"));
-                // Give connect-node a beat to flush the request before the
-                // interrupt races it; without this the abort can arrive first
-                // and the server never starts the call.
-                yield* Effect.sleep("20 millis");
-                yield* Fiber.interrupt(fiber);
-                yield* Deferred.await(cancelled).pipe(
-                  Effect.timeout("1 second"),
-                );
-              }).pipe(Effect.provide(clientLayer(baseUrl))),
-            { implementation: implementation(hang(started, cancelled)) },
-          );
-        }),
-      );
-    },
+        yield* withServer(
+          (baseUrl) =>
+            Effect.gen(function* () {
+              const client = yield* UserServiceClient;
+              const fiber = yield* call(client).pipe(Effect.forkChild);
+              yield* Deferred.await(started).pipe(Effect.timeout("1 second"));
+              // Give connect-node a beat to flush the request before the
+              // interrupt races it; without this the abort can arrive first
+              // and the server never starts the call.
+              yield* Effect.sleep("20 millis");
+              yield* Fiber.interrupt(fiber);
+              yield* Deferred.await(cancelled).pipe(Effect.timeout("1 second"));
+            }).pipe(Effect.provide(clientLayer(baseUrl))),
+          { implementation: implementation(hang(started, cancelled)) },
+        );
+      }),
   );
 
-  it.each(shapes)(
+  it.live.each(shapes)(
     "client protocol scope finalization cancels active native %s calls",
-    async (shape) => {
-      const { call, implementation } = hangingCall[shape];
-      await Effect.runPromise(
-        Effect.gen(function* () {
-          const started = yield* Deferred.make<void>();
-          const cancelled = yield* Deferred.make<void>();
+    (shape) =>
+      Effect.gen(function* () {
+        const { call, implementation } = hangingCall[shape];
+        const started = yield* Deferred.make<void>();
+        const cancelled = yield* Deferred.make<void>();
 
-          yield* withServer(
-            (baseUrl) =>
-              Effect.gen(function* () {
-                // The client layer lives in the inner scope; closing it is what
-                // must cancel the in-flight call, so `cancelled` is awaited
-                // outside that scope.
-                yield* Effect.scoped(
-                  Effect.gen(function* () {
-                    const client = yield* UserServiceClient;
-                    yield* call(client).pipe(Effect.forkScoped);
-                    yield* Deferred.await(started).pipe(
-                      Effect.timeout("1 second"),
-                    );
-                  }),
-                ).pipe(Effect.provide(clientLayer(baseUrl)));
-                yield* Deferred.await(cancelled).pipe(
-                  Effect.timeout("1 second"),
-                );
-              }),
-            { implementation: implementation(hang(started, cancelled)) },
-          );
-        }),
-      );
-    },
+        yield* withServer(
+          (baseUrl) =>
+            Effect.gen(function* () {
+              // The client layer lives in the inner scope; closing it is what
+              // must cancel the in-flight call, so `cancelled` is awaited
+              // outside that scope.
+              yield* Effect.scoped(
+                Effect.gen(function* () {
+                  const client = yield* UserServiceClient;
+                  yield* call(client).pipe(Effect.forkScoped);
+                  yield* Deferred.await(started).pipe(
+                    Effect.timeout("1 second"),
+                  );
+                }),
+              ).pipe(Effect.provide(clientLayer(baseUrl)));
+              yield* Deferred.await(cancelled).pipe(Effect.timeout("1 second"));
+            }),
+          { implementation: implementation(hang(started, cancelled)) },
+        );
+      }),
   );
 
-  it("handles concurrent unary calls, server streams, and isolated stream cancellation", async () => {
-    const result = await Effect.runPromise(
+  it.live(
+    "handles concurrent unary calls, server streams, and isolated stream cancellation",
+    () =>
       Effect.gen(function* () {
         const cancelStarted = yield* Deferred.make<void>();
         const cancelFinalized = yield* Deferred.make<void>();
@@ -524,7 +477,7 @@ describe("simple demo e2e", () => {
                 ),
         };
 
-        return yield* withServer(
+        const result = yield* withServer(
           (baseUrl) =>
             Effect.gen(function* () {
               const client = yield* UserServiceClient;
@@ -586,74 +539,69 @@ describe("simple demo e2e", () => {
             }).pipe(Effect.provide(clientLayer(baseUrl))),
           { implementation },
         );
+
+        assert.lengthOf(
+          result.unaryResults.filter((item) => item._tag === "success"),
+          90,
+        );
+        assert.lengthOf(
+          result.unaryResults.filter(
+            (item) => item._tag === "failure" && item.code === "not_found",
+          ),
+          10,
+        );
+        assert.strictEqual(result.cancelExit._tag, "Failure");
+        assert.lengthOf(result.afterCancel, 2);
+        assert.deepInclude(result.afterCancel[0], { id: "after-cancel-1" });
+        assert.lengthOf(result.streamResults, 20);
+        for (const [index, events] of result.streamResults.entries()) {
+          assert.lengthOf(events, 5);
+          assert.deepInclude(events[0], { id: `tenant-${index}-1` });
+          assert.deepInclude(events[4], { id: `tenant-${index}-5` });
+        }
       }),
-    );
+  );
 
-    expect(
-      result.unaryResults.filter((item) => item._tag === "success"),
-    ).toHaveLength(90);
-    expect(
-      result.unaryResults.filter(
-        (item) => item._tag === "failure" && item.code === "not_found",
-      ),
-    ).toHaveLength(10);
-    expect(result.cancelExit._tag).toBe("Failure");
-    expect(result.afterCancel).toHaveLength(2);
-    expect(result.afterCancel[0]).toMatchObject({ id: "after-cancel-1" });
-    expect(result.streamResults).toHaveLength(20);
-    for (const [index, events] of result.streamResults.entries()) {
-      expect(events).toHaveLength(5);
-      expect(events[0]).toMatchObject({ id: `tenant-${index}-1` });
-      expect(events[4]).toMatchObject({ id: `tenant-${index}-5` });
-    }
-  });
+  it.live("server shutdown does not hang with active server streams", () =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      const serverScope = yield* Scope.make();
+      const port = yield* freePort;
 
-  it("server shutdown does not hang with active server streams", async () => {
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const started = yield* Deferred.make<void>();
-          const serverScope = yield* Scope.make();
-          const port = yield* freePort;
+      const implementation: UserServiceImplementation = {
+        ...defaultImplementation,
+        watchUsers: () =>
+          Stream.fromEffect(Deferred.succeed(started, undefined)).pipe(
+            Stream.drain,
+            Stream.concat(Stream.never),
+          ),
+      };
 
-          const implementation: UserServiceImplementation = {
-            ...defaultImplementation,
-            watchUsers: () =>
-              Stream.fromEffect(Deferred.succeed(started, undefined)).pipe(
-                Stream.drain,
-                Stream.concat(Stream.never),
-              ),
-          };
+      yield* GrpcNodeServer.serveAll({
+        host: "127.0.0.1",
+        port,
+        shutdownTimeoutMs: 20,
+        services: [
+          {
+            registry: UserServiceGrpcRegistry,
+            handlers: UserServiceHandlers(implementation),
+          },
+        ],
+      }).pipe(Effect.forkScoped, Scope.provide(serverScope));
+      yield* Effect.sleep("50 millis");
 
-          yield* GrpcNodeServer.serveAll({
-            host: "127.0.0.1",
-            port,
-            shutdownTimeoutMs: 20,
-            services: [
-              {
-                registry: UserServiceGrpcRegistry,
-                handlers: UserServiceHandlers(implementation),
-              },
-            ],
-          }).pipe(Effect.forkScoped, Scope.provide(serverScope));
-          yield* Effect.sleep("50 millis");
-
-          yield* Effect.gen(function* () {
-            const client = yield* UserServiceClient;
-            yield* client
-              .watchUsers({ tenantId: "hang", count: 1 })
-              .pipe(Stream.runDrain, Effect.exit, Effect.forkScoped);
-            yield* Deferred.await(started).pipe(Effect.timeout("1 second"));
-            yield* Scope.close(serverScope, Exit.void).pipe(
-              Effect.timeout("1 second"),
-            );
-          }).pipe(
-            Effect.provide(clientLayer(new URL(`http://127.0.0.1:${port}`))),
-          );
-        }),
-      ),
-    );
-  });
+      yield* Effect.gen(function* () {
+        const client = yield* UserServiceClient;
+        yield* client
+          .watchUsers({ tenantId: "hang", count: 1 })
+          .pipe(Stream.runDrain, Effect.exit, Effect.forkScoped);
+        yield* Deferred.await(started).pipe(Effect.timeout("1 second"));
+        yield* Scope.close(serverScope, Exit.void).pipe(
+          Effect.timeout("1 second"),
+        );
+      }).pipe(Effect.provide(clientLayer(new URL(`http://127.0.0.1:${port}`))));
+    }),
+  );
 });
 
 const withServer = <A, E, R>(
@@ -709,6 +657,6 @@ const protocolSpan = (
       span.kind === kind &&
       span.attributes["rpc.response.status_code"] === statusCode,
   );
-  expect(span).toBeDefined();
+  assert.isDefined(span);
   return span!;
 };

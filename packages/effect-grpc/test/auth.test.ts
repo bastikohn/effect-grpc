@@ -1,6 +1,7 @@
 import type { Interceptor } from "@connectrpc/connect";
+import { assert, describe, it } from "@effect/vitest";
 import { Deferred, Effect, Layer, Ref } from "effect";
-import { describe, expect, it } from "vitest";
+import { TestClock } from "effect/testing";
 
 import * as GrpcAuth from "../src/GrpcAuth.js";
 
@@ -15,15 +16,16 @@ const invoke = (interceptor: Interceptor, header: Headers) =>
 
 describe("bearerMetadata", () => {
   it("maps a token to an authorization header", () => {
-    expect(GrpcAuth.bearerMetadata("t1")).toEqual([
+    assert.deepStrictEqual(GrpcAuth.bearerMetadata("t1"), [
       ["authorization", "Bearer t1"],
     ]);
   });
 });
 
 describe("bearerInterceptor", () => {
-  it("reads the BearerToken service per request and lets per-call win", async () => {
-    const result = await Effect.runPromise(
+  it.effect(
+    "reads the BearerToken service per request and lets per-call win",
+    () =>
       Effect.gen(function* () {
         const token = yield* Ref.make("t1");
         const interceptor = yield* GrpcAuth.bearerInterceptor.pipe(
@@ -39,29 +41,28 @@ describe("bearerInterceptor", () => {
         );
         yield* Ref.set(token, "t2");
         const rotated = yield* invoke(interceptor, new Headers());
-        return { fresh, perCall, rotated };
-      }),
-    );
 
-    expect(result).toEqual({
-      fresh: "Bearer t1",
-      perCall: "Bearer explicit",
-      rotated: "Bearer t2",
-    });
-  });
+        assert.deepStrictEqual(
+          { fresh, perCall, rotated },
+          {
+            fresh: "Bearer t1",
+            perCall: "Bearer explicit",
+            rotated: "Bearer t2",
+          },
+        );
+      }),
+  );
 });
 
 describe("staticTokenLayer", () => {
-  it("always yields the fixed token", async () => {
-    const token = await Effect.runPromise(
-      Effect.gen(function* () {
-        const service = yield* GrpcAuth.BearerToken;
-        return yield* service.read;
-      }).pipe(Effect.provide(GrpcAuth.staticTokenLayer("fixed"))),
-    );
+  it.effect("always yields the fixed token", () =>
+    Effect.gen(function* () {
+      const service = yield* GrpcAuth.BearerToken;
+      const token = yield* service.read;
 
-    expect(token).toBe("fixed");
-  });
+      assert.strictEqual(token, "fixed");
+    }).pipe(Effect.provide(GrpcAuth.staticTokenLayer("fixed"))),
+  );
 });
 
 describe("refreshingTokenLayer", () => {
@@ -70,80 +71,66 @@ describe("refreshingTokenLayer", () => {
     return yield* service.read;
   });
 
-  /** Polls until the token matches, so the test never races the daemon. */
-  const awaitToken = (
-    expected: string,
-  ): Effect.Effect<string, never, GrpcAuth.BearerToken> =>
-    readToken.pipe(
-      Effect.flatMap((token) =>
-        token === expected
-          ? Effect.succeed(token)
-          : Effect.sleep("5 millis").pipe(
-              Effect.andThen(() => awaitToken(expected)),
-            ),
-      ),
-    );
+  // The daemon sleeps on the TestClock, so every refresh cycle is driven by
+  // `TestClock.adjust(interval)`: no polling, no racing the daemon.
+  const interval = "10 millis";
 
-  it("acquires once and re-mints on the interval", async () => {
-    const result = await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const context = yield* Layer.build(
-            GrpcAuth.refreshingTokenLayer({
-              acquire: Effect.succeed("initial"),
-              refresh: (current) => Effect.succeed(`${current}+`),
-              interval: "10 millis",
-            }),
-          );
-
-          const first = yield* readToken.pipe(Effect.provideContext(context));
-          const rotated = yield* awaitToken("initial+").pipe(
-            Effect.provideContext(context),
-          );
-          return { first, rotated };
+  it.effect("acquires once and re-mints on the interval", () =>
+    Effect.gen(function* () {
+      const context = yield* Layer.build(
+        GrpcAuth.refreshingTokenLayer({
+          acquire: Effect.succeed("initial"),
+          refresh: (current) => Effect.succeed(`${current}+`),
+          interval,
         }),
-      ),
-    );
+      );
 
-    expect(result).toEqual({ first: "initial", rotated: "initial+" });
-  });
+      const first = yield* readToken.pipe(Effect.provideContext(context));
+      yield* TestClock.adjust(interval);
+      const rotated = yield* readToken.pipe(Effect.provideContext(context));
 
-  it("keeps the previous token and the daemon alive when a refresh fails", async () => {
-    const rotated = await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const failedOnce = yield* Deferred.make<void>();
-          const calls = yield* Ref.make(0);
-          const context = yield* Layer.build(
-            GrpcAuth.refreshingTokenLayer({
-              acquire: Effect.succeed("v1"),
-              refresh: () =>
-                Ref.updateAndGet(calls, (n) => n + 1).pipe(
-                  Effect.flatMap((attempt) =>
-                    attempt === 1
-                      ? Deferred.succeed(failedOnce, undefined).pipe(
-                          Effect.andThen(Effect.fail(new Error("transient"))),
-                        )
-                      : Effect.succeed("v2"),
-                  ),
+      assert.deepStrictEqual(
+        { first, rotated },
+        { first: "initial", rotated: "initial+" },
+      );
+    }),
+  );
+
+  it.effect(
+    "keeps the previous token and the daemon alive when a refresh fails",
+    () =>
+      Effect.gen(function* () {
+        const failedOnce = yield* Deferred.make<void>();
+        const calls = yield* Ref.make(0);
+        const context = yield* Layer.build(
+          GrpcAuth.refreshingTokenLayer({
+            acquire: Effect.succeed("v1"),
+            refresh: () =>
+              Ref.updateAndGet(calls, (n) => n + 1).pipe(
+                Effect.flatMap((attempt) =>
+                  attempt === 1
+                    ? Deferred.succeed(failedOnce, undefined).pipe(
+                        Effect.andThen(Effect.fail(new Error("transient"))),
+                      )
+                    : Effect.succeed("v2"),
                 ),
-              interval: "10 millis",
-            }),
-          );
+              ),
+            interval,
+          }),
+        );
 
-          // The failed first cycle must leave the initial token in place.
-          yield* Deferred.await(failedOnce);
-          const afterFailure = yield* readToken.pipe(
-            Effect.provideContext(context),
-          );
-          expect(afterFailure).toBe("v1");
+        // The failed first cycle must leave the initial token in place.
+        yield* TestClock.adjust(interval);
+        yield* Deferred.await(failedOnce);
+        const afterFailure = yield* readToken.pipe(
+          Effect.provideContext(context),
+        );
+        assert.strictEqual(afterFailure, "v1");
 
-          // The next cycle succeeds; the daemon survived the failure.
-          return yield* awaitToken("v2").pipe(Effect.provideContext(context));
-        }),
-      ),
-    );
-
-    expect(rotated).toBe("v2");
-  });
+        // The next cycle succeeds; the daemon survived the failure.
+        yield* TestClock.adjust(interval);
+        const rotated = yield* readToken.pipe(Effect.provideContext(context));
+        assert.strictEqual(rotated, "v2");
+      }),
+  );
 });

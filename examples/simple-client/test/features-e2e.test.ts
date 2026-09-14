@@ -1,5 +1,6 @@
 import { createClient } from "@connectrpc/connect";
 import { createGrpcTransport } from "@connectrpc/connect-node";
+import { assert, describe, it } from "@effect/vitest";
 import {
   Cause,
   Deferred,
@@ -10,7 +11,6 @@ import {
   Option,
   Stream,
 } from "effect";
-import { describe, expect, it } from "vitest";
 
 import { GrpcClientProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc";
 import {
@@ -108,25 +108,28 @@ const userImplementation: UserServiceImplementation = {
 };
 
 describe("features demo e2e", () => {
-  it("round-trips the supported feature matrix through the Effect client", async () => {
-    const response = await Effect.runPromise(
-      withServer((baseUrl) =>
-        Effect.gen(function* () {
-          const client = yield* FeatureShowcaseServiceClient;
-          return yield* client.describe(featureRequest());
-        }).pipe(Effect.provide(clientLayer(baseUrl))),
-      ),
-    );
+  it.live(
+    "round-trips the supported feature matrix through the Effect client",
+    () =>
+      Effect.gen(function* () {
+        const response = yield* withServer((baseUrl) =>
+          Effect.gen(function* () {
+            const client = yield* FeatureShowcaseServiceClient;
+            return yield* client.describe(featureRequest());
+          }).pipe(Effect.provide(clientLayer(baseUrl))),
+        );
 
-    expect(response.summary).toBe(
-      "owner=Ada tags=2 notes=1 labels=1 payload=3 sequence=42 contact=contactUser",
-    );
-    expectRuntimeRequest(response.request);
-  });
+        assert.strictEqual(
+          response.summary,
+          "owner=Ada tags=2 notes=1 labels=1 payload=3 sequence=42 contact=contactUser",
+        );
+        assertRuntimeRequest(response.request);
+      }),
+  );
 
-  it("serves native gRPC calls from a non-Effect connect client", async () => {
-    const response = await Effect.runPromise(
-      withServer((baseUrl) =>
+  it.live("serves native gRPC calls from a non-Effect connect client", () =>
+    Effect.gen(function* () {
+      const response = yield* withServer((baseUrl) =>
         Effect.promise(async () => {
           const client = createClient(
             FeatureShowcaseService,
@@ -151,63 +154,76 @@ describe("features demo e2e", () => {
             contact: { case: "contactEmail", value: "grace@example.com" },
           });
         }),
-      ),
-    );
+      );
 
-    expect(response.summary).toBe(
-      "owner=Grace tags=1 notes=1 labels=1 payload=3 sequence=99 contact=contactEmail",
-    );
-    expect(response.request?.state).toBe(99);
-    expect(response.request?.createdAt).toMatchObject({
-      seconds: 1n,
-      nanos: 500_000_000,
-    });
-    expect(response.request?.ttl).toMatchObject({
-      seconds: 2n,
-      nanos: 250_000_001,
-    });
-    expect(response.request?.payload).toEqual(new Uint8Array([4, 5, 6]));
-    expect(response.request?.sequence).toBe(99n);
-    expect(response.request?.contact).toEqual({
-      case: "contactEmail",
-      value: "grace@example.com",
-    });
-  });
+      assert.strictEqual(
+        response.summary,
+        "owner=Grace tags=1 notes=1 labels=1 payload=3 sequence=99 contact=contactEmail",
+      );
+      assert.strictEqual(response.request?.state, 99);
+      assert.deepInclude(response.request?.createdAt, {
+        seconds: 1n,
+        nanos: 500_000_000,
+      });
+      assert.deepInclude(response.request?.ttl, {
+        seconds: 2n,
+        nanos: 250_000_001,
+      });
+      assert.deepStrictEqual(
+        response.request?.payload,
+        new Uint8Array([4, 5, 6]),
+      );
+      assert.strictEqual(response.request?.sequence, 99n);
+      assert.deepStrictEqual(response.request?.contact, {
+        case: "contactEmail",
+        value: "grace@example.com",
+      });
+    }),
+  );
 
-  it("routes requests to generated services after the first service", async () => {
-    const response = await Effect.runPromise(
-      withServer((baseUrl) =>
+  it.live("routes requests to generated services after the first service", () =>
+    Effect.gen(function* () {
+      const response = yield* withServer((baseUrl) =>
         Effect.gen(function* () {
           const client = yield* UserServiceClient;
           return yield* client.getUser({ id: "secondary" });
         }).pipe(Effect.provide(userClientLayer(baseUrl))),
-      ),
-    );
+      );
 
-    expect(response.user).toEqual({
-      id: "secondary",
-      name: "Secondary User",
-    });
-  });
+      assert.deepStrictEqual(response.user, {
+        id: "secondary",
+        name: "Secondary User",
+      });
+    }),
+  );
 
-  it("round-trips a client-streaming upload through the Effect client", async () => {
-    const uploaded = await Effect.runPromise(
-      withServer((baseUrl) =>
-        Effect.gen(function* () {
-          const client = yield* FeatureShowcaseServiceClient;
-          return yield* client.uploadNotes(
-            Stream.make({ text: "alpha" }, { text: "beta" }, { text: "gamma" }),
-          );
-        }).pipe(Effect.provide(clientLayer(baseUrl))),
-      ),
-    );
+  it.live(
+    "round-trips a client-streaming upload through the Effect client",
+    () =>
+      Effect.gen(function* () {
+        const uploaded = yield* withServer((baseUrl) =>
+          Effect.gen(function* () {
+            const client = yield* FeatureShowcaseServiceClient;
+            return yield* client.uploadNotes(
+              Stream.make(
+                { text: "alpha" },
+                { text: "beta" },
+                { text: "gamma" },
+              ),
+            );
+          }).pipe(Effect.provide(clientLayer(baseUrl))),
+        );
 
-    expect(uploaded).toEqual({ count: 3, joined: "alpha,beta,gamma" });
-  });
+        assert.deepStrictEqual(uploaded, {
+          count: 3,
+          joined: "alpha,beta,gamma",
+        });
+      }),
+  );
 
-  it("round-trips a bidi chat through the Effect client", async () => {
-    const echoes = await Effect.runPromise(
-      withServer((baseUrl) =>
+  it.live("round-trips a bidi chat through the Effect client", () =>
+    Effect.gen(function* () {
+      const echoes = yield* withServer((baseUrl) =>
         Effect.gen(function* () {
           const client = yield* FeatureShowcaseServiceClient;
           return yield* Stream.runCollect(
@@ -219,73 +235,80 @@ describe("features demo e2e", () => {
             ),
           );
         }).pipe(Effect.provide(clientLayer(baseUrl))),
-      ),
-    );
+      );
 
-    expect(echoes).toEqual([
-      { text: "echo:hi", sequence: 2 },
-      { text: "echo:there", sequence: 3 },
-    ]);
-  });
+      assert.deepStrictEqual(echoes, [
+        { text: "echo:hi", sequence: 2 },
+        { text: "echo:there", sequence: 3 },
+      ]);
+    }),
+  );
 
-  it("propagates a mid-stream server failure to the client-streaming caller", async () => {
-    const error = await Effect.runPromise(
-      withServer((baseUrl) =>
-        Effect.gen(function* () {
-          const client = yield* FeatureShowcaseServiceClient;
-          return yield* client
-            .uploadNotes(
-              Stream.make({ text: "ok" }, { text: "boom" }, { text: "late" }),
-            )
-            .pipe(Effect.flip);
-        }).pipe(Effect.provide(clientLayer(baseUrl))),
-      ),
-    );
-
-    expect(error).toMatchObject({
-      _tag: "GrpcStatusError",
-      code: "failed_precondition",
-      message: "boom note",
-    });
-  });
-
-  it("fails the bidi response stream when the server fails mid-stream", async () => {
-    const result = await Effect.runPromise(
-      withServer((baseUrl) =>
-        Effect.gen(function* () {
-          const client = yield* FeatureShowcaseServiceClient;
-          const collected: Array<{ text: string; sequence: number }> = [];
-          const error = yield* client
-            .chat(
-              Stream.make(
-                { text: "hi", sequence: 1 },
-                { text: "boom", sequence: 2 },
-              ),
-            )
-            .pipe(
-              Stream.tap((message) =>
-                Effect.sync(() => collected.push(message)),
-              ),
-              Stream.runDrain,
-              Effect.flip,
-            );
-          return { collected, error };
-        }).pipe(Effect.provide(clientLayer(baseUrl))),
-      ),
-    );
-
-    expect(result.collected).toEqual([{ text: "echo:hi", sequence: 2 }]);
-    expect(result.error).toMatchObject({
-      _tag: "GrpcStatusError",
-      code: "failed_precondition",
-      message: "boom message",
-    });
-  });
-
-  it("cancels the call and surfaces the original error when the request stream fails", async () => {
-    const failure = { _tag: "UploadSourceFailure" as const };
-    const result = await Effect.runPromise(
+  it.live(
+    "propagates a mid-stream server failure to the client-streaming caller",
+    () =>
       Effect.gen(function* () {
+        const error = yield* withServer((baseUrl) =>
+          Effect.gen(function* () {
+            const client = yield* FeatureShowcaseServiceClient;
+            return yield* client
+              .uploadNotes(
+                Stream.make({ text: "ok" }, { text: "boom" }, { text: "late" }),
+              )
+              .pipe(Effect.flip);
+          }).pipe(Effect.provide(clientLayer(baseUrl))),
+        );
+
+        assert.deepInclude(error, {
+          _tag: "GrpcStatusError",
+          code: "failed_precondition",
+          message: "boom note",
+        });
+      }),
+  );
+
+  it.live(
+    "fails the bidi response stream when the server fails mid-stream",
+    () =>
+      Effect.gen(function* () {
+        const result = yield* withServer((baseUrl) =>
+          Effect.gen(function* () {
+            const client = yield* FeatureShowcaseServiceClient;
+            const collected: Array<{ text: string; sequence: number }> = [];
+            const error = yield* client
+              .chat(
+                Stream.make(
+                  { text: "hi", sequence: 1 },
+                  { text: "boom", sequence: 2 },
+                ),
+              )
+              .pipe(
+                Stream.tap((message) =>
+                  Effect.sync(() => collected.push(message)),
+                ),
+                Stream.runDrain,
+                Effect.flip,
+              );
+            return { collected, error };
+          }).pipe(Effect.provide(clientLayer(baseUrl))),
+        );
+
+        assert.deepStrictEqual(result.collected, [
+          { text: "echo:hi", sequence: 2 },
+        ]);
+        assert.deepInclude(result.error, {
+          _tag: "GrpcStatusError",
+          code: "failed_precondition",
+          message: "boom message",
+        });
+      }),
+  );
+
+  it.live(
+    "cancels the call and surfaces the original error when the request stream fails",
+    () =>
+      Effect.gen(function* () {
+        const failure = { _tag: "UploadSourceFailure" as const };
         const observed =
           yield* Deferred.make<
             Exit.Exit<unknown, GrpcStatusError.GrpcStatusError>
@@ -323,66 +346,60 @@ describe("features demo e2e", () => {
           { uploadNotes },
         );
         const serverExit = yield* Deferred.await(observed);
-        return { exit, serverExit };
-      }),
-    );
 
-    expect(result.exit._tag).toBe("Failure");
-    if (result.exit._tag === "Failure") {
-      expect(Cause.squash(result.exit.cause)).toBe(failure);
-    }
-    // The server observes the cancellation either as a failed request stream
-    // or as an interruption of the handler fiber.
-    expect(result.serverExit._tag).toBe("Failure");
-    if (result.serverExit._tag === "Failure") {
-      const error = Cause.findErrorOption(result.serverExit.cause);
-      expect(
-        Cause.hasInterrupts(result.serverExit.cause) ||
-          (Option.isSome(error) && error.value.code === "cancelled"),
-      ).toBe(true);
-    }
-  });
-
-  it("stops the server handler when the bidi consumer stops early", async () => {
-    const echoes = await Effect.runPromise(
-      Effect.gen(function* () {
-        const finished = yield* Deferred.make<void>();
-        const chat: FeatureShowcaseServiceImplementation["chat"] = (requests) =>
-          requests.pipe(
-            Stream.map((message) => ({
-              text: `echo:${message.text}`,
-              sequence: message.sequence + 1,
-            })),
-            Stream.ensuring(Deferred.succeed(finished, undefined)),
+        assert.strictEqual(exit._tag, "Failure");
+        if (exit._tag === "Failure") {
+          assert.strictEqual(Cause.squash(exit.cause), failure);
+        }
+        // The server observes the cancellation either as a failed request stream
+        // or as an interruption of the handler fiber.
+        assert.strictEqual(serverExit._tag, "Failure");
+        if (serverExit._tag === "Failure") {
+          const error = Cause.findErrorOption(serverExit.cause);
+          assert.isTrue(
+            Cause.hasInterrupts(serverExit.cause) ||
+              (Option.isSome(error) && error.value.code === "cancelled"),
           );
-        return yield* withServer(
-          (baseUrl) =>
-            Effect.gen(function* () {
-              const client = yield* FeatureShowcaseServiceClient;
-              const echoes = yield* client
-                .chat(
-                  Stream.forever(Stream.make({ text: "ping", sequence: 1 })),
-                )
-                .pipe(Stream.take(2), Stream.runCollect);
-              // The handler must terminate through cancellation while the
-              // server is still running.
-              yield* Deferred.await(finished);
-              return echoes;
-            }).pipe(Effect.provide(clientLayer(baseUrl))),
-          { chat },
-        );
+        }
       }),
-    );
+  );
 
-    expect(echoes).toEqual([
-      { text: "echo:ping", sequence: 2 },
-      { text: "echo:ping", sequence: 2 },
-    ]);
-  });
+  it.live("stops the server handler when the bidi consumer stops early", () =>
+    Effect.gen(function* () {
+      const finished = yield* Deferred.make<void>();
+      const chat: FeatureShowcaseServiceImplementation["chat"] = (requests) =>
+        requests.pipe(
+          Stream.map((message) => ({
+            text: `echo:${message.text}`,
+            sequence: message.sequence + 1,
+          })),
+          Stream.ensuring(Deferred.succeed(finished, undefined)),
+        );
+      const echoes = yield* withServer(
+        (baseUrl) =>
+          Effect.gen(function* () {
+            const client = yield* FeatureShowcaseServiceClient;
+            const echoes = yield* client
+              .chat(Stream.forever(Stream.make({ text: "ping", sequence: 1 })))
+              .pipe(Stream.take(2), Stream.runCollect);
+            // The handler must terminate through cancellation while the
+            // server is still running.
+            yield* Deferred.await(finished);
+            return echoes;
+          }).pipe(Effect.provide(clientLayer(baseUrl))),
+        { chat },
+      );
 
-  it("serves native connect streaming clients", async () => {
-    const result = await Effect.runPromise(
-      withServer((baseUrl) =>
+      assert.deepStrictEqual(echoes, [
+        { text: "echo:ping", sequence: 2 },
+        { text: "echo:ping", sequence: 2 },
+      ]);
+    }),
+  );
+
+  it.live("serves native connect streaming clients", () =>
+    Effect.gen(function* () {
+      const result = yield* withServer((baseUrl) =>
         Effect.promise(async () => {
           const client = createClient(
             FeatureShowcaseService,
@@ -410,12 +427,17 @@ describe("features demo e2e", () => {
             echoes,
           };
         }),
-      ),
-    );
+      );
 
-    expect(result.uploaded).toEqual({ count: 2, joined: "native,grpc" });
-    expect(result.echoes).toEqual([{ text: "echo:hello", sequence: 42 }]);
-  });
+      assert.deepStrictEqual(result.uploaded, {
+        count: 2,
+        joined: "native,grpc",
+      });
+      assert.deepStrictEqual(result.echoes, [
+        { text: "echo:hello", sequence: 42 },
+      ]);
+    }),
+  );
 });
 
 const summary = (request: FeatureRequest) =>
@@ -429,9 +451,9 @@ const summary = (request: FeatureRequest) =>
     `contact=${request.contact.case ?? "none"}`,
   ].join(" ");
 
-const expectRuntimeRequest = (request: FeatureRequest | undefined) => {
-  expect(request).toBeDefined();
-  expect(request).toMatchObject({
+const assertRuntimeRequest = (request: FeatureRequest | undefined) => {
+  assert.isDefined(request);
+  assert.deepInclude(request, {
     tags: ["alpha", "beta"],
     scores: [10, 20],
     notes: [{ text: "generated feature demo" }],
@@ -443,9 +465,9 @@ const expectRuntimeRequest = (request: FeatureRequest | undefined) => {
     sequence: 42n,
     contact: { case: "contactUser", value: { id: "user-1", role: "owner" } },
   });
-  expect(request?.createdAt?.getTime()).toBe(1_500);
-  expect(Duration.toNanosUnsafe(request!.ttl!)).toBe(2_250_000_001n);
-  expect(request?.payload).toEqual(new Uint8Array([1, 2, 3]));
+  assert.strictEqual(request?.createdAt?.getTime(), 1_500);
+  assert.strictEqual(Duration.toNanosUnsafe(request!.ttl!), 2_250_000_001n);
+  assert.deepStrictEqual(request?.payload, new Uint8Array([1, 2, 3]));
 };
 
 const withServer = <A, E, R>(

@@ -1,6 +1,6 @@
 import type { DescService } from "@bufbuild/protobuf";
+import { assert, describe, it } from "@effect/vitest";
 import { Effect, Schema } from "effect";
-import { describe, expect, it } from "vitest";
 
 import type {
   GrpcMethodEntry,
@@ -34,15 +34,16 @@ describe("lookup", () => {
   it("returns the entry only when tag and kind match", () => {
     const registry = registryOf(entry("test.Svc/Unary", "unary"));
 
-    expect(
+    assert.strictEqual(
       MethodRegistry.lookup(registry, "test.Svc/Unary", "unary")?.tag,
-    ).toBe("test.Svc/Unary");
-    expect(
+      "test.Svc/Unary",
+    );
+    assert.isUndefined(
       MethodRegistry.lookup(registry, "test.Svc/Unary", "bidi-streaming"),
-    ).toBeUndefined();
-    expect(
+    );
+    assert.isUndefined(
       MethodRegistry.lookup(registry, "test.Svc/Missing", "unary"),
-    ).toBeUndefined();
+    );
   });
 });
 
@@ -52,9 +53,13 @@ describe("merge", () => {
     const b = registryOf(entry("test.Svc/B", "bidi-streaming"));
 
     const merged = MethodRegistry.merge([a, b]);
-    expect([...merged.keys()].sort()).toEqual(["test.Svc/A", "test.Svc/B"]);
+    assert.deepStrictEqual([...merged.keys()].sort(), [
+      "test.Svc/A",
+      "test.Svc/B",
+    ]);
 
-    expect(() => MethodRegistry.merge([a, a])).toThrow(
+    assert.throws(
+      () => MethodRegistry.merge([a, a]),
       "Duplicate gRPC RPC tag: test.Svc/A",
     );
   });
@@ -74,53 +79,63 @@ describe("groupByService", () => {
     );
 
     const groups = MethodRegistry.groupByService(registry);
-    expect(groups.get(service)?.map((e) => e.tag)).toEqual([
-      "test.Svc/A",
-      "test.Svc/B",
-    ]);
-    expect(groups.get(other)?.map((e) => e.tag)).toEqual(["test.Other/C"]);
+    assert.deepStrictEqual(
+      groups.get(service)?.map((e) => e.tag),
+      ["test.Svc/A", "test.Svc/B"],
+    );
+    assert.deepStrictEqual(
+      groups.get(other)?.map((e) => e.tag),
+      ["test.Other/C"],
+    );
   });
 });
 
 describe("conversions", () => {
   const unary = entry("test.Svc/Unary", "unary");
 
-  it("round trips domain values through the wire converters", async () => {
-    const results = await Effect.runPromise(
-      Effect.all([
+  it.effect("round trips domain values through the wire converters", () =>
+    Effect.gen(function* () {
+      const results = yield* Effect.all([
         MethodRegistry.encodeRequest(unary, "req"),
         MethodRegistry.decodeRequest(unary, { value: "req" }),
         MethodRegistry.encodeResponse(unary, 42),
         MethodRegistry.decodeResponse(unary, { value: 42 }),
-      ]),
-    );
+      ]);
 
-    expect(results).toEqual([{ value: "req" }, "req", { value: 42 }, 42]);
-  });
+      assert.deepStrictEqual(results, [
+        { value: "req" },
+        "req",
+        { value: 42 },
+        42,
+      ]);
+    }),
+  );
 
-  it("normalizes request failures to invalid_argument and response failures to internal", async () => {
-    const codes = await Effect.runPromise(
-      Effect.all([
-        Effect.flip(MethodRegistry.encodeRequest(unary, 42)),
-        Effect.flip(MethodRegistry.decodeRequest(unary, { value: 42 })),
-        Effect.flip(MethodRegistry.encodeResponse(unary, "not a number")),
-        Effect.flip(
-          MethodRegistry.decodeResponse(unary, { value: "not a number" }),
-        ),
-      ]).pipe(
-        Effect.map((errors) =>
-          errors.map(
-            (error) => (error as GrpcStatusError.GrpcStatusError).code,
+  it.effect(
+    "normalizes request failures to invalid_argument and response failures to internal",
+    () =>
+      Effect.gen(function* () {
+        const codes = yield* Effect.all([
+          Effect.flip(MethodRegistry.encodeRequest(unary, 42)),
+          Effect.flip(MethodRegistry.decodeRequest(unary, { value: 42 })),
+          Effect.flip(MethodRegistry.encodeResponse(unary, "not a number")),
+          Effect.flip(
+            MethodRegistry.decodeResponse(unary, { value: "not a number" }),
           ),
-        ),
-      ),
-    );
+        ]).pipe(
+          Effect.map((errors) =>
+            errors.map(
+              (error) => (error as GrpcStatusError.GrpcStatusError).code,
+            ),
+          ),
+        );
 
-    expect(codes).toEqual([
-      "invalid_argument",
-      "invalid_argument",
-      "internal",
-      "internal",
-    ]);
-  });
+        assert.deepStrictEqual(codes, [
+          "invalid_argument",
+          "invalid_argument",
+          "internal",
+          "internal",
+        ]);
+      }),
+  );
 });

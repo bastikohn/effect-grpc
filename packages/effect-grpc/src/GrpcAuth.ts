@@ -46,12 +46,7 @@ export const bearerInterceptorFrom = <R>(
  * refresher (e.g. {@link refreshingTokenLayer}) is always current.
  */
 export const bearerInterceptor: Effect.Effect<Interceptor, never, BearerToken> =
-  bearerInterceptorFrom(
-    Effect.gen(function* () {
-      const service = yield* BearerToken;
-      return yield* service.read;
-    }),
-  );
+  bearerInterceptorFrom(Effect.flatMap(BearerToken, (service) => service.read));
 
 /** {@link BearerToken} layer for a fixed token that never rotates. */
 export const staticTokenLayer = (token: string): Layer.Layer<BearerToken> =>
@@ -98,11 +93,10 @@ export const refreshingTokenLayer = <E, R, E2, R2>(
         // Never let a failed cycle kill the daemon; try again next interval.
         Effect.ignore,
       );
+      // `Effect.schedule` steps the schedule before the first run, so the
+      // first re-mint happens one `interval` after `acquire`.
       yield* Effect.forkScoped(
-        Effect.repeat(
-          Effect.sleep(options.interval).pipe(Effect.andThen(refreshOnce)),
-          Schedule.forever,
-        ),
+        Effect.schedule(refreshOnce, Schedule.spaced(options.interval)),
       );
       return { read: Ref.get(ref) };
     }),

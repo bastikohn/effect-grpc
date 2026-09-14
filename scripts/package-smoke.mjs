@@ -102,7 +102,7 @@ try {
           "@bufbuild/protoc-gen-es": "^2.0.0",
           "@connectrpc/connect": "^2.0.0",
           effect: effectVersion,
-          typescript: "^5.0.0",
+          typescript: "^7.0.2",
         },
         pnpm: {
           onlyBuiltDependencies: ["msgpackr-extract"],

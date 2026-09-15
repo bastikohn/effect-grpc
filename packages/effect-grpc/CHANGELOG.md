@@ -1,5 +1,13 @@
 # @effect-grpc/effect-grpc
 
+## 1.0.0-beta.5
+
+### Patch Changes
+
+- 9e7a794: Target `effect@4.0.0-rc.115` (from rc.112). The pinned peer dependency
+  moves with it, so consumers need to upgrade `effect` and
+  `@effect/platform-node` together.
+
 ## 1.0.0-beta.4
 
 ### Minor Changes

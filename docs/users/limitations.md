@@ -26,7 +26,7 @@ one transport and registry:
 
 ## Effect Compatibility
 
-This prototype currently targets `effect@4.0.0-rc.112`. It uses unstable
+This prototype currently targets `effect@4.0.0-rc.115`. It uses unstable
 Effect modules (e.g. `effect/unstable/http` for trace-context propagation), so
 compatibility is intentionally pinned. Effect prerelease upgrades must update
 tests, generated code, and package smoke together.

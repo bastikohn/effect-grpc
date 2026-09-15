@@ -121,7 +121,7 @@ const describeFeatures = (baseUrl: URL) =>
     ),
   );
 
-const baseUrl = Flag.string("base-url").pipe(
+const baseUrl = Flag.String("base-url").pipe(
   Flag.mapTryCatch(
     (value) => new URL(value),
     (error) =>
@@ -140,7 +140,7 @@ const simpleClient = Command.make("effect-grpc-simple-client").pipe(
 const getUserCommand = Command.make(
   "get-user",
   {
-    id: Flag.string("id").pipe(
+    id: Flag.String("id").pipe(
       Flag.withDefault("123"),
       Flag.withDescription("user id"),
     ),
@@ -155,11 +155,11 @@ const getUserCommand = Command.make(
 const watchUsersCommand = Command.make(
   "watch-users",
   {
-    tenantId: Flag.string("tenant-id").pipe(
+    tenantId: Flag.String("tenant-id").pipe(
       Flag.withDefault("demo"),
       Flag.withDescription("tenant id"),
     ),
-    count: Flag.integer("count").pipe(
+    count: Flag.Int("count").pipe(
       Flag.withDefault(3),
       Flag.withDescription("number of events to request"),
     ),

@@ -44,11 +44,11 @@ Runtime protocol tests should cover behavior that can be asserted without a
 real socket, including the codec error policy per call shape, unimplemented
 methods, and handler interruption when a call is aborted.
 `GrpcInvoker.layerInMemory` is the network-free stand-in for the client seam,
-and invoker tests assert both adapters share invocation semantics. Known
-limitation: the in-memory adapter enforces `timeoutMs` (as `deadline_exceeded`)
-only for unary and client-streaming calls — stream-shaped calls expose
-`timeoutMs` on the call context but leave mid-stream deadline enforcement to
-transports.
+and invoker tests assert both adapters share invocation semantics, including
+the public deadline contract: a positive `timeoutMs` bounds the lifetime of
+every call shape with `deadline_exceeded`. The in-memory adapter stays at the
+domain level on purpose — it does not emulate HTTP/2, wire framing, or
+`grpc-timeout` headers.
 
 Generator tests should use descriptor/plugin fixtures for every unsupported
 protobuf construct so codegen fails clearly instead of emitting incorrect

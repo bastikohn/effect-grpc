@@ -43,24 +43,50 @@ streaming handler keeps that call's view for as long as it iterates.
   server interceptor, or the key's declared default when nothing set it.
   Keys are connect's `createContextKey`; there is no second key factory.
 
-### Zero means two different things
+### Propagating the remaining budget
 
 `remainingTimeoutMs() === 0` means the upstream budget is **exhausted**. A
 `timeoutMs` of zero (or any non-positive value) on an outgoing
-`GrpcCallOptions` means **no deadline**. Never forward the number blindly to
-a downstream call:
+`GrpcCallOptions` means **no deadline**. Use the opt-in
+`GrpcDeadline.callOptions` helper to convert safely. It reads the context when
+its Effect executes, fails with a typed `deadline_exceeded` error if the budget
+is exhausted, and preserves a tighter positive caller timeout and metadata.
+Without an upstream deadline, it returns your supplied options unchanged.
+
+Complete asynchronous setup first, then read the budget immediately before
+invoking the downstream RPC:
 
 ```ts
-const remaining = context.remainingTimeoutMs();
-const options =
-  remaining === undefined
-    ? {}
-    : remaining > 0
-      ? { timeoutMs: remaining }
-      : undefined; // budget exhausted — fail fast instead of calling on
+import { GrpcDeadline } from "@effect-grpc/effect-grpc";
+
+// Inside a server handler; client is an acquired generated client service.
+return Effect.gen(function* () {
+  const request = yield* prepareDownstreamRequest();
+  return yield* GrpcDeadline.callOptions(context, {
+    timeoutMs: 500,
+    metadata: [["x-request-id", requestId]],
+  }).pipe(Effect.flatMap((options) => client.getUser(request, options)));
+});
 ```
 
-Automatic deadline propagation is not part of this release.
+For server or bidi streams, wrap construction in `Stream.unwrap` to read at
+subscription rather than when you build the stream:
+
+```ts
+return Stream.unwrap(
+  GrpcDeadline.callOptions(context).pipe(
+    Effect.map((options) => client.watchUsers(request, options)),
+  ),
+);
+```
+
+The helper works with all four method shapes. Reusing its Effect rereads the
+budget; caching the returned options does not. Do not insert asynchronous
+setup between reading the options and starting the RPC. A positive caller
+timeout bounds that downstream call; it does not account for preceding setup.
+The helper adds no timer or global policy: the downstream adapter enforces
+the resulting timeout over the full call lifetime. Deadline propagation
+remains explicitly opt-in.
 
 ## Server interceptors
 

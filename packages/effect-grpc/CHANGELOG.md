@@ -1,5 +1,42 @@
 # @effect-grpc/effect-grpc
 
+## 1.0.0-beta.5
+
+### Minor Changes
+
+- 0560fee: Native server interceptors and a per-call handler context.
+
+  `GrpcNodeServer.serve` and `serveAll` take `interceptors`, an array of
+  connect `Interceptor`s installed once on the node adapter and run once per
+  RPC for every routed service. `CodegenSupport.GrpcServerContext` — the second
+  argument of every generated handler — now carries, next to `metadata`, the
+  method identity (`method.tag`/`method.kind`), connect's live call `signal`,
+  a live `remainingTimeoutMs()` read (`undefined` without a deadline, `0` once
+  it has elapsed), and `getContextValue(key)` for typed values interceptors
+  attach with `request.contextValues.set`. See
+  [docs/users/server-context.md](https://github.com/bastikohn/effect-grpc/blob/main/docs/users/server-context.md).
+
+  **Compatibility.** Generated handler signatures are unchanged and handlers
+  that only read `metadata` keep compiling. The new fields are required on the
+  context the server delivers, so handwritten fixtures that build a
+  `GrpcServerContext` literal must now supply `method`, `signal`,
+  `remainingTimeoutMs` and `getContextValue`. `GrpcInvoker.layerInMemory` is
+  unaffected: its handlers receive `GrpcInMemoryCall`, and it runs no server
+  interceptors.
+
+### Patch Changes
+
+- 9e7a794: Target `effect@4.0.0-rc.115` (from rc.112). The pinned peer dependency
+  moves with it, so consumers need to upgrade `effect` and
+  `@effect/platform-node` together.
+- 40dae60: Make `GrpcInvoker.layerInMemory` enforce call deadlines for server-streaming
+  and bidirectional-streaming RPCs, bringing `timeoutMs` behavior into parity
+  across all four RPC shapes. A positive `timeoutMs` now bounds the lifetime of
+  the whole streamed call — measured from invocation, not from the last message
+  — failing with `deadline_exceeded` and interrupting the handler (and, for
+  bidi calls, the request stream) so their finalizers run. A non-positive
+  `timeoutMs` still means no deadline.
+
 ## 1.0.0-beta.4
 
 ### Minor Changes

@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import {
   mkdirSync,
@@ -8,10 +9,16 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
+import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const require = createRequire(import.meta.url);
+const consumerCompilers = {
+  typescript: "5.9.3",
+  "@typescript/native": "7.0.2",
+};
 const packageNames = [
   "@effect-grpc/effect-grpc",
   "@effect-grpc/protoc-gen-effect-grpc",
@@ -44,6 +51,27 @@ function readWorkspaceCatalogVersion(name) {
 }
 
 try {
+  const nativeVersion = require("@typescript/native/package.json").version;
+  const cliVersion = execFileSync("pnpm", ["exec", "tsc", "--version"], {
+    cwd: root,
+    encoding: "utf8",
+  }).trim();
+  assert.match(nativeVersion, /^7\./);
+  assert.equal(cliVersion, `Version ${nativeVersion}`);
+  console.log(`Workspace native CLI: ${cliVersion}`);
+
+  const apiVersion = require("typescript").version;
+  assert.equal(apiVersion, "6.0.3");
+  console.log(
+    `Compiler API: ${apiVersion} (@typescript/typescript6 package ${require("typescript/package.json").version})`,
+  );
+  for (const tool of ["tstyche", "tsdown"]) {
+    const toolRequire = createRequire(require.resolve(tool));
+    const toolApiVersion = toolRequire("typescript").version;
+    assert.equal(toolApiVersion, apiVersion);
+    console.log(`${tool} compiler API: ${toolApiVersion}`);
+  }
+
   mkdirSync(packDir, { recursive: true });
   mkdirSync(consumerDir, { recursive: true });
 
@@ -102,7 +130,8 @@ try {
           "@bufbuild/protoc-gen-es": "^2.0.0",
           "@connectrpc/connect": "^2.0.0",
           effect: effectVersion,
-          typescript: "^5.0.0",
+          typescript: consumerCompilers.typescript,
+          "@typescript/native": `npm:typescript@${consumerCompilers["@typescript/native"]}`,
         },
         pnpm: {
           onlyBuiltDependencies: ["msgpackr-extract"],
@@ -274,7 +303,24 @@ await assertImportFails("@effect-grpc/protoc-gen-effect-grpc/internal/plugin");
   run("node", ["runtime-smoke.mjs"], consumerDir);
   run("pnpm", ["exec", "protoc-gen-effect-grpc", "--version"], consumerDir);
   run("pnpm", ["exec", "buf", "generate"], consumerDir);
-  run("pnpm", ["exec", "tsc", "--noEmit"], consumerDir);
+  for (const [name, version] of Object.entries(consumerCompilers)) {
+    const compilerDir = join(consumerDir, "node_modules", name);
+    const compilerPackage = JSON.parse(
+      readFileSync(join(compilerDir, "package.json"), "utf8"),
+    );
+    const compiler = join(compilerDir, compilerPackage.bin.tsc);
+    const actualVersion = execFileSync(
+      process.execPath,
+      [compiler, "--version"],
+      {
+        cwd: consumerDir,
+        encoding: "utf8",
+      },
+    ).trim();
+    assert.equal(actualVersion, `Version ${version}`);
+    console.log(`Packed-package consumer: ${actualVersion}`);
+    run(process.execPath, [compiler, "--noEmit"], consumerDir);
+  }
 } finally {
   rmSync(workDir, { recursive: true, force: true });
 }

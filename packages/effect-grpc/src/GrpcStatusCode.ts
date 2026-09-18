@@ -1,4 +1,5 @@
 import { Code } from "@connectrpc/connect";
+import { Schema } from "effect";
 
 /**
  * Source of truth for both unions and both directions: every failure code
@@ -30,6 +31,11 @@ const toConnect = {
  * success telemetry while the peer still sees the call fail as `UNKNOWN`.
  */
 export type GrpcErrorStatusCode = keyof typeof toConnect;
+
+/** {@link GrpcErrorStatusCode} as a schema; the keys of {@link toConnect} are its literals. */
+export const GrpcErrorStatusCodeSchema = Schema.Literals(
+  Object.keys(toConnect) as Array<GrpcErrorStatusCode>,
+);
 
 /**
  * Any call outcome, success included. Used for telemetry, which legitimately

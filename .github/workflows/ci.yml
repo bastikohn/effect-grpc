@@ -100,3 +100,19 @@ jobs:
 
       - name: Smoke test packages
         run: pnpm smoke:packages
+
+  browser:
+    name: Browser / Chromium
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Browser RPC integration tests
+        run: pnpm test:browser

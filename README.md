@@ -31,7 +31,8 @@ Private workspace packages under `examples/`:
 
 Shipped:
 
-- [x] All four gRPC method kinds: unary, server-streaming, client-streaming,
+- [x] Browser unary and server-streaming clients over Connect and gRPC-Web.
+- [x] All four native gRPC method kinds: unary, server-streaming, client-streaming,
       and bidi-streaming.
 - [x] Build-time `.proto` code generation with Buf/protoc
       (`protoc-gen-effect-grpc`).
@@ -55,7 +56,7 @@ Shipped:
 Planned:
 
 - [ ] Client retry policies.
-- [ ] gRPC-Web support.
+
 - [ ] Track Effect v4 to a stable release and drop the beta pin.
 - [ ] Stable `1.0.0` release from the main (v4) line.
 

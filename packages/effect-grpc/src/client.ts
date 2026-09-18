@@ -9,3 +9,4 @@ export * as GrpcMethodRegistry from "./GrpcMethodRegistry.js";
 export * as GrpcServerProtocol from "./GrpcServerProtocol.js";
 export * as GrpcStatusCode from "./GrpcStatusCode.js";
 export * as GrpcStatusError from "./GrpcStatusError.js";
+export * as GrpcWebClient from "./GrpcWebClient.js";

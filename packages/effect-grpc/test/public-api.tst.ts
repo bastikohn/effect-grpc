@@ -19,6 +19,7 @@ import {
   GrpcReflection,
   GrpcServerProtocol,
   GrpcStatusError,
+  GrpcWebClient,
   type GrpcStatusCode,
 } from "@effect-grpc/effect-grpc";
 import {
@@ -61,6 +62,14 @@ const implementation: UserServiceImplementation = {
 };
 
 describe("public API", () => {
+  it("types both browser protocols through the existing invoker service", () => {
+    for (const protocol of ["connect", "grpc-web"] as const) {
+      expect(
+        GrpcWebClient.layer({ protocol, baseUrl: "/rpc", registry }),
+      ).type.toBe<Layer.Layer<GrpcInvoker.GrpcInvoker>>();
+    }
+  });
+
   it("keeps runtime constructors callable", () => {
     expect(GrpcStatusError.notFound).type.toBeCallableWith("missing");
     expect(GrpcClientProtocol.layer).type.toBeCallableWith({

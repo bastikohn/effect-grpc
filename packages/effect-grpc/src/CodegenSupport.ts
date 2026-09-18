@@ -19,8 +19,9 @@ export interface GrpcCallOptions {
 
 /**
  * A handler's view of the call it is serving. Built fresh per RPC by the
- * server protocol from connect's `HandlerContext`; every member reads the
- * live call rather than a snapshot.
+ * server protocol from connect's `HandlerContext`. Metadata and method
+ * identity are snapshots; the signal, remaining time and context values
+ * reflect the live call.
  */
 export interface GrpcServerContext {
   /** Incoming metadata, normalized (lower-cased keys, `-bin` values decoded). */

@@ -14,6 +14,9 @@ one transport and registry:
   [server context](server-context.md)). Server interceptors run after
   connect has parsed the request, so they are not an early admission layer,
   and they are not run by `GrpcInvoker.layerInMemory`.
+- A positive `timeoutMs` bounds the full call lifetime for all four method
+  kinds, including with `GrpcInvoker.layerInMemory`. The in-memory adapter
+  does not emulate wire framing or native server interceptors.
 - Handlers observe the incoming deadline through
   `GrpcServerContext.remainingTimeoutMs()` but nothing propagates it to
   outgoing calls automatically; response headers and trailers cannot be set

@@ -373,8 +373,8 @@ const emptyHandlers: GrpcHandlers = new Map();
 
 /**
  * The handler's view of one call, built per RPC from connect's context (the
- * one interceptors have already run on). Everything but the metadata is a
- * live delegate: the signal is connect's own, the remaining time and typed
+ * one interceptors have already run on). Metadata and method identity are
+ * snapshots; the signal is connect's own, and the remaining time and typed
  * values are read from the call at the moment a handler asks.
  */
 const makeServerContext = (

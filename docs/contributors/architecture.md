@@ -60,7 +60,7 @@ and invoker tests assert both adapters share invocation semantics, including
 the public deadline contract: a positive `timeoutMs` bounds the lifetime of
 every call shape with `deadline_exceeded`. The in-memory adapter stays at the
 domain level on purpose — it does not emulate HTTP/2, wire framing, or
-`grpc-timeout` headers.
+`grpc-timeout` headers, or native server interceptors.
 
 Generator tests should use descriptor/plugin fixtures for every unsupported
 protobuf construct so codegen fails clearly instead of emitting incorrect

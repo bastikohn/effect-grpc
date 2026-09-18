@@ -1,5 +1,5 @@
+import { assert, describe, it } from "@effect/vitest";
 import { Effect, Layer, Stream } from "effect";
-import { describe, expect, it } from "vitest";
 
 import {
   GrpcClientProtocol,
@@ -24,9 +24,9 @@ const implementation: UserServiceImplementation = {
 };
 
 describe("grpc.health.v1 e2e", () => {
-  it("Check reports server and service statuses over the wire", async () => {
-    const result = await Effect.runPromise(
-      withHealthServer((health) =>
+  it.live("Check reports server and service statuses over the wire", () =>
+    Effect.gen(function* () {
+      const result = yield* withHealthServer((health) =>
         Effect.gen(function* () {
           const client = yield* GrpcHealth.HealthClient;
 
@@ -41,21 +41,21 @@ describe("grpc.health.v1 e2e", () => {
 
           return { overall, service, missing };
         }),
-      ),
-    );
+      );
 
-    expect(result.overall).toEqual({ status: "SERVING" });
-    expect(result.service).toEqual({ status: "SERVING" });
-    expect(result.missing).toMatchObject({
-      _tag: "GrpcStatusError",
-      code: "not_found",
-      message: "unknown service: demo.v1.Missing",
-    });
-  });
+      assert.deepStrictEqual(result.overall, { status: "SERVING" });
+      assert.deepStrictEqual(result.service, { status: "SERVING" });
+      assert.deepInclude(result.missing, {
+        _tag: "GrpcStatusError",
+        code: "not_found",
+        message: "unknown service: demo.v1.Missing",
+      });
+    }),
+  );
 
-  it("Watch emits the current status and streams changes", async () => {
-    const statuses = await Effect.runPromise(
-      withHealthServer((health) =>
+  it.live("Watch emits the current status and streams changes", () =>
+    Effect.gen(function* () {
+      const statuses = yield* withHealthServer((health) =>
         Effect.gen(function* () {
           const client = yield* GrpcHealth.HealthClient;
           yield* health.set("demo.v1.UserService", "SERVING");
@@ -77,18 +77,18 @@ describe("grpc.health.v1 e2e", () => {
             Stream.runCollect,
           );
         }),
-      ),
-    );
+      );
 
-    expect(statuses).toEqual([
-      { status: "SERVING" },
-      { status: "NOT_SERVING" },
-    ]);
-  });
+      assert.deepStrictEqual(statuses, [
+        { status: "SERVING" },
+        { status: "NOT_SERVING" },
+      ]);
+    }),
+  );
 
-  it("Watch reports SERVICE_UNKNOWN until the service registers", async () => {
-    const statuses = await Effect.runPromise(
-      withHealthServer((health) =>
+  it.live("Watch reports SERVICE_UNKNOWN until the service registers", () =>
+    Effect.gen(function* () {
+      const statuses = yield* withHealthServer((health) =>
         Effect.gen(function* () {
           const client = yield* GrpcHealth.HealthClient;
 
@@ -102,14 +102,14 @@ describe("grpc.health.v1 e2e", () => {
             Stream.runCollect,
           );
         }),
-      ),
-    );
+      );
 
-    expect(statuses).toEqual([
-      { status: "SERVICE_UNKNOWN" },
-      { status: "SERVING" },
-    ]);
-  });
+      assert.deepStrictEqual(statuses, [
+        { status: "SERVICE_UNKNOWN" },
+        { status: "SERVING" },
+      ]);
+    }),
+  );
 });
 
 const clientRegistry: GrpcMethodRegistry.GrpcMethodRegistry = new Map([

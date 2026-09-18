@@ -1,5 +1,5 @@
 import { ConnectError, Code } from "@connectrpc/connect";
-import { describe, expect, it } from "vitest";
+import { assert, describe, it } from "@effect/vitest";
 
 import * as GrpcMetadata from "../src/GrpcMetadata.js";
 import * as GrpcStatusCode from "../src/GrpcStatusCode.js";
@@ -8,11 +8,18 @@ import { metadataViolation } from "../src/internal/invoker.js";
 
 describe("GrpcStatusCode", () => {
   it("converts to and from Connect codes", () => {
-    expect(GrpcStatusCode.fromConnectCode(Code.NotFound)).toBe("not_found");
-    expect(GrpcStatusCode.fromConnectCode(Code.InvalidArgument)).toBe(
+    assert.strictEqual(
+      GrpcStatusCode.fromConnectCode(Code.NotFound),
+      "not_found",
+    );
+    assert.strictEqual(
+      GrpcStatusCode.fromConnectCode(Code.InvalidArgument),
       "invalid_argument",
     );
-    expect(GrpcStatusCode.toConnectCode("unavailable")).toBe(Code.Unavailable);
+    assert.strictEqual(
+      GrpcStatusCode.toConnectCode("unavailable"),
+      Code.Unavailable,
+    );
   });
 });
 
@@ -24,9 +31,9 @@ describe("GrpcStatusError", () => {
       }),
     );
 
-    expect(error.code).toBe("not_found");
-    expect(error.message).toBe("missing");
-    expect(error.metadata).toContainEqual(["x-demo", "1"]);
+    assert.strictEqual(error.code, "not_found");
+    assert.strictEqual(error.message, "missing");
+    assert.deepInclude(error.metadata, ["x-demo", "1"]);
   });
 
   it("converts generic status error to ConnectError", () => {
@@ -34,8 +41,8 @@ describe("GrpcStatusError", () => {
       GrpcStatusError.invalidArgument("bad id"),
     );
 
-    expect(error.code).toBe(Code.InvalidArgument);
-    expect(error.rawMessage).toBe("bad id");
+    assert.strictEqual(error.code, Code.InvalidArgument);
+    assert.strictEqual(error.rawMessage, "bad id");
   });
 
   it("preserves Connect details when converting generic status errors", () => {
@@ -55,7 +62,7 @@ describe("GrpcStatusError", () => {
       }),
     );
 
-    expect(error.details).toEqual(details);
+    assert.deepStrictEqual<unknown>(error.details, details);
   });
 });
 
@@ -70,16 +77,18 @@ describe("GrpcMetadata", () => {
 
     const headers = GrpcMetadata.toHeaders(metadata);
 
-    expect(headers.get("x-demo")).toBe("1");
-    expect(headers.get("x-other")).toBe("2");
+    assert.strictEqual(headers.get("x-demo"), "1");
+    assert.strictEqual(headers.get("x-other"), "2");
   });
 
   it("round trips -bin values through base64 back to bytes", () => {
     const bytes = new Uint8Array([0, 1, 250, 255]);
     const headers = GrpcMetadata.toHeaders([["x-trace-bin", bytes]]);
 
-    expect(headers.get("x-trace-bin")).toBe("AAH6/w==");
-    expect(GrpcMetadata.fromHeaders(headers)).toEqual([["x-trace-bin", bytes]]);
+    assert.strictEqual(headers.get("x-trace-bin"), "AAH6/w==");
+    assert.deepStrictEqual(GrpcMetadata.fromHeaders(headers), [
+      ["x-trace-bin", bytes],
+    ]);
   });
 
   it("splits repeated -bin values but never an ASCII value containing a comma", () => {
@@ -88,7 +97,7 @@ describe("GrpcMetadata", () => {
     headers.append("x-trace-bin", "Aw==");
     headers.append("x-list", "a,b");
 
-    expect(GrpcMetadata.fromHeaders(headers)).toEqual([
+    assert.deepStrictEqual(GrpcMetadata.fromHeaders(headers), [
       ["x-list", "a,b"],
       ["x-trace-bin", new Uint8Array([1, 2])],
       ["x-trace-bin", new Uint8Array([3])],
@@ -96,29 +105,36 @@ describe("GrpcMetadata", () => {
   });
 
   it("drops join artefacts but keeps an empty binary value", () => {
-    expect(GrpcMetadata.fromHeaders([["x-trace-bin", "AQI=,,Aw=="]])).toEqual([
-      ["x-trace-bin", new Uint8Array([1, 2])],
-      ["x-trace-bin", new Uint8Array([3])],
-    ]);
-    expect(GrpcMetadata.fromHeaders([["x-trace-bin", ""]])).toEqual([
+    assert.deepStrictEqual(
+      GrpcMetadata.fromHeaders([["x-trace-bin", "AQI=,,Aw=="]]),
+      [
+        ["x-trace-bin", new Uint8Array([1, 2])],
+        ["x-trace-bin", new Uint8Array([3])],
+      ],
+    );
+    assert.deepStrictEqual(GrpcMetadata.fromHeaders([["x-trace-bin", ""]]), [
       ["x-trace-bin", new Uint8Array([])],
     ]);
   });
 
   it("reports the first unsendable call-metadata entry", () => {
-    expect(metadataViolation([["x-effect-grpc-custom", "value"]])).toContain(
+    assert.include(
+      metadataViolation([["x-effect-grpc-custom", "value"]]),
       "Reserved gRPC metadata key: x-effect-grpc-custom",
     );
-    expect(metadataViolation([["x-trace", new Uint8Array([1])]])).toContain(
+    assert.include(
+      metadataViolation([["x-trace", new Uint8Array([1])]]),
       "requires a string value",
     );
-    expect(metadataViolation([["x-trace-bin", "not-bytes"]])).toContain(
+    assert.include(
+      metadataViolation([["x-trace-bin", "not-bytes"]]),
       "requires a Uint8Array value",
     );
     // Header syntax: `Headers.append` would throw a `TypeError` on each of
     // these, which is a defect rather than a status on both adapters.
     for (const key of ["bad key", "", "ünicode", "x:a"]) {
-      expect(metadataViolation([[key, "v"]])).toContain(
+      assert.include(
+        metadataViolation([[key, "v"]]),
         "Invalid gRPC metadata key",
       );
     }
@@ -126,20 +142,22 @@ describe("GrpcMetadata", () => {
     // would let these onto the wire for a conforming peer to drop or reject,
     // instead of failing the call locally with `invalid_argument`.
     for (const key of ["x-parity$q", "foo!", "key#1", "a%b", "a&b", "a|b"]) {
-      expect(metadataViolation([[key, "v"]])).toContain(
+      assert.include(
+        metadataViolation([[key, "v"]]),
         "Invalid gRPC metadata key",
       );
     }
     for (const value of ["a\nb", "héllo", "a\tb", "a\u000Bb"]) {
-      expect(metadataViolation([["x-trace", value]])).toContain(
+      assert.include(
+        metadataViolation([["x-trace", value]]),
         "Invalid gRPC metadata value",
       );
     }
-    expect(
+    assert.isUndefined(
       metadataViolation([
         ["x-trace", "ok"],
         ["x-trace-bin", new Uint8Array([1])],
       ]),
-    ).toBeUndefined();
+    );
   });
 });

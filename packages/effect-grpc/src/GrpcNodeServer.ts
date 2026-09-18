@@ -56,97 +56,92 @@ export interface ServeAllOptions<
 type ServiceRequirements<Services extends ReadonlyArray<ServeAllService<any>>> =
   Services[number] extends ServeAllService<infer R> ? R : never;
 
-export const serveAll = <
+export const serveAll = Effect.fnUntraced(function* <
   const Services extends ReadonlyArray<ServeAllService<any>>,
 >(
   options: ServeAllOptions<Services>,
-): Effect.Effect<never, never, Scope.Scope | ServiceRequirements<Services>> =>
-  Effect.gen(function* () {
-    const maps = yield* Effect.forEach(
-      options.services,
-      (service) => service.handlers,
-    );
-    const { routes } = yield* GrpcServerProtocol.make({
-      registry: MethodRegistry.merge(
-        options.services.map((service) => service.registry),
-      ),
-      handlers: new Map(maps.flatMap((map) => [...map])),
-    });
-
-    return yield* serve({
-      host: options.host,
-      port: options.port,
-      shutdownTimeoutMs: options.shutdownTimeoutMs,
-      tls: options.tls,
-      interceptors: options.interceptors,
-      routes,
-    });
+): Effect.fn.Return<never, never, Scope.Scope | ServiceRequirements<Services>> {
+  const maps = yield* Effect.forEach(
+    options.services,
+    (service) => service.handlers,
+  );
+  const { routes } = yield* GrpcServerProtocol.make({
+    registry: MethodRegistry.merge(
+      options.services.map((service) => service.registry),
+    ),
+    handlers: new Map(maps.flatMap((map) => [...map])),
   });
 
-export const serve = (
+  return yield* serve({
+    host: options.host,
+    port: options.port,
+    shutdownTimeoutMs: options.shutdownTimeoutMs,
+    tls: options.tls,
+    interceptors: options.interceptors,
+    routes,
+  });
+});
+
+export const serve = Effect.fnUntraced(function* (
   options: ServeOptions,
-): Effect.Effect<never, never, Scope.Scope> =>
-  Effect.gen(function* () {
-    const handler = connectNodeAdapter({
-      routes: (router) => {
-        options.routes(router);
-      },
-      // connect wants a mutable array; copy so the caller's stays untouched.
-      interceptors: [...(options.interceptors ?? [])],
-    });
-    const { server } = yield* Effect.acquireRelease(
-      Effect.promise(
-        () =>
-          new Promise<ListeningServer>((resolve, reject) => {
-            const sessions = new Set<http2.ServerHttp2Session>();
-            const server =
-              options.tls === undefined
-                ? http2.createServer(handler)
-                : http2.createSecureServer(
-                    secureServerOptions(options.tls),
-                    handler,
-                  );
-            server.on("session", (session) => {
-              sessions.add(session);
-              session.once("close", () => {
-                sessions.delete(session);
-              });
-            });
-            const onError = (error: Error) => {
-              server.off("listening", onListening);
-              reject(error);
-            };
-            const onListening = () => {
-              server.off("error", onError);
-              resolve({ server, sessions });
-            };
-            server.once("error", onError);
-            server.once("listening", onListening);
-            server.listen(options.port, options.host);
-          }),
-      ),
-      ({ server, sessions }) =>
-        Effect.promise(() => closeServer(server, sessions, options)),
-    );
-
-    yield* Effect.logInfo(
-      `gRPC server listening on ${options.host}:${options.port}${
-        options.tls === undefined
-          ? ""
-          : options.tls.clientCa === undefined
-            ? " (TLS)"
-            : " (mTLS)"
-      }`,
-    );
-    yield* Effect.never.pipe(
-      Effect.ensuring(
-        Effect.logInfo(
-          `gRPC server stopped on ${options.host}:${options.port}`,
-        ),
-      ),
-    );
-    return server as never;
+): Effect.fn.Return<never, never, Scope.Scope> {
+  const handler = connectNodeAdapter({
+    routes: (router) => {
+      options.routes(router);
+    },
+    // Copy the readonly caller array for the native adapter.
+    interceptors: [...(options.interceptors ?? [])],
   });
+  yield* Effect.acquireRelease(
+    Effect.promise(
+      () =>
+        new Promise<ListeningServer>((resolve, reject) => {
+          const sessions = new Set<http2.ServerHttp2Session>();
+          const server =
+            options.tls === undefined
+              ? http2.createServer(handler)
+              : http2.createSecureServer(
+                  secureServerOptions(options.tls),
+                  handler,
+                );
+          server.on("session", (session) => {
+            sessions.add(session);
+            session.once("close", () => {
+              sessions.delete(session);
+            });
+          });
+          const onError = (error: Error) => {
+            server.off("listening", onListening);
+            reject(error);
+          };
+          const onListening = () => {
+            server.off("error", onError);
+            resolve({ server, sessions });
+          };
+          server.once("error", onError);
+          server.once("listening", onListening);
+          server.listen(options.port, options.host);
+        }),
+    ),
+    ({ server, sessions }) =>
+      Effect.promise(() => closeServer(server, sessions, options)),
+  );
+
+  yield* Effect.logInfo(
+    `gRPC server listening on ${options.host}:${options.port}${
+      options.tls === undefined
+        ? ""
+        : options.tls.clientCa === undefined
+          ? " (TLS)"
+          : " (mTLS)"
+    }`,
+  );
+  return yield* Effect.never.pipe(
+    Effect.ensuring(
+      Effect.logInfo(`gRPC server stopped on ${options.host}:${options.port}`),
+    ),
+  );
+});
 
 type NodeHttp2Server = http2.Http2Server | http2.Http2SecureServer;
 

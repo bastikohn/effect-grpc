@@ -1,6 +1,6 @@
 import type { ConnectRouter, HandlerContext } from "@connectrpc/connect";
+import { assert, describe, it } from "@effect/vitest";
 import { Context, Deferred, Effect, Layer, Ref, Schema, Stream } from "effect";
-import { describe, expect, it } from "vitest";
 
 import * as GrpcClientProtocol from "../src/GrpcClientProtocol.js";
 import * as GrpcHealth from "../src/GrpcHealth.js";
@@ -18,8 +18,9 @@ import {
 } from "./support/serverHarness.js";
 
 describe("metadataInterceptor", () => {
-  it("adds metadata as defaults, lets per-call win, and re-reads per call", async () => {
-    const result = await Effect.runPromise(
+  it.effect(
+    "adds metadata as defaults, lets per-call win, and re-reads per call",
+    () =>
       Effect.gen(function* () {
         const token = yield* Ref.make("t1");
         const interceptor = yield* GrpcClientProtocol.metadataInterceptor(
@@ -44,83 +45,76 @@ describe("metadataInterceptor", () => {
         );
         yield* Ref.set(token, "t2");
         const rotated = yield* invoke(new Headers());
-        return { fresh, perCall, rotated };
-      }),
-    );
 
-    expect(result).toEqual({
-      fresh: "Bearer t1",
-      perCall: "Bearer explicit",
-      rotated: "Bearer t2",
-    });
-  });
+        assert.deepStrictEqual(
+          { fresh, perCall, rotated },
+          {
+            fresh: "Bearer t1",
+            perCall: "Bearer explicit",
+            rotated: "Bearer t2",
+          },
+        );
+      }),
+  );
 });
 
 describe("GrpcServerProtocol", () => {
-  it("completes unary calls through the handlers map", async () => {
-    const result = await Effect.runPromise(
-      Effect.gen(function* () {
-        const { routes } = yield* GrpcServerProtocol.make({
-          registry: new Map([[unaryEntry.tag, unaryEntry]]),
-          handlers: handlers(unaryEntry.tag, {
-            kind: "unary",
-            handler: (request, context) =>
-              Effect.succeed({
-                echoed: request,
-                metadata: context.metadata,
-              }),
-          }),
-        });
-        const implementation = captureUnaryImplementation(routes);
+  it.effect("completes unary calls through the handlers map", () =>
+    Effect.gen(function* () {
+      const { routes } = yield* GrpcServerProtocol.make({
+        registry: new Map([[unaryEntry.tag, unaryEntry]]),
+        handlers: handlers(unaryEntry.tag, {
+          kind: "unary",
+          handler: (request, context) =>
+            Effect.succeed({
+              echoed: request,
+              metadata: context.metadata,
+            }),
+        }),
+      });
+      const implementation = captureUnaryImplementation(routes);
 
-        return yield* Effect.promise(() =>
-          implementation.get(
-            { id: "1" },
-            handlerContext({ headers: new Headers({ "x-demo": "42" }) }),
-          ),
-        );
-      }),
-    );
+      const result = yield* Effect.promise(() =>
+        implementation.get(
+          { id: "1" },
+          handlerContext({ headers: new Headers({ "x-demo": "42" }) }),
+        ),
+      );
 
-    expect(result).toEqual({
-      echoed: { id: "1" },
-      metadata: [["x-demo", "42"]],
-    });
-  });
+      assert.deepStrictEqual(result, {
+        echoed: { id: "1" },
+        metadata: [["x-demo", "42"]],
+      });
+    }),
+  );
 
-  it("maps unary handler failures to connect errors", async () => {
-    const error = await Effect.runPromise(
-      Effect.gen(function* () {
-        const { routes } = yield* GrpcServerProtocol.make({
-          registry: new Map([[unaryEntry.tag, unaryEntry]]),
-          handlers: handlers(unaryEntry.tag, {
-            kind: "unary",
-            handler: () => Effect.fail(GrpcStatusError.notFound("missing")),
-          }),
-        });
-        const implementation = captureUnaryImplementation(routes);
+  it.effect("maps unary handler failures to connect errors", () =>
+    Effect.gen(function* () {
+      const { routes } = yield* GrpcServerProtocol.make({
+        registry: new Map([[unaryEntry.tag, unaryEntry]]),
+        handlers: handlers(unaryEntry.tag, {
+          kind: "unary",
+          handler: () => Effect.fail(GrpcStatusError.notFound("missing")),
+        }),
+      });
+      const implementation = captureUnaryImplementation(routes);
 
-        return yield* Effect.promise(async () => {
-          try {
-            await implementation.get({}, handlerContext());
-          } catch (cause) {
-            return GrpcStatusError.fromConnectError(cause);
-          }
-          throw new Error("Expected unary handler to fail");
-        });
-      }),
-    );
+      const error = yield* Effect.flip(
+        Effect.tryPromise({
+          try: () => implementation.get({}, handlerContext()),
+          catch: GrpcStatusError.fromConnectError,
+        }),
+      );
 
-    expect(error).toMatchObject({
-      code: "not_found",
-      message: "missing",
-    });
-  });
+      assert.strictEqual(error.code, "not_found");
+      assert.strictEqual(error.message, "missing");
+    }),
+  );
 
   // Every `handlers.get(tag)` miss — no handler at all, or one registered
   // under a different kind — is the same `unimplemented` status on every call
   // shape. The wrong-kind row is the only coverage of the kind guard.
-  it.each([
+  it.effect.each([
     ["a unary", unaryEntry, undefined],
     ["a server-streaming", serverStreamingEntry, undefined],
     ["a client-streaming", clientStreamingEntry, undefined],
@@ -140,32 +134,32 @@ describe("GrpcServerProtocol", () => {
     ]
   >)(
     "rejects %s method without a handler as unimplemented",
-    async (_shape, entry, handler) => {
-      const error = await Effect.runPromise(
-        Effect.gen(function* () {
-          const { routes } = yield* GrpcServerProtocol.make({
-            registry: new Map([[entry.tag, entry]]),
-            // The wrong-kind row registers a handler under the unary tag with a
-            // streaming shape: the guard must fast-fail instead of invoking it.
-            handlers: handler ? handlers(entry.tag, handler) : undefined,
-          });
+    ([_shape, entry, handler]) =>
+      Effect.gen(function* () {
+        const { routes } = yield* GrpcServerProtocol.make({
+          registry: new Map([[entry.tag, entry]]),
+          // The wrong-kind row registers a handler under the unary tag with a
+          // streaming shape: the guard must fast-fail instead of invoking it.
+          handlers: handler ? handlers(entry.tag, handler) : undefined,
+        });
 
-          return yield* failureOf(captureImplementation(routes), entry);
-        }),
-      );
+        const error = yield* failureOf(captureImplementation(routes), entry);
 
-      expect(error).toMatchObject({
-        code: "unimplemented",
-        message: `Missing handler for ${entry.tag}`,
-      });
-    },
+        assert.deepStrictEqual(
+          { code: error.code, message: error.message },
+          {
+            code: "unimplemented",
+            message: `Missing handler for ${entry.tag}`,
+          },
+        );
+      }),
   );
 
   // The registry's error policy as connect sees it: a request payload the
   // codec rejects is the caller's fault, a response the converter cannot
   // produce is ours. One row per execution template (effect and stream), the
   // codes themselves being asserted per direction in `methodRegistry.test.ts`.
-  it.each([
+  it.effect.each([
     [
       "an unconvertible request payload",
       {
@@ -200,102 +194,97 @@ describe("GrpcServerProtocol", () => {
       GrpcServerProtocol.GrpcHandler,
       { readonly code: string; readonly message: string },
     ]
-  >)(
-    "fails %s with a typed status",
-    async (_name, entry, handler, expected) => {
-      const error = await Effect.runPromise(
-        Effect.gen(function* () {
-          const { routes } = yield* GrpcServerProtocol.make({
-            registry: new Map([[entry.tag, entry]]),
-            handlers: handlers(entry.tag, handler),
-          });
+  >)("fails %s with a typed status", ([_name, entry, handler, expected]) =>
+    Effect.gen(function* () {
+      const { routes } = yield* GrpcServerProtocol.make({
+        registry: new Map([[entry.tag, entry]]),
+        handlers: handlers(entry.tag, handler),
+      });
 
-          return yield* failureOf(captureImplementation(routes), entry);
-        }),
+      const error = yield* failureOf(captureImplementation(routes), entry);
+
+      assert.deepStrictEqual(
+        { code: error.code, message: error.message },
+        expected,
       );
-
-      expect(error).toMatchObject(expected);
-    },
+    }),
   );
 
-  it("streams server-streaming responses and completes", async () => {
-    const received = await Effect.runPromise(
-      Effect.gen(function* () {
-        const { routes } = yield* GrpcServerProtocol.make({
-          registry: new Map([[serverStreamingEntry.tag, serverStreamingEntry]]),
-          handlers: handlers(serverStreamingEntry.tag, {
-            kind: "server-streaming",
-            handler: (request) =>
-              Stream.make(
-                { ...(request as object), sequence: 1 },
-                { ...(request as object), sequence: 2 },
+  it.effect("streams server-streaming responses and completes", () =>
+    Effect.gen(function* () {
+      const { routes } = yield* GrpcServerProtocol.make({
+        registry: new Map([[serverStreamingEntry.tag, serverStreamingEntry]]),
+        handlers: handlers(serverStreamingEntry.tag, {
+          kind: "server-streaming",
+          handler: (request) =>
+            Stream.make(
+              { ...(request as object), sequence: 1 },
+              { ...(request as object), sequence: 2 },
+            ),
+        }),
+      });
+      const implementation = captureServerStreamingImplementation(routes);
+
+      const received = yield* Effect.promise(async () => {
+        const values: Array<unknown> = [];
+        for await (const value of implementation.watch(
+          { id: "7" },
+          handlerContext(),
+        )) {
+          values.push(value);
+        }
+        return values;
+      });
+
+      assert.deepStrictEqual(received, [
+        { id: "7", sequence: 1 },
+        { id: "7", sequence: 2 },
+      ]);
+    }),
+  );
+
+  it.effect("maps server-streaming handler failures mid-stream", () =>
+    Effect.gen(function* () {
+      const { routes } = yield* GrpcServerProtocol.make({
+        registry: new Map([[serverStreamingEntry.tag, serverStreamingEntry]]),
+        handlers: handlers(serverStreamingEntry.tag, {
+          kind: "server-streaming",
+          handler: () =>
+            Stream.make({ sequence: 1 }).pipe(
+              Stream.concat(
+                Stream.fail(GrpcStatusError.unavailable("stream broke")),
               ),
-          }),
-        });
-        const implementation = captureServerStreamingImplementation(routes);
+            ),
+        }),
+      });
+      const implementation = captureServerStreamingImplementation(routes);
 
-        return yield* Effect.promise(async () => {
-          const values: Array<unknown> = [];
-          for await (const value of implementation.watch(
-            { id: "7" },
-            handlerContext(),
-          )) {
-            values.push(value);
-          }
-          return values;
-        });
-      }),
-    );
-
-    expect(received).toEqual([
-      { id: "7", sequence: 1 },
-      { id: "7", sequence: 2 },
-    ]);
-  });
-
-  it("maps server-streaming handler failures mid-stream", async () => {
-    const result = await Effect.runPromise(
-      Effect.gen(function* () {
-        const { routes } = yield* GrpcServerProtocol.make({
-          registry: new Map([[serverStreamingEntry.tag, serverStreamingEntry]]),
-          handlers: handlers(serverStreamingEntry.tag, {
-            kind: "server-streaming",
-            handler: () =>
-              Stream.make({ sequence: 1 }).pipe(
-                Stream.concat(
-                  Stream.fail(GrpcStatusError.unavailable("stream broke")),
-                ),
-              ),
-          }),
-        });
-        const implementation = captureServerStreamingImplementation(routes);
-
-        return yield* Effect.promise(async () => {
-          const received: Array<unknown> = [];
-          try {
+      const received: Array<unknown> = [];
+      const error = yield* Effect.flip(
+        Effect.tryPromise({
+          try: async () => {
             for await (const value of implementation.watch(
               {},
               handlerContext(),
             )) {
               received.push(value);
             }
-          } catch (cause) {
-            return { received, error: GrpcStatusError.fromConnectError(cause) };
-          }
-          throw new Error("Expected server-streaming handler failure");
-        });
-      }),
-    );
+          },
+          catch: GrpcStatusError.fromConnectError,
+        }),
+      );
 
-    expect(result.received).toEqual([{ sequence: 1 }]);
-    expect(result.error).toMatchObject({
-      code: "unavailable",
-      message: "stream broke",
-    });
-  });
+      assert.deepStrictEqual(received, [{ sequence: 1 }]);
+      assert.strictEqual(error.code, "unavailable");
+      assert.strictEqual(error.message, "stream broke");
+    }),
+  );
 
-  it("interrupts the server-streaming handler when the call is aborted", async () => {
-    const result = await Effect.runPromise(
+  // Real time: the abort is issued behind a pending pull after a
+  // `setTimeout`-backed pause, which the TestClock cannot advance.
+  it.live(
+    "interrupts the server-streaming handler when the call is aborted",
+    () =>
       Effect.gen(function* () {
         const interrupted = yield* Deferred.make<boolean>();
         const { routes } = yield* GrpcServerProtocol.make({
@@ -336,45 +325,44 @@ describe("GrpcServerProtocol", () => {
           return { first: first.value, endDone: end.done };
         });
         const handlerInterrupted = yield* Deferred.await(interrupted);
-        return { received, handlerInterrupted };
-      }),
-    );
 
-    expect(result.received).toEqual({ first: { sequence: 1 }, endDone: true });
-    expect(result.handlerInterrupted).toBe(true);
-  });
+        assert.deepStrictEqual(received, {
+          first: { sequence: 1 },
+          endDone: true,
+        });
+        assert.isTrue(handlerInterrupted);
+      }),
+  );
 });
 
 describe("GrpcServerProtocol streaming bridge", () => {
-  it("bridges client-streaming requests to the handler", async () => {
-    const result = await Effect.runPromise(
-      Effect.gen(function* () {
-        const { routes } = yield* GrpcServerProtocol.make({
-          registry: new Map([[clientStreamingEntry.tag, clientStreamingEntry]]),
-          handlers: handlers(clientStreamingEntry.tag, {
-            kind: "client-streaming",
-            handler: (requests) =>
-              Stream.runCollect(requests).pipe(
-                Effect.map((items) => ({ items })),
-              ),
-          }),
-        });
-        const implementation = captureUnaryImplementation(routes);
+  it.effect("bridges client-streaming requests to the handler", () =>
+    Effect.gen(function* () {
+      const { routes } = yield* GrpcServerProtocol.make({
+        registry: new Map([[clientStreamingEntry.tag, clientStreamingEntry]]),
+        handlers: handlers(clientStreamingEntry.tag, {
+          kind: "client-streaming",
+          handler: (requests) =>
+            Stream.runCollect(requests).pipe(
+              Effect.map((items) => ({ items })),
+            ),
+        }),
+      });
+      const implementation = captureUnaryImplementation(routes);
 
-        return yield* Effect.promise(() =>
-          implementation.upload(
-            (async function* () {
-              yield { id: "1" };
-              yield { id: "2" };
-            })() as never,
-            handlerContext(),
-          ),
-        );
-      }),
-    );
+      const result = yield* Effect.promise(() =>
+        implementation.upload(
+          (async function* () {
+            yield { id: "1" };
+            yield { id: "2" };
+          })() as never,
+          handlerContext(),
+        ),
+      );
 
-    expect(result).toEqual({ items: [{ id: "1" }, { id: "2" }] });
-  });
+      assert.deepStrictEqual(result, { items: [{ id: "1" }, { id: "2" }] });
+    }),
+  );
 
   // Regression pin for the request-stream teardown hang: connect's request
   // iterable queues a `return()` issued while a `next()` is pending until
@@ -382,8 +370,12 @@ describe("GrpcServerProtocol streaming bridge", () => {
   // `Effect.timeoutOrElse`) while the client is connected but idle must still
   // complete — before the fix the call never settled and the server could not
   // enforce its own timeout.
-  it("lets a handler abandon the request stream mid-pull while the client is idle", async () => {
-    const result = await Effect.runPromise(
+  //
+  // Real time: the handler's timeout runs inside the context captured by
+  // `GrpcServerProtocol.make`, against a client that never wakes up.
+  it.live(
+    "lets a handler abandon the request stream mid-pull while the client is idle",
+    () =>
       Effect.gen(function* () {
         const { routes } = yield* GrpcServerProtocol.make({
           registry: new Map([[clientStreamingEntry.tag, clientStreamingEntry]]),
@@ -420,35 +412,34 @@ describe("GrpcServerProtocol streaming bridge", () => {
           },
         };
 
-        return yield* Effect.promise(() =>
+        const result = yield* Effect.promise(() =>
           implementation.upload(idleRequests as never, handlerContext()),
         );
+
+        assert.deepStrictEqual(result, { timedOut: true });
       }),
-    );
+  );
 
-    expect(result).toEqual({ timedOut: true });
-  });
+  it.effect("bridges bidi streams and maps mid-stream handler failures", () =>
+    Effect.gen(function* () {
+      const { routes } = yield* GrpcServerProtocol.make({
+        registry: new Map([[bidiStreamingEntry.tag, bidiStreamingEntry]]),
+        handlers: handlers(bidiStreamingEntry.tag, {
+          kind: "bidi-streaming",
+          handler: (requests) =>
+            Stream.mapEffect(requests, (request) =>
+              (request as { readonly id: string }).id === "boom"
+                ? Effect.fail(GrpcStatusError.notFound("boom"))
+                : Effect.succeed(request),
+            ),
+        }),
+      });
+      const implementation = captureServerStreamingImplementation(routes);
 
-  it("bridges bidi streams and maps mid-stream handler failures", async () => {
-    const result = await Effect.runPromise(
-      Effect.gen(function* () {
-        const { routes } = yield* GrpcServerProtocol.make({
-          registry: new Map([[bidiStreamingEntry.tag, bidiStreamingEntry]]),
-          handlers: handlers(bidiStreamingEntry.tag, {
-            kind: "bidi-streaming",
-            handler: (requests) =>
-              Stream.mapEffect(requests, (request) =>
-                (request as { readonly id: string }).id === "boom"
-                  ? Effect.fail(GrpcStatusError.notFound("boom"))
-                  : Effect.succeed(request),
-              ),
-          }),
-        });
-        const implementation = captureServerStreamingImplementation(routes);
-
-        return yield* Effect.promise(async () => {
-          const received: Array<unknown> = [];
-          try {
+      const received: Array<unknown> = [];
+      const error = yield* Effect.flip(
+        Effect.tryPromise({
+          try: async () => {
             for await (const value of implementation.chat(
               (async function* () {
                 yield { id: "1" };
@@ -458,61 +449,49 @@ describe("GrpcServerProtocol streaming bridge", () => {
             )) {
               received.push(value);
             }
-          } catch (cause) {
-            return {
-              received,
-              error: GrpcStatusError.fromConnectError(cause),
-            };
-          }
-          throw new Error("Expected bidi handler failure");
-        });
-      }),
-    );
+          },
+          catch: GrpcStatusError.fromConnectError,
+        }),
+      );
 
-    expect(result.received).toEqual([{ id: "1" }]);
-    expect(result.error).toMatchObject({
-      code: "not_found",
-      message: "boom",
-    });
-  });
+      assert.deepStrictEqual(received, [{ id: "1" }]);
+      assert.strictEqual(error.code, "not_found");
+      assert.strictEqual(error.message, "boom");
+    }),
+  );
 
-  it("maps invalid streamed request payloads to invalid_argument", async () => {
-    const error = await Effect.runPromise(
-      Effect.gen(function* () {
-        const entry = {
-          ...clientStreamingEntry,
-          payloadSchema: Schema.Struct({ id: Schema.String }),
-        } satisfies GrpcMethodEntry;
-        const { routes } = yield* GrpcServerProtocol.make({
-          registry: new Map([[entry.tag, entry]]),
-          handlers: handlers(entry.tag, {
-            kind: "client-streaming",
-            handler: (requests) => Stream.runDrain(requests),
-          }),
-        });
-        const implementation = captureUnaryImplementation(routes);
+  it.effect("maps invalid streamed request payloads to invalid_argument", () =>
+    Effect.gen(function* () {
+      const entry = {
+        ...clientStreamingEntry,
+        payloadSchema: Schema.Struct({ id: Schema.String }),
+      } satisfies GrpcMethodEntry;
+      const { routes } = yield* GrpcServerProtocol.make({
+        registry: new Map([[entry.tag, entry]]),
+        handlers: handlers(entry.tag, {
+          kind: "client-streaming",
+          handler: (requests) => Stream.runDrain(requests),
+        }),
+      });
+      const implementation = captureUnaryImplementation(routes);
 
-        return yield* Effect.promise(async () => {
-          try {
-            await implementation.upload(
+      const error = yield* Effect.flip(
+        Effect.tryPromise({
+          try: () =>
+            implementation.upload(
               (async function* () {
                 yield { id: 42 };
               })() as never,
               handlerContext(),
-            );
-          } catch (cause) {
-            return GrpcStatusError.fromConnectError(cause);
-          }
-          throw new Error("Expected streamed payload validation to fail");
-        });
-      }),
-    );
+            ),
+          catch: GrpcStatusError.fromConnectError,
+        }),
+      );
 
-    expect(error).toMatchObject({
-      code: "invalid_argument",
-      message: "Invalid gRPC request payload",
-    });
-  });
+      assert.strictEqual(error.code, "invalid_argument");
+      assert.strictEqual(error.message, "Invalid gRPC request payload");
+    }),
+  );
 });
 
 /**
@@ -558,58 +537,66 @@ describe("handlersEffect dependency scoping", () => {
       },
     });
 
-  it("keeps a dependency provided to the whole server program live until shutdown", async () => {
-    const events: Array<string> = [];
+  // Real time: a real http2 server and a connect transport on loopback.
+  it.live(
+    "keeps a dependency provided to the whole server program live until shutdown",
+    () =>
+      Effect.gen(function* () {
+        const events: Array<string> = [];
 
-    const result = await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const port = yield* freePort;
-          // The documented wiring: `R` propagates through `serveAll`, and the
-          // layer is provided to the server program, whose scope is the
-          // server's lifetime.
-          yield* Effect.forkScoped(
-            GrpcNodeServer.serveAll({
-              host: "127.0.0.1",
-              port,
-              services: [
-                {
+        // The server's scope is closed explicitly here so that its finalizer
+        // can be observed below, after the program has shut down.
+        const result = yield* Effect.scoped(
+          Effect.gen(function* () {
+            const port = yield* freePort;
+            // The documented wiring: `R` propagates through `serveAll`, and
+            // the layer is provided to the server program, whose scope is the
+            // server's lifetime.
+            yield* Effect.forkScoped(
+              GrpcNodeServer.serveAll({
+                host: "127.0.0.1",
+                port,
+                services: [
+                  {
+                    registry: GrpcHealth.HealthGrpcRegistry,
+                    handlers: poolHandlers(CHECK),
+                  },
+                ],
+              }).pipe(Effect.provide(poolLayer(events))),
+            );
+            yield* Effect.sleep("50 millis");
+
+            const response = yield* GrpcInvoker.GrpcInvoker.pipe(
+              Effect.flatMap((invoker) =>
+                invoker.unary(CHECK, { service: "" }),
+              ),
+              Effect.provide(
+                GrpcClientProtocol.layer({
+                  baseUrl: `http://127.0.0.1:${port}`,
                   registry: GrpcHealth.HealthGrpcRegistry,
-                  handlers: poolHandlers(CHECK),
-                },
-              ],
-            }).pipe(Effect.provide(poolLayer(events))),
-          );
-          yield* Effect.sleep("50 millis");
+                }),
+              ),
+            );
+            return { response, duringCall: [...events] };
+          }),
+        );
 
-          const response = yield* GrpcInvoker.GrpcInvoker.pipe(
-            Effect.flatMap((invoker) => invoker.unary(CHECK, { service: "" })),
-            Effect.provide(
-              GrpcClientProtocol.layer({
-                baseUrl: `http://127.0.0.1:${port}`,
-                registry: GrpcHealth.HealthGrpcRegistry,
-              }),
-            ),
-          );
-          return { response, duringCall: [...events] };
-        }),
-      ),
-    );
-
-    // The handler ran against a live resource, acquired exactly once.
-    expect(result.response).toEqual({ status: "SERVING" });
-    expect(result.duringCall).toEqual(["acquire"]);
-    // ... and the finalizer ran only once the server's scope closed.
-    expect(events).toEqual(["acquire", "release"]);
-  });
+        // The handler ran against a live resource, acquired exactly once.
+        assert.deepStrictEqual(result.response, { status: "SERVING" });
+        assert.deepStrictEqual(result.duringCall, ["acquire"]);
+        // ... and the finalizer ran only once the server's scope closed.
+        assert.deepStrictEqual(events, ["acquire", "release"]);
+      }),
+  );
 
   // The hazard the changeset and `handlersEffect`'s doc comment warn about,
   // pinned so it cannot silently become the recommended path again.
-  it("releases a dependency provided to the handlers effect before the first call", async () => {
-    const events: Array<string> = [];
-
-    const result = await Effect.runPromise(
+  it.effect(
+    "releases a dependency provided to the handlers effect before the first call",
+    () =>
       Effect.gen(function* () {
+        const events: Array<string> = [];
+
         const built = yield* poolHandlers(unaryEntry.tag).pipe(
           Effect.provide(poolLayer(events)),
         );
@@ -623,17 +610,15 @@ describe("handlersEffect dependency scoping", () => {
         const response = yield* Effect.promise(() =>
           implementation.get({}, handlerContext()),
         );
-        return { afterBuild, response };
-      }),
-    );
 
-    // `Effect.provide` closed the layer's scope the instant the handlers map
-    // was built — before the server was even wired up.
-    expect(result.afterBuild).toEqual(["acquire", "release"]);
-    // So every request runs against a finalized resource, with no error at
-    // the seam to say so.
-    expect(result.response).toEqual({ status: "NOT_SERVING" });
-  });
+        // `Effect.provide` closed the layer's scope the instant the handlers
+        // map was built — before the server was even wired up.
+        assert.deepStrictEqual(afterBuild, ["acquire", "release"]);
+        // So every request runs against a finalized resource, with no error
+        // at the seam to say so.
+        assert.deepStrictEqual(response, { status: "NOT_SERVING" });
+      }),
+  );
 });
 
 const handlers = (
@@ -646,32 +631,33 @@ const handlers = (
  * a message for message-request kinds, an async generator for stream-request
  * ones — and returns the gRPC status it fails with. Stream responses are
  * *drained to completion*: the failures under test are raised mid-iteration,
- * so a call that is merely started would pass vacuously.
+ * so a call that is merely started would pass vacuously. A call that
+ * completes instead fails the returned effect with its result.
  */
 const failureOf = (
   implementation: ServiceImplementation,
   entry: GrpcMethodEntry,
-): Effect.Effect<GrpcStatusError.GrpcStatusError> =>
-  Effect.promise(async () => {
-    const call = (implementation[entry.localName] as Method)(
-      entry.kind === "unary" || entry.kind === "server-streaming"
-        ? {}
-        : (async function* () {
-            yield {};
-          })(),
-      handlerContext(),
-    );
-    try {
-      if (entry.kind === "unary" || entry.kind === "client-streaming") {
-        await (call as Promise<unknown>);
-      } else {
-        for await (const _ of call as AsyncIterable<unknown>) void _;
-      }
-    } catch (cause) {
-      return GrpcStatusError.fromConnectError(cause);
-    }
-    throw new Error(`Expected ${entry.tag} to fail`);
-  });
+): Effect.Effect<GrpcStatusError.GrpcStatusError, void> =>
+  Effect.flip(
+    Effect.tryPromise({
+      try: async () => {
+        const call = (implementation[entry.localName] as Method)(
+          entry.kind === "unary" || entry.kind === "server-streaming"
+            ? {}
+            : (async function* () {
+                yield {};
+              })(),
+          handlerContext(),
+        );
+        if (entry.kind === "unary" || entry.kind === "client-streaming") {
+          await (call as Promise<unknown>);
+        } else {
+          for await (const _ of call as AsyncIterable<unknown>) void _;
+        }
+      },
+      catch: GrpcStatusError.fromConnectError,
+    }),
+  );
 
 type Method = (
   request: unknown,

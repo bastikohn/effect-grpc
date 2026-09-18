@@ -5,6 +5,9 @@ calls. All four method kinds bridge Effect `Effect`/`Stream` values and
 connect calls directly over one transport, on the client through the
 `GrpcInvoker` seam and on the server through a unified handlers map.
 
+Use Node.js >= 22 and TypeScript >= 5.9.3. The packaged-consumer smoke test
+checks TypeScript 5.9.3 and 7.0.2 against installed packages and generated code.
+
 1. Generate protobuf-es output with `protoc-gen-es`.
 2. Generate effect-grpc glue with `protoc-gen-effect-grpc`.
 3. Provide a generated client layer with `GrpcClientProtocol.layer`.

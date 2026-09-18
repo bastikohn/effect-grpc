@@ -17,6 +17,8 @@ pnpm add @effect-grpc/effect-grpc @bufbuild/protobuf @connectrpc/connect effect
 
 `@bufbuild/protobuf`, `@connectrpc/connect`, and `effect` are peer
 dependencies. This package is ESM-only and requires Node.js >= 22.
+TypeScript consumers require TypeScript >= 5.9.3; CI verifies packed packages
+and generated clients with TypeScript 5.9.3 and 7.0.2.
 
 > [!NOTE]
 > The current prerelease line targets `effect@4.0.0-rc.115` exactly (it

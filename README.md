@@ -88,9 +88,14 @@ Type checking uses stable TypeScript 7.0.2 via `pnpm typecheck` and `pnpm exec t
 The `@typescript/native` dependency aliases the official `typescript` package.
 The `typescript` dependency aliases Microsoft's `@typescript/typescript6`
 compatibility package because TSTyche and tsdown's declaration generator still
-require the JavaScript compiler API. `pnpm test:types` therefore runs on
-TypeScript 6.0.3; generated-code tests and the package consumer smoke test use
-TypeScript 7. The existing Effect language-service plugin works with the
+require the JavaScript compiler API. The locked compatibility package version
+is 6.0.2, whose compiler API reports 6.0.3. `pnpm test:types` therefore runs on
+TypeScript 6.0.3; generated-code tests use TypeScript 7. The package consumer
+smoke test compiles installed tarballs and freshly generated code with both
+TypeScript 5.9.3 (the minimum supported consumer version, matching the previous
+workspace compiler) and 7.0.2. It also asserts and logs the native CLI and
+compiler API versions actually resolved by the tooling. The existing Effect
+language-service plugin works with the
 TypeScript 6 editor service; the native TypeScript 7 editor service does not load
 JavaScript plugins. See Microsoft's
 [side-by-side setup](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/#running-side-by-side-with-typescript-6-0).

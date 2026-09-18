@@ -150,5 +150,60 @@ imports. Browser bundles need no Node built-ins or `Buffer` polyfill.
 The root entrypoint retains `GrpcClientProtocol.makeTransport`, TLS options,
 `GrpcClientProtocol.layer`, and all Node server APIs. Its existing
 `layerFromTransport` and `metadataInterceptor` exports remain available. Native
-Node transports continue supporting all four RPC shapes. The portable entrypoint
-does not add a browser transport or expand the capabilities of a supplied transport.
+Node transports continue supporting all four RPC shapes. Use `GrpcWebClient` below for browser transports.
+
+## Browser transports
+
+`GrpcWebClient` uses `@connectrpc/connect-web` to provide generated clients with
+Connect or gRPC-Web over the browser Fetch API:
+
+```ts
+import { Layer } from "effect";
+import { GrpcWebClient } from "@effect-grpc/effect-grpc/client";
+import {
+  UserServiceClientLayer,
+  UserServiceGrpcRegistry,
+} from "./generated/user_service_effect_grpc.js";
+
+const clientLayer = UserServiceClientLayer.pipe(
+  Layer.provide(
+    GrpcWebClient.layer({
+      protocol: "connect", // or "grpc-web"
+      baseUrl: "https://api.example.com",
+      registry: UserServiceGrpcRegistry,
+    }),
+  ),
+);
+```
+
+Both protocols support unary and server-streaming calls. Client-streaming and
+bidirectional calls fail with a typed `GrpcStatusError` (`unimplemented`) before
+acquiring the request stream. Native Node clients still support all four shapes.
+Transport construction occurs when the layer is acquired. Relative base URLs are
+supported; set `serverAddress` explicitly when telemetry needs an absolute URL.
+
+Pass connect-web options directly, including `interceptors`, `defaultTimeoutMs`,
+`useBinaryFormat`, and a custom `fetch`. `GrpcClient.metadataInterceptor` supports
+Effect-resolved authentication, and per-call metadata takes precedence over its
+defaults. Binary metadata remains `Uint8Array` under `-bin` keys. Positive per-call
+`timeoutMs` values bound the whole call, including streaming; consuming only part
+of a response stream or interrupting its Effect cancels the underlying request.
+
+The endpoint must speak Connect or gRPC-Web (directly or through a compatible
+proxy). A native gRPC-only HTTP/2 endpoint is insufficient. For cross-origin
+requests, the server or proxy must answer OPTIONS requests and allow the frontend
+origin, Connect's `cors.allowedMethods` and `cors.allowedHeaders`, plus application
+headers such as `authorization`, `traceparent`, and binary metadata keys. Expose
+`cors.exposedHeaders` and any application response headers; gRPC-Web needs the
+status headers exposed to preserve RPC errors. Connect's `cors` constants come
+from `@connectrpc/connect`; they do not install CORS middleware automatically.
+
+For cookie authentication, pass `fetch: (input, init) => fetch(input, {
+...init, credentials: "include" })` and configure a specific allowed origin plus
+`Access-Control-Allow-Credentials: true` on the server. A browser-blocked CORS or network failure has no observable
+server RPC status and becomes a typed `unknown` status error. The adapter cannot
+bypass browser origin policy.
+
+Run the real-browser suite with `pnpm exec playwright install chromium` followed
+by `pnpm test:browser`. CI runs it against Chromium with two separate local origins
+for both protocols, including successful and denied preflights.

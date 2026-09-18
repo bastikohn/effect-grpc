@@ -2,6 +2,8 @@ import { defineConfig } from "vite-plus";
 
 const generatedPatterns = [
   "coverage",
+  "test-results",
+  "playwright-report",
   "dist",
   "node_modules",
   ".pnpm-store",

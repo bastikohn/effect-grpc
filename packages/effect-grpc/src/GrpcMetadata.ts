@@ -1,3 +1,5 @@
+import { base64Decode, base64Encode } from "@bufbuild/protobuf/wire";
+
 export type GrpcMetadataValue = string | Uint8Array;
 
 export type GrpcMetadata = ReadonlyArray<
@@ -53,16 +55,13 @@ export const toHeaders = (metadata: GrpcMetadata): Headers => {
   return headers;
 };
 
-/**
- * `Buffer.from` accepts both halves of the union at runtime, so one branch
- * covers every combination the key allows: bytes under a `-bin` key, and the
- * unvalidated leftovers of the error path (`GrpcStatusError` trailers are not
- * call metadata) where base64 still beats stringifying a `Uint8Array`.
- */
+// Invalid key/value pairs are rejected before calls; error trailers retain
+// the historical UTF-8 encoding fallback for strings under binary keys.
 const encodeValue = (key: string, value: GrpcMetadataValue): string =>
   typeof value === "string" && !isBinaryKey(key)
     ? value
-    : Buffer.from(value as Uint8Array).toString("base64");
+    : base64Encode(
+        typeof value === "string" ? new TextEncoder().encode(value) : value,
+      );
 
-const base64ToBytes = (value: string): Uint8Array =>
-  new Uint8Array(Buffer.from(value.trim(), "base64"));
+const base64ToBytes = (value: string): Uint8Array => base64Decode(value.trim());

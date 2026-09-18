@@ -15,7 +15,7 @@ export const Effect = createImportSymbol("Effect", "effect");
 export const Layer = createImportSymbol("Layer", "effect");
 export const Context = createImportSymbol("Context", "effect");
 
-const runtimePackage = "@effect-grpc/effect-grpc";
+const runtimePackage = "@effect-grpc/effect-grpc/client";
 export const CodegenSupport = createImportSymbol(
   "CodegenSupport",
   runtimePackage,
@@ -34,7 +34,14 @@ export const GrpcStatusError = createImportSymbol(
   runtimePackage,
 );
 
-export const Buffer = createImportSymbol("Buffer", "node:buffer");
+export const base64Encode = createImportSymbol(
+  "base64Encode",
+  "@bufbuild/protobuf/wire",
+);
+export const base64Decode = createImportSymbol(
+  "base64Decode",
+  "@bufbuild/protobuf/wire",
+);
 
 export const fromJson = createImportSymbol("fromJson", "@bufbuild/protobuf");
 export const toJson = createImportSymbol("toJson", "@bufbuild/protobuf");

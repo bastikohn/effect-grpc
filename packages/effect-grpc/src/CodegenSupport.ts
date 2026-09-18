@@ -1,7 +1,9 @@
 import type { ContextKey } from "@connectrpc/connect";
+import type { Effect } from "effect";
 
 import type * as GrpcMetadata from "./GrpcMetadata.js";
 import type { GrpcMethodKind } from "./GrpcMethodRegistry.js";
+import type { GrpcStatusError } from "./GrpcStatusError.js";
 
 export interface GrpcCallOptions {
   /**
@@ -15,6 +17,22 @@ export interface GrpcCallOptions {
    * deadline* rather than one that has already expired, on every adapter.
    */
   readonly timeoutMs?: number;
+  /**
+   * Synchronous observer of a decoded response-header snapshot. Connect
+   * exposes unary headers at completion, streaming headers before messages.
+   * Throwing fails the call with `internal`. In-memory calls reject observers.
+   */
+  readonly onResponseHeaders?: (
+    metadata: GrpcMetadata.GrpcMetadata,
+  ) => undefined;
+  /**
+   * Called only on clean transport completion. Not called on failure,
+   * cancellation, or early stream termination; failures retain their
+   * existing `GrpcStatusError.metadata` channel. Must be synchronous.
+   */
+  readonly onResponseTrailers?: (
+    metadata: GrpcMetadata.GrpcMetadata,
+  ) => undefined;
 }
 
 /**
@@ -53,6 +71,14 @@ export interface GrpcServerContext {
    * module serves interceptors and handlers alike.
    */
   readonly getContextValue: <T>(key: ContextKey<T>) => T;
+  /** Append validated response headers before the first response is yielded. */
+  readonly writeResponseHeaders: (
+    metadata: GrpcMetadata.GrpcMetadata,
+  ) => Effect.Effect<void, GrpcStatusError>;
+  /** Append validated trailers until handler completion, including finalizers. */
+  readonly writeResponseTrailers: (
+    metadata: GrpcMetadata.GrpcMetadata,
+  ) => Effect.Effect<void, GrpcStatusError>;
 }
 
 /**

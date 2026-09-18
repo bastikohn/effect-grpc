@@ -1,6 +1,7 @@
 import type { DescService } from "@bufbuild/protobuf";
 import {
   type ConnectRouter,
+  type Transport,
   createContextKey,
   type Interceptor,
 } from "@connectrpc/connect";
@@ -63,6 +64,9 @@ const implementation: UserServiceImplementation = {
 describe("public API", () => {
   it("keeps runtime constructors callable", () => {
     expect(GrpcStatusError.notFound).type.toBeCallableWith("missing");
+    expect(
+      GrpcClientProtocol.makeTransport({ baseUrl: "http://localhost:50051" }),
+    ).type.toBe<Effect.Effect<Transport>>();
     expect(GrpcClientProtocol.layer).type.toBeCallableWith({
       baseUrl: "http://127.0.0.1:50051",
       registry,

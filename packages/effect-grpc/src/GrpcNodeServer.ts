@@ -177,11 +177,12 @@ const closeServer = (
     };
     const forceDestroy = setTimeout(() => {
       for (const session of sessions) {
-        if (!session.closed && !session.destroyed) {
+        // close() marks a session closed before its active streams finish.
+        // Those draining sessions must still be destroyed at the deadline.
+        if (!session.destroyed) {
           session.destroy();
         }
       }
-      resolveOnce();
     }, options.shutdownTimeoutMs ?? 5_000);
     forceDestroy.unref();
 

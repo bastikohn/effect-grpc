@@ -41,7 +41,7 @@ export const make = (options: {
     message: options.message,
     metadata: options.metadata ?? GrpcMetadata.empty,
     details: options.details ?? [],
-    cause: options.cause,
+    ...(options.cause === undefined ? {} : { cause: options.cause }),
   });
 
 export const internal = (message: string, cause?: unknown) =>

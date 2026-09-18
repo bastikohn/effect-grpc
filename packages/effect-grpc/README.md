@@ -129,3 +129,8 @@ value that contradicts its key fails the call with `invalid_argument`.
 ## License
 
 [Apache-2.0](https://github.com/bastikohn/effect-grpc/blob/main/LICENSE)
+
+## Effect boundary migration
+
+`makeTransport` now returns an Effect; execute it with `yield*`. Status errors
+also expose a JavaScript-value schema. See the [migration and schema contract](../../docs/users/effect-boundaries.md).

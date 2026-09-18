@@ -17,6 +17,17 @@ describe("GrpcStatusCode", () => {
 });
 
 describe("GrpcStatusError", () => {
+  it("preserves remote status when binary trailers are malformed", () => {
+    const cause = new ConnectError("offline", Code.Unavailable, {
+      "trace-bin": "!",
+    });
+    const error = GrpcStatusError.fromConnectError(cause);
+    expect(error.code).toBe("unavailable");
+    expect(error.message).toBe("offline");
+    expect(error.cause).toBe(cause);
+    expect(error.metadata).toEqual([["trace-bin", new Uint8Array()]]);
+  });
+
   it("converts ConnectError to generic status error", () => {
     const error = GrpcStatusError.fromConnectError(
       new ConnectError("missing", Code.NotFound, {
@@ -60,6 +71,22 @@ describe("GrpcStatusError", () => {
 });
 
 describe("GrpcMetadata", () => {
+  it.each([
+    ["!", []],
+    ["A", []],
+    ["A!QI=ignored", [1, 2]],
+    ["AQI=Aw==", [1, 2]],
+    ["__8", [255, 255]],
+    ["AQIDA", [1, 2, 3]],
+  ] as const)(
+    "decodes remote binary metadata best-effort: %s",
+    (value, expected) => {
+      expect(GrpcMetadata.fromHeaders([["trace-bin", value]])).toEqual([
+        ["trace-bin", new Uint8Array(expected)],
+      ]);
+    },
+  );
+
   it("round trips string headers", () => {
     const metadata = GrpcMetadata.fromHeaders(
       new Headers([

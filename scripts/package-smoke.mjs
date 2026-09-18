@@ -239,6 +239,8 @@ import { UserServiceClientLayer, UserServiceGrpcRegistry } from "./src/generated
 const bytes = new Uint8Array([0, 1, 250, 255]);
 const metadata = runtime.GrpcMetadata.fromHeaders(runtime.GrpcMetadata.toHeaders([["token-bin", bytes]]));
 if (String(metadata[0][1]) !== String(bytes)) throw new Error("binary metadata did not round-trip");
+const malformed = runtime.GrpcMetadata.fromHeaders([["trace-bin", "A!QI=ignored"]]);
+if (String(malformed[0][1]) !== "1,2") throw new Error("malformed remote metadata lost best-effort decoding");
 const entry = [...UserServiceGrpcRegistry.values()][0];
 const wire = entry.toGrpcRequest({ id: "demo", token: "AAH6/w==" });
 const encoded = entry.fromGrpcRequest(wire as never) as { token: string };

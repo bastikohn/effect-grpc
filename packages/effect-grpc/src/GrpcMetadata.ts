@@ -64,4 +64,10 @@ const encodeValue = (key: string, value: GrpcMetadataValue): string =>
         typeof value === "string" ? new TextEncoder().encode(value) : value,
       );
 
-const base64ToBytes = (value: string): Uint8Array => base64Decode(value.trim());
+const base64ToBytes = (value: string): Uint8Array => {
+  // Keep remote trailers best-effort: ignore junk, stop at padding, and drop
+  // a dangling sextet, as the previous Buffer decoder did. Malformed metadata
+  // must never hide the original RPC status while converting an error.
+  const clean = value.split("=", 1)[0].replace(/[^A-Za-z0-9+/_-]/g, "");
+  return base64Decode(clean.length % 4 === 1 ? clean.slice(0, -1) : clean);
+};

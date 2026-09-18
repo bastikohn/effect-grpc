@@ -297,7 +297,9 @@ export const makeConnect = (
               () =>
                 method(
                   grpcRequest,
-                  callOptionsFor(callOptions, span, controller.signal),
+                  callOptionsFor(callOptions, span, controller.signal, () =>
+                    controller.abort(),
+                  ),
                 ) as AsyncIterable<unknown>,
               record,
             );
@@ -344,7 +346,9 @@ export const makeConnect = (
                 try {
                   const call = method(
                     pump.iterable,
-                    callOptionsFor(callOptions, span, controller.signal),
+                    callOptionsFor(callOptions, span, controller.signal, () =>
+                      controller.abort(),
+                    ),
                   ) as Promise<unknown>;
                   return { ok: true, value: await call };
                 } catch (cause) {
@@ -414,7 +418,9 @@ export const makeConnect = (
               () =>
                 method(
                   pump.iterable,
-                  callOptionsFor(callOptions, span, controller.signal),
+                  callOptionsFor(callOptions, span, controller.signal, () =>
+                    controller.abort(),
+                  ),
                 ) as AsyncIterable<unknown>,
               record,
             );
@@ -456,6 +462,7 @@ const callOptionsFor = (
   options: GrpcCallOptions | undefined,
   span: Tracer.Span,
   signal: AbortSignal,
+  abort?: () => void,
 ): CallOptions => {
   // Metadata has already been validated by `recordMetadata`, so the codec
   // cannot be handed a value its key forbids.
@@ -470,5 +477,31 @@ const callOptionsFor = (
     headers.set("traceparent", GrpcTracing.traceparent(span));
   }
   const timeoutMs = callTimeoutMs(options);
-  return { headers, signal, ...(timeoutMs === undefined ? {} : { timeoutMs }) };
+  const observe =
+    (
+      callback:
+        | ((metadata: GrpcMetadata.GrpcMetadata) => undefined)
+        | undefined,
+    ) =>
+    (values: Headers) => {
+      try {
+        callback?.(GrpcMetadata.fromHeaders(values));
+      } catch (cause) {
+        abort?.();
+        throw GrpcStatusError.toConnectError(
+          GrpcStatusError.internal("Response metadata observer failed", cause),
+        );
+      }
+    };
+  return {
+    headers,
+    signal,
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
+    ...(options?.onResponseHeaders === undefined
+      ? {}
+      : { onHeader: observe(options.onResponseHeaders) }),
+    ...(options?.onResponseTrailers === undefined
+      ? {}
+      : { onTrailer: observe(options.onResponseTrailers) }),
+  };
 };

@@ -15,6 +15,12 @@ interface GrpcServerContext {
   readonly signal: AbortSignal;
   readonly remainingTimeoutMs: () => number | undefined;
   readonly getContextValue: <T>(key: ContextKey<T>) => T;
+  readonly writeResponseHeaders: (
+    metadata: GrpcMetadata.GrpcMetadata,
+  ) => Effect.Effect<void, GrpcStatusError>;
+  readonly writeResponseTrailers: (
+    metadata: GrpcMetadata.GrpcMetadata,
+  ) => Effect.Effect<void, GrpcStatusError>;
 }
 ```
 
@@ -42,6 +48,11 @@ streaming handler keeps that call's view for as long as it iterates.
 - **`getContextValue(key)`** — a typed value attached to this call by a
   server interceptor, or the key's declared default when nothing set it.
   Keys are connect's `createContextKey`; there is no second key factory.
+- **`writeResponseHeaders(metadata)` / `writeResponseTrailers(metadata)`** —
+  validated, Effect-returning writers for native response metadata. Headers
+  commit before the first response; trailers remain writable through normal
+  handler finalization. See [response metadata](response-metadata.md) for
+  observer, cancellation, and early-termination lifetimes.
 
 ### Zero means two different things
 
@@ -233,6 +244,7 @@ The new context fields are required on the context the server delivers.
 Handlers that only read `metadata` keep working unchanged. Handwritten
 handler tests or fixtures that construct a `GrpcServerContext` literal
 themselves must now supply `method`, `signal`, `remainingTimeoutMs` and
-`getContextValue`; `GrpcInvoker.layerInMemory` is unaffected — its handlers
+`getContextValue`, `writeResponseHeaders`, and `writeResponseTrailers`;
+`GrpcInvoker.layerInMemory` handlers
 receive the separate `GrpcInMemoryCall` context, and it does not run server
 interceptors.

@@ -61,6 +61,17 @@ const implementation: UserServiceImplementation = {
 };
 
 describe("public API", () => {
+  it("exposes typed response metadata writers and synchronous observers", () => {
+    expect(context.writeResponseHeaders(metadata)).type.toBe<
+      Effect.Effect<void, GrpcStatusError.GrpcStatusError>
+    >();
+    expect(context.writeResponseTrailers(metadata)).type.toBe<
+      Effect.Effect<void, GrpcStatusError.GrpcStatusError>
+    >();
+    expect(async () => {}).type.not.toBeAssignableTo<
+      NonNullable<CodegenSupport.GrpcCallOptions["onResponseHeaders"]>
+    >();
+  });
   it("keeps runtime constructors callable", () => {
     expect(GrpcStatusError.notFound).type.toBeCallableWith("missing");
     expect(GrpcClientProtocol.layer).type.toBeCallableWith({

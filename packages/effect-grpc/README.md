@@ -105,6 +105,10 @@ const program = Effect.gen(function* () {
 
 ## Error model
 
+Call options support opt-in `onResponseHeaders` and `onResponseTrailers`
+observers. Native handler contexts expose `writeResponseHeaders` and
+`writeResponseTrailers`; see [response metadata lifetimes](https://github.com/bastikohn/effect-grpc/blob/main/docs/users/response-metadata.md).
+
 Generated RPCs fail with `GrpcStatusError`, a `Data.TaggedError`. Failures
 coming off the wire are built from the peer's connect error by
 `GrpcStatusError.fromConnectError`, and handler failures are turned back into

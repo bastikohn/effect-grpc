@@ -9,7 +9,20 @@ import type {
 } from "../GrpcInvoker.js";
 import * as GrpcMetadata from "../GrpcMetadata.js";
 import * as GrpcStatusError from "../GrpcStatusError.js";
-import { callTimeoutMs, unknownTag, validateCallMetadata } from "./invoker.js";
+import {
+  callTimeoutMs,
+  unknownTag,
+  validateCallMetadata as validateMetadata,
+} from "./invoker.js";
+
+const validateCallMetadata = (options: GrpcCallOptions | undefined) =>
+  options?.onResponseHeaders || options?.onResponseTrailers
+    ? Effect.fail(
+        GrpcStatusError.unimplemented(
+          "Response metadata observers require a native transport",
+        ),
+      )
+    : validateMetadata(options);
 
 /**
  * Test {@link GrpcInvokerService}: dispatches to in-process handlers with the

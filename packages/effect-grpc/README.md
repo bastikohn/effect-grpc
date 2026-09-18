@@ -129,3 +129,26 @@ value that contradicts its key fails the call with `invalid_argument`.
 ## License
 
 [Apache-2.0](https://github.com/bastikohn/effect-grpc/blob/main/LICENSE)
+
+## Portable clients
+
+Import transport-independent client APIs from `@effect-grpc/effect-grpc/client`:
+
+```ts
+import { GrpcClient } from "@effect-grpc/effect-grpc/client";
+
+const clientLayer = GrpcClient.layerFromTransport({ registry, transport });
+```
+
+`transport` is a Connect `Transport`. `GrpcClient.metadataInterceptor` attaches
+Effect-resolved authentication and other metadata to that transport. The portable
+entrypoint also exports the invoker, registry, status, metadata, and codegen APIs.
+Generated modules now import this entrypoint, and their bytes codecs use protobuf's
+portable base64 implementation. Regenerate existing code to remove older Node
+imports. Browser bundles need no Node built-ins or `Buffer` polyfill.
+
+The root entrypoint retains `GrpcClientProtocol.makeTransport`, TLS options,
+`GrpcClientProtocol.layer`, and all Node server APIs. Its existing
+`layerFromTransport` and `metadataInterceptor` exports remain available. Native
+Node transports continue supporting all four RPC shapes. The portable entrypoint
+does not add a browser transport or expand the capabilities of a supplied transport.

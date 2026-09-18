@@ -9,8 +9,8 @@ exports[`proto feature fixtures > snapshots generated output 1`] = `
 /* eslint-disable */
 
 import { Context, Effect, Layer, Schema } from "effect";
-import { Buffer } from "node:buffer";
-import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc";
+import { base64Decode, base64Encode } from "@bufbuild/protobuf/wire";
+import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc/client";
 import { RepeatedScalarFeature } from "./repeated_scalars_pb.js";
 
 export const RepeatedScalarsSchema = Schema.Struct({
@@ -33,10 +33,10 @@ const compact = <T extends Record<string, unknown>>(object: T): T => {
 };
 
 const fromGrpc$Bytes = (value: Uint8Array): string =>
-  Buffer.from(value).toString("base64");
+  base64Encode(value);
 
 const toGrpc$Bytes = (value: unknown): Uint8Array =>
-  Uint8Array.from(Buffer.from(value as string, "base64"));
+  base64Decode(value as string);
 
 export const fromRepeatedScalars = (message: unknown): unknown => compact({
   tags: ((CodegenSupport.readField(message, "tags") as ReadonlyArray<unknown> | undefined) ?? []).map((value) => (value) as string),
@@ -126,7 +126,7 @@ exports[`proto feature fixtures > snapshots generated output 2`] = `
 /* eslint-disable */
 
 import { Context, Effect, Layer, Schema } from "effect";
-import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc";
+import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc/client";
 import { RepeatedMessageFeature } from "./repeated_messages_pb.js";
 
 export const UserListSchema = Schema.Struct({
@@ -253,7 +253,7 @@ exports[`proto feature fixtures > snapshots generated output 3`] = `
 /* eslint-disable */
 
 import { Context, Effect, Layer, Schema } from "effect";
-import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc";
+import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc/client";
 import { EnumFeature } from "./enums_pb.js";
 
 export const UserStateSchema = Schema.Number;
@@ -354,7 +354,7 @@ exports[`proto feature fixtures > snapshots generated output 4`] = `
 /* eslint-disable */
 
 import { Schema } from "effect";
-import { CodegenSupport } from "@effect-grpc/effect-grpc";
+import { CodegenSupport } from "@effect-grpc/effect-grpc/client";
 
 export const ImportedStateSchema = Schema.Number;
 export type ImportedState = number;
@@ -397,7 +397,7 @@ export const toImportedUser = (value: unknown): Record<string, unknown> => {
 import { Context, Effect, Layer, Schema } from "effect";
 import type { ImportedState } from "./imported_common_effect_grpc.js";
 import { fromImportedUser, ImportedStateSchema, ImportedUserSchema, toImportedUser } from "./imported_common_effect_grpc.js";
-import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc";
+import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc/client";
 import { ImportedMessageFeature } from "./imported_messages_pb.js";
 
 export const GetImportedUserResponseSchema = Schema.Struct({
@@ -492,7 +492,7 @@ exports[`proto feature fixtures > snapshots generated output 5`] = `
 /* eslint-disable */
 
 import { Context, Effect, Layer, Schema } from "effect";
-import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc";
+import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc/client";
 import { Int64BigintFeature } from "./int64_bigint_pb.js";
 
 export const Int64ScalarsSchema = Schema.Struct({
@@ -596,7 +596,7 @@ exports[`proto feature fixtures > snapshots generated output 6`] = `
 /* eslint-disable */
 
 import { Context, Effect, Layer, Schema } from "effect";
-import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc";
+import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc/client";
 import { WellKnownTypeFeature } from "./well_known_types_pb.js";
 
 export const Grpc$GoogleProtobufTimestampSchema = Schema.Date;
@@ -817,10 +817,10 @@ exports[`proto feature fixtures > snapshots generated output 7`] = `
 /* eslint-disable */
 
 import { Context, Effect, Layer, Schema } from "effect";
-import { Buffer } from "node:buffer";
+import { base64Decode, base64Encode } from "@bufbuild/protobuf/wire";
 import { fromJson, toJson } from "@bufbuild/protobuf";
 import { FieldMaskSchema, ListValueSchema, StructSchema, ValueSchema } from "@bufbuild/protobuf/wkt";
-import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc";
+import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc/client";
 import { FieldShapeFeature } from "./field_shapes_pb.js";
 
 export const FieldShapeValues_StateSchema = Schema.Number;
@@ -862,10 +862,10 @@ const compact = <T extends Record<string, unknown>>(object: T): T => {
 };
 
 const fromGrpc$Bytes = (value: Uint8Array): string =>
-  Buffer.from(value).toString("base64");
+  base64Encode(value);
 
 const toGrpc$Bytes = (value: unknown): Uint8Array =>
-  Uint8Array.from(Buffer.from(value as string, "base64"));
+  base64Decode(value as string);
 
 const fromGrpc$GoogleProtobufTimestamp = (value: unknown): string => {
   const message = value as { readonly seconds?: bigint | number; readonly nanos?: number };
@@ -1176,7 +1176,7 @@ exports[`proto feature fixtures > snapshots generated output 8`] = `
 /* eslint-disable */
 
 import { Context, Effect, Layer, Schema } from "effect";
-import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc";
+import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc/client";
 import { MapFeature } from "./maps_pb.js";
 
 export const MapValuesSchema = Schema.Struct({
@@ -1290,7 +1290,7 @@ exports[`proto feature fixtures > snapshots generated output 9`] = `
 /* eslint-disable */
 
 import { Context, Effect, Layer, Schema } from "effect";
-import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc";
+import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc/client";
 import { OneofFeature } from "./oneofs_pb.js";
 
 export const SearchRequestSchema = Schema.Struct({
@@ -1431,7 +1431,7 @@ exports[`proto feature fixtures > snapshots generated output 10`] = `
 /* eslint-disable */
 
 import { Context, Effect, Layer, Schema } from "effect";
-import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc";
+import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc/client";
 import { NestedMessageFeature } from "./nested_messages_pb.js";
 
 export const NestedOuter_Inner_StatusSchema = Schema.Number;
@@ -1579,7 +1579,7 @@ exports[`proto feature fixtures > snapshots generated output 11`] = `
 /* eslint-disable */
 
 import { Schema } from "effect";
-import { CodegenSupport } from "@effect-grpc/effect-grpc";
+import { CodegenSupport } from "@effect-grpc/effect-grpc/client";
 
 export const CommonStateSchema = Schema.Number;
 export type CommonState = number;
@@ -1622,7 +1622,7 @@ export const toCommonUser = (value: unknown): Record<string, unknown> => {
 import { Context, Effect, Layer, Schema } from "effect";
 import type { CommonState, CommonUser } from "./cross_package_common_effect_grpc.js";
 import { CommonStateSchema, CommonUserSchema, fromCommonUser, toCommonUser } from "./cross_package_common_effect_grpc.js";
-import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc";
+import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc/client";
 import { CrossPackageFeature } from "./cross_package_pb.js";
 
 export const CrossPackageRequestSchema = Schema.Struct({
@@ -1776,8 +1776,8 @@ exports[`proto feature fixtures > snapshots generated output 12`] = `
 /* eslint-disable */
 
 import { Context, Effect, Layer, Schema } from "effect";
-import { Buffer } from "node:buffer";
-import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc";
+import { base64Decode, base64Encode } from "@bufbuild/protobuf/wire";
+import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc/client";
 import { OptionalScalarFeature } from "./optional_scalars_pb.js";
 
 export const OptionalStateSchema = Schema.Number;
@@ -1802,10 +1802,10 @@ const compact = <T extends Record<string, unknown>>(object: T): T => {
 };
 
 const fromGrpc$Bytes = (value: Uint8Array): string =>
-  Buffer.from(value).toString("base64");
+  base64Encode(value);
 
 const toGrpc$Bytes = (value: unknown): Uint8Array =>
-  Uint8Array.from(Buffer.from(value as string, "base64"));
+  base64Decode(value as string);
 
 export const fromOptionalScalars = (message: unknown): unknown => compact({
   name: CodegenSupport.readField(message, "name") == null ? undefined : (CodegenSupport.readField(message, "name")) as string,
@@ -1893,7 +1893,7 @@ exports[`proto feature fixtures > snapshots generated output 13`] = `
 /* eslint-disable */
 
 import { Context, Effect, Layer, Schema } from "effect";
-import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc";
+import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc/client";
 import { EmptyMessageFeature } from "./empty_messages_pb.js";
 
 export const GetStatusRequestSchema = Schema.Struct({
@@ -1993,8 +1993,8 @@ exports[`proto feature fixtures > snapshots generated output 14`] = `
 /* eslint-disable */
 
 import { Context, Effect, Layer, Schema } from "effect";
-import { Buffer } from "node:buffer";
-import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc";
+import { base64Decode, base64Encode } from "@bufbuild/protobuf/wire";
+import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc/client";
 import { BytesCollisionFeature } from "./bytes_collision_pb.js";
 
 export const Grpc$GoogleProtobufTimestampSchema = Schema.Date;
@@ -2044,10 +2044,10 @@ const compact = <T extends Record<string, unknown>>(object: T): T => {
 };
 
 const fromGrpc$Bytes = (value: Uint8Array): string =>
-  Buffer.from(value).toString("base64");
+  base64Encode(value);
 
 const toGrpc$Bytes = (value: unknown): Uint8Array =>
-  Uint8Array.from(Buffer.from(value as string, "base64"));
+  base64Decode(value as string);
 
 export const fromGrpc$GoogleProtobufTimestamp = (value: unknown): string => {
   const message = value as { readonly seconds?: bigint | number; readonly nanos?: number };
@@ -2368,7 +2368,7 @@ exports[`proto feature fixtures > snapshots generated output 15`] = `
 /* eslint-disable */
 
 import { Schema } from "effect";
-import { CodegenSupport } from "@effect-grpc/effect-grpc";
+import { CodegenSupport } from "@effect-grpc/effect-grpc/client";
 
 export const WidgetSchema = Schema.Struct({
   id: Schema.String,
@@ -2405,7 +2405,7 @@ export const toWidget = (value: unknown): Record<string, unknown> => {
 import { Context, Effect, Layer, Schema } from "effect";
 import type { Widget as Widget$1 } from "./same_name_common_effect_grpc.js";
 import { fromWidget as fromWidget$1, toWidget as toWidget$1, WidgetSchema as WidgetSchema$1 } from "./same_name_common_effect_grpc.js";
-import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc";
+import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc/client";
 import { SameNameFeature } from "./same_name_pb.js";
 
 export const WidgetSchema = Schema.Struct({

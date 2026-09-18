@@ -4,8 +4,8 @@
 
 import { Context, Effect, Layer, Schema, Stream } from "effect";
 import { FeatureUserSchema, fromFeatureUser, toFeatureUser } from "./common_effect_grpc.js";
-import { Buffer } from "node:buffer";
-import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc";
+import { base64Decode, base64Encode } from "@bufbuild/protobuf/wire";
+import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc/client";
 import { FeatureShowcaseService } from "./showcase_pb.js";
 
 export const UserStateSchema = Schema.Number;
@@ -66,10 +66,10 @@ const compact = <T extends Record<string, unknown>>(object: T): T => {
 };
 
 const fromGrpc$Bytes = (value: Uint8Array): string =>
-  Buffer.from(value).toString("base64");
+  base64Encode(value);
 
 const toGrpc$Bytes = (value: unknown): Uint8Array =>
-  Uint8Array.from(Buffer.from(value as string, "base64"));
+  base64Decode(value as string);
 
 const fromGrpc$GoogleProtobufTimestamp = (value: unknown): string => {
   const message = value as { readonly seconds?: bigint | number; readonly nanos?: number };

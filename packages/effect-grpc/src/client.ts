@@ -1,13 +1,11 @@
+/** Portable runtime for generated clients and custom Connect transports. */
 export * as CodegenSupport from "./CodegenSupport.js";
 export * as GrpcClient from "./GrpcClient.js";
-export * as GrpcAuth from "./GrpcAuth.js";
-export * as GrpcClientProtocol from "./GrpcClientProtocol.js";
-export * as GrpcHealth from "./GrpcHealth.js";
 export * as GrpcInvoker from "./GrpcInvoker.js";
 export * as GrpcMetadata from "./GrpcMetadata.js";
 export * as GrpcMethodRegistry from "./GrpcMethodRegistry.js";
-export * as GrpcNodeServer from "./GrpcNodeServer.js";
-export * as GrpcReflection from "./GrpcReflection.js";
+// Generated modules contain both clients and handler factories. The handler
+// seam is portable; only the Node adapter belongs to the root entrypoint.
 export * as GrpcServerProtocol from "./GrpcServerProtocol.js";
 export * as GrpcStatusCode from "./GrpcStatusCode.js";
 export * as GrpcStatusError from "./GrpcStatusError.js";

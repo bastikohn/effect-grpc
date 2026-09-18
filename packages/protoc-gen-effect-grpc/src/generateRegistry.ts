@@ -463,21 +463,17 @@ const oneofConverters = (
   "",
 ];
 
-// The base64 helpers (and the `node:buffer` import they need) are required
+// The portable protobuf base64 helpers are required
 // whenever base64 bytes conversion is emitted: a bytes scalar field, or a
 // BytesValue/Any well-known used as a field OR as a method input/output.
 const scalarConverters = (usage: FileUsage): ReadonlyArray<Printable> =>
   usage.usesBase64Bytes
     ? [
         `const from${bytesConverterName} = (value: Uint8Array): string =>`,
-        ["  ", sym.Buffer, `.from(value).toString("base64");`],
+        ["  ", sym.base64Encode, "(value);"],
         "",
         `const to${bytesConverterName} = (value: unknown): Uint8Array =>`,
-        [
-          "  Uint8Array.from(",
-          sym.Buffer,
-          `.from(value as string, "base64"));`,
-        ],
+        ["  ", sym.base64Decode, "(value as string);"],
         "",
       ]
     : [];

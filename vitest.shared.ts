@@ -11,6 +11,9 @@ export const createVitestConfig = (aliases: Record<string, string> = {}) =>
   defineConfig({
     resolve: {
       alias: {
+        "@effect-grpc/effect-grpc/client": resolveRepoPath(
+          "packages/effect-grpc/src/client.ts",
+        ),
         "@effect-grpc/effect-grpc": resolveRepoPath(
           "packages/effect-grpc/src/index.ts",
         ),

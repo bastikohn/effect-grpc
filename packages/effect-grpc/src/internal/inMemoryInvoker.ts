@@ -92,7 +92,12 @@ export const makeInMemory = (
                   Effect.andThen(
                     Effect.suspend(() => {
                       expired = deadlineExceeded();
-                      return Scope.close(producer, Exit.fail(expired));
+                      // The failed pull closes the call scope and interrupts
+                      // this timer. Finish producer cleanup before that close
+                      // returns, including asynchronous finalizers.
+                      return Effect.uninterruptible(
+                        Scope.close(producer, Exit.fail(expired)),
+                      );
                     }),
                   ),
                 ),

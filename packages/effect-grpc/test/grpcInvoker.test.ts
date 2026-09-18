@@ -1,6 +1,7 @@
 import type { Transport } from "@connectrpc/connect";
 import { Code, ConnectError } from "@connectrpc/connect";
 import {
+  Channel,
   Context,
   Deferred,
   Effect,
@@ -8,6 +9,7 @@ import {
   Fiber,
   Metric,
   Ref,
+  Scope,
   Stream,
 } from "effect";
 import * as Tracer from "effect/Tracer";
@@ -433,6 +435,65 @@ describe("GrpcInvoker (in-memory adapter)", () => {
     );
     expect([requestsFinalized, responsesFinalized]).toEqual([1, 1]);
   });
+
+  for (const shape of ["server-streaming", "bidi-streaming"] as const) {
+    for (const phase of [
+      "pull",
+      "delayed setup",
+      "never-ending setup",
+    ] as const) {
+      it(`awaits asynchronous ${shape} cleanup during ${phase} before returning the deadline failure`, async () => {
+        let cleanupStarted = 0;
+        let cleanupCompleted = 0;
+        const handler = () =>
+          Stream.fromChannel(
+            Channel.fromTransform((_upstream, scope) =>
+              Effect.gen(function* () {
+                yield* Scope.addFinalizer(
+                  scope,
+                  Effect.sync(() => {
+                    cleanupStarted += 1;
+                  }).pipe(
+                    Effect.andThen(Effect.sleep(80)),
+                    Effect.andThen(
+                      Effect.sync(() => {
+                        cleanupCompleted += 1;
+                      }),
+                    ),
+                  ),
+                );
+                if (phase === "delayed setup") yield* Effect.sleep(200);
+                if (phase === "never-ending setup") yield* Effect.never;
+                return Effect.never;
+              }),
+            ),
+          );
+        const error = await withInvoker(
+          { "test.Svc/Stream": { kind: shape, handler } },
+          (invoker) =>
+            Effect.flip(
+              Stream.runDrain(
+                shape === "server-streaming"
+                  ? invoker.serverStream(
+                      "test.Svc/Stream",
+                      {},
+                      { timeoutMs: 20 },
+                    )
+                  : invoker.bidiStream("test.Svc/Stream", Stream.empty, {
+                      timeoutMs: 20,
+                    }),
+              ),
+            ),
+        );
+
+        expect((error as GrpcStatusError.GrpcStatusError).code).toBe(
+          "deadline_exceeded",
+        );
+        expect(cleanupStarted).toBe(1);
+        expect(cleanupCompleted).toBe(1);
+      });
+    }
+  }
 
   // Once the caller's request stream has failed, that failure owns the call —
   // as for client-streaming, a deadline that expires while the handler is

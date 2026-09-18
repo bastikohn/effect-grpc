@@ -69,3 +69,21 @@ schemas or converters.
 Package smoke must exercise packed packages, root exports, blocked internal
 subpaths, package JSON imports, the plugin binary, real Buf generation, and
 typechecking of generated output in a temporary consumer.
+
+### Compatibility gates
+
+`invokerParity.test.ts` runs shared scenarios through the in-memory invoker and
+an actual HTTP/2 transport: frequent server/bidi responses cannot renew a call
+budget, a paused consumer cannot keep producer resources alive past its deadline,
+early termination awaits local request-source cleanup, a captured request error
+retains its identity during recovery, and concurrent metadata remains isolated.
+Wire cleanup is observed through a bounded server-finalization signal; a client
+response cannot promise that remote cleanup has already completed.
+
+Keep these tests alongside `grpcInvoker.test.ts`'s setup deadlines and asynchronous
+scope-finalizer regressions, and the native `serverContext.test.ts` /
+`server-context-e2e.test.ts` context/interceptor isolation tests. These are part of
+`pnpm check:ci`; dependency and test-harness migrations must preserve their cases.
+The same gate packs and installs the packages, then compiles a consumer with the
+minimum supported TypeScript 5.9.3 and native TypeScript 7.0.2, checking the actual
+compiler versions. The two compiler checks live in `scripts/package-smoke.mjs`.

@@ -98,6 +98,10 @@ const program = Effect.gen(function* () {
 - Custom client interceptors: pass connect `Interceptor`s via `interceptors`,
   or build metadata-resolving ones with
   `GrpcClientProtocol.metadataInterceptor`.
+- Custom server interceptors via `interceptors` on
+  `GrpcNodeServer.serve`/`serveAll`, and a per-call handler context with
+  the method identity, the call signal, the remaining deadline, and typed
+  values interceptors attach.
 
 ## Error model
 
@@ -118,6 +122,7 @@ value that contradicts its key fails the call with `invalid_argument`.
 
 - [Getting started](https://github.com/bastikohn/effect-grpc/blob/main/docs/users/getting-started.md)
   — codegen setup, TLS/mTLS, bearer authentication.
+- [Server call context and interceptors](https://github.com/bastikohn/effect-grpc/blob/main/docs/users/server-context.md)
 - [Current limitations](https://github.com/bastikohn/effect-grpc/blob/main/docs/users/limitations.md)
 - [Repository](https://github.com/bastikohn/effect-grpc)
 

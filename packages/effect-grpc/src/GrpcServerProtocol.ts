@@ -166,7 +166,7 @@ export const make = (
             const recordStatus = serverRecorder(entry, span);
             record = recordStatus;
             const result = yield* Effect.raceFirst(
-              body({ metadata: GrpcMetadata.fromHeaders(headers) }),
+              body(makeServerContext(entry, handlerContext)),
               abortFailure(handlerContext.signal),
             ).pipe(Effect.exit);
             if (result._tag === "Failure") {
@@ -242,7 +242,7 @@ export const make = (
       // stream's cause channel, where the pump normalizes it (-> INTERNAL)
       // and the `finally` below still closes the span scope.
       const responses = Stream.suspend(() =>
-        body({ metadata: GrpcMetadata.fromHeaders(headers) }),
+        body(makeServerContext(entry, handlerContext)),
       );
       // The pump spawns the handler fiber with this context, so the scoped
       // span parents the handler's spans.
@@ -370,6 +370,26 @@ export const make = (
   });
 
 const emptyHandlers: GrpcHandlers = new Map();
+
+/**
+ * The handler's view of one call, built per RPC from connect's context (the
+ * one interceptors have already run on). Metadata and method identity are
+ * snapshots; the signal is connect's own, and the remaining time and typed
+ * values are read from the call at the moment a handler asks.
+ */
+const makeServerContext = (
+  entry: GrpcMethodEntry,
+  handlerContext: HandlerContext,
+): GrpcServerContext => ({
+  metadata: GrpcMetadata.fromHeaders(handlerContext.requestHeader),
+  method: { tag: entry.tag, kind: entry.kind },
+  signal: handlerContext.signal,
+  remainingTimeoutMs: () => {
+    const remaining = handlerContext.timeoutMs();
+    return remaining === undefined ? undefined : Math.max(0, remaining);
+  },
+  getContextValue: (key) => handlerContext.values.get(key),
+});
 
 /**
  * Result of a spanned server call. Failures are carried as values so the

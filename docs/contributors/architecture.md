@@ -17,6 +17,14 @@ of the `GrpcServerProtocol.GrpcHandlers` map — the single server-side handler
 seam.
 Runtime code should not need to inspect `.proto` files.
 
+Server-side cross-cutting behavior is connect's: `GrpcNodeServer.serve` and
+`serveAll` forward native `Interceptor`s to the connect node adapter, once,
+and nowhere else. Handlers see one call through
+`CodegenSupport.GrpcServerContext`, a per-RPC view the server protocol maps
+from connect's `HandlerContext` (metadata, method identity, the live signal,
+the live remaining time, and typed context values). There is no second
+interceptor dispatcher and no Effect middleware pipeline.
+
 Symbols exported from package roots are public. Files under `internal/*` are not
 public and package exports intentionally block those subpaths.
 
@@ -42,13 +50,17 @@ failures, cancellation in both directions, and protocol scope finalization.
 
 Runtime protocol tests should cover behavior that can be asserted without a
 real socket, including the codec error policy per call shape, unimplemented
-methods, and handler interruption when a call is aborted.
+methods, handler interruption when a call is aborted, and the per-call
+handler context (`test/serverContext.test.ts`, against a fake connect
+`HandlerContext` with its own values store and timeout getter). The
+`interceptors` option itself bypasses that fake router, so it is covered only
+by the native-transport suite (`examples/simple-client/test/server-context-e2e.test.ts`).
 `GrpcInvoker.layerInMemory` is the network-free stand-in for the client seam,
 and invoker tests assert both adapters share invocation semantics, including
 the public deadline contract: a positive `timeoutMs` bounds the lifetime of
 every call shape with `deadline_exceeded`. The in-memory adapter stays at the
 domain level on purpose — it does not emulate HTTP/2, wire framing, or
-`grpc-timeout` headers.
+`grpc-timeout` headers, or native server interceptors.
 
 Generator tests should use descriptor/plugin fixtures for every unsupported
 protobuf construct so codegen fails clearly instead of emitting incorrect

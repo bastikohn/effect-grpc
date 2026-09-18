@@ -31,6 +31,8 @@ Private workspace packages under `examples/`:
 
 Shipped:
 
+- [x] Explicitly retry-safe unary calls with bounded retries and one deadline budget.
+
 - [x] All four gRPC method kinds: unary, server-streaming, client-streaming,
       and bidi-streaming.
 - [x] Build-time `.proto` code generation with Buf/protoc
@@ -54,7 +56,6 @@ Shipped:
 
 Planned:
 
-- [ ] Client retry policies.
 - [ ] gRPC-Web support.
 - [ ] Track Effect v4 to a stable release and drop the beta pin.
 - [ ] Stable `1.0.0` release from the main (v4) line.

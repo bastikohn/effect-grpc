@@ -132,3 +132,53 @@ value that contradicts its key fails the call with `invalid_argument`.
 ## License
 
 [Apache-2.0](https://github.com/bastikohn/effect-grpc/blob/main/LICENSE)
+
+## Opt-in unary retries
+
+Declare replay safety explicitly for each unary operation you choose to retry:
+
+```ts
+import { GrpcRetry } from "@effect-grpc/effect-grpc";
+
+const response =
+  yield *
+  GrpcRetry.unary((options) => client.getUser({ id: "42" }, options), {
+    retrySafe: true,
+    maxAttempts: 3,
+    retryableCodes: ["unavailable", "resource_exhausted"],
+    callOptions: { timeoutMs: 1500 },
+    // In a server handler, optionally pass its live upstream budget:
+    context,
+  });
+```
+
+`retrySafe: true` is an application promise: replaying this operation must be safe,
+for example a read or an operation protected by an application idempotency key.
+The library cannot infer this from a method name or guarantee whether a failed
+attempt committed server-side. Ordinary generated calls keep their existing
+single-attempt behavior. This helper accepts unary Effects; it does not replay
+request streams or reconnect response streams.
+
+`maxAttempts` includes the first attempt. Only the listed typed gRPC status errors
+retry; defects and interruption pass through, and attempt exhaustion preserves the
+last error object. The policy requires a positive safe integer attempt count and
+finite, nonnegative delay limits; invalid policies fail as defects before invoking
+the callback.
+
+Backoff doubles from `initialDelayMs` (default 100), capped at `maxDelayMs` (default
+1000). Full jitter chooses a delay from zero up to that cap on each retry; set
+`jitter: false` for fixed exponential delays. Randomness uses Effect's Random service.
+Interruption cancels the active attempt or backoff and prevents further attempts.
+
+Call options are sampled when the returned Effect runs. A positive `timeoutMs` is
+one overall budget covering every attempt, asynchronous setup, and backoff.
+Remaining time is recomputed before each attempt, and optional `context` budgets
+are read live through `GrpcDeadline.callOptions`; the tighter deadline wins. An
+exhausted budget fails before the next callback. Pass the callback's options to
+the generated method and place asynchronous per-attempt setup inside its returned
+Effect. The helper also enforces the budget if that setup is slow or never finishes.
+
+A transport's `defaultTimeoutMs` is invisible to this callback helper and may
+apply separately to each transport attempt. Supply `callOptions.timeoutMs` or a
+live upstream `context` when an overall time limit is required. Without either,
+attempts are still bounded in number, but elapsed time is not bounded by the helper.

@@ -18,6 +18,7 @@ import {
   GrpcMethodRegistry,
   GrpcNodeServer,
   GrpcReflection,
+  GrpcRetry,
   GrpcServerProtocol,
   GrpcStatusError,
   type GrpcStatusCode,
@@ -62,6 +63,32 @@ const implementation: UserServiceImplementation = {
 };
 
 describe("public API", () => {
+  it("requires opt-in unary effects and preserves service requirements", () => {
+    const policy = {
+      retrySafe: true,
+      maxAttempts: 3,
+      retryableCodes: ["unavailable"],
+    } as const;
+    const invocation: (
+      options: CodegenSupport.GrpcCallOptions,
+    ) => Effect.Effect<
+      string,
+      GrpcStatusError.GrpcStatusError,
+      AuthToken
+    > = () => Effect.map(authMetadata, () => "ok");
+    expect(GrpcRetry.unary(invocation, policy)).type.toBe<
+      Effect.Effect<string, GrpcStatusError.GrpcStatusError, AuthToken>
+    >();
+    expect(GrpcRetry.unary).type.not.toBeCallableWith(invocation, {
+      ...policy,
+      retrySafe: false,
+    });
+    expect(GrpcRetry.unary).type.not.toBeCallableWith(
+      () => Stream.succeed("message"),
+      policy,
+    );
+  });
+
   it("exposes execution-time deadline options with typed failure", () => {
     expect(GrpcDeadline.callOptions(context, { timeoutMs: 50 })).type.toBe<
       Effect.Effect<

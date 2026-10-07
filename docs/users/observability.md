@@ -118,9 +118,9 @@ v4 ships OTLP exporters in core — no extra packages needed:
 
 ```ts
 import { Layer } from "effect";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
-import * as Otlp from "effect/unstable/observability/Otlp";
-import * as OtlpSerialization from "effect/unstable/observability/OtlpSerialization";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
+import * as Otlp from "effect/observability/Otlp";
+import * as OtlpSerialization from "effect/observability/OtlpSerialization";
 
 const ObservabilityLayer = Otlp.layer({
   baseUrl: "http://localhost:4318",
@@ -133,4 +133,4 @@ Provide `ObservabilityLayer` alongside your gRPC client/server layers and all
 other setup that provides Effect's `Tracer` service (for example
 `@effect/opentelemetry/Tracer` bridging to an OpenTelemetry SDK tracer) or
 polls `Metric.snapshot` (for example
-`effect/unstable/observability/PrometheusMetrics`) works the same way.
+`effect/observability/PrometheusMetrics`) works the same way.

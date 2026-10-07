@@ -33,10 +33,10 @@ one transport and registry:
 
 ## Effect Compatibility
 
-This prototype currently targets `effect@4.0.0-rc.115`. It uses unstable
-Effect modules (e.g. `effect/unstable/http` for trace-context propagation), so
-compatibility is intentionally pinned. Effect prerelease upgrades must update
-tests, generated code, and package smoke together.
+This library targets stable Effect v4 (`effect@^4.0.1`). It uses Effect
+modules still marked `@stability unstable` (e.g. `effect/http/HttpTraceContext`
+for trace-context propagation), so Effect upgrades must update tests, generated
+code, and package smoke together.
 
 The generator currently supports:
 

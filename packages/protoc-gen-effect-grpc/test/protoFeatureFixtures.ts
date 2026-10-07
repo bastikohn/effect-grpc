@@ -159,9 +159,6 @@ export const runTypecheck = () => {
             effect: [
               "../../../../effect-grpc/node_modules/effect/dist/index.d.ts",
             ],
-            "effect/unstable/http/*": [
-              "../../../../effect-grpc/node_modules/effect/dist/unstable/http/*.d.ts",
-            ],
           },
         },
         include: staged.map((feature) => `${feature}/**/*.ts`),

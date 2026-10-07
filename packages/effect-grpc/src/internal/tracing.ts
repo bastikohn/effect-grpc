@@ -1,7 +1,7 @@
 import { Context, Exit, Metric, Option } from "effect";
 import * as Tracer from "effect/Tracer";
-import * as Headers from "effect/unstable/http/Headers";
-import * as HttpTraceContext from "effect/unstable/http/HttpTraceContext";
+import * as Headers from "effect/http/Headers";
+import * as HttpTraceContext from "effect/http/HttpTraceContext";
 
 import type { GrpcMethodEntry } from "../GrpcMethodRegistry.js";
 import type { GrpcStatusCode } from "../GrpcStatusCode.js";

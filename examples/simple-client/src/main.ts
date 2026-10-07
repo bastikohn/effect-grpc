@@ -1,6 +1,6 @@
 import { NodeRuntime, NodeServices } from "@effect/platform-node";
 import { Console, Duration, Effect, Layer, Stream } from "effect";
-import { CliError, Command, Flag } from "effect/unstable/cli";
+import { CliError, Command, Flag } from "effect/cli";
 
 import { GrpcClientProtocol } from "@effect-grpc/effect-grpc";
 import {

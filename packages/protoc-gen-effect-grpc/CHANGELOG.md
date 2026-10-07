@@ -1,5 +1,7 @@
 # @effect-grpc/protoc-gen-effect-grpc
 
+## 1.0.0-beta.6
+
 ## 1.0.0-beta.5
 
 ### Minor Changes

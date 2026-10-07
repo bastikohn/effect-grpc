@@ -12,6 +12,7 @@
     "call-option-and-status-semantics",
     "client-and-bidi-streaming",
     "client-transport-options-and-metadata-interceptor",
+    "effect-4-0-1",
     "effect-rc-115",
     "effect-v4-one-oh",
     "empty-message-unused-params",

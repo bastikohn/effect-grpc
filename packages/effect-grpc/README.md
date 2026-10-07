@@ -21,9 +21,9 @@ TypeScript consumers require TypeScript >= 5.9.3; CI verifies packed packages
 and generated clients with TypeScript 5.9.3 and 7.0.2.
 
 > [!NOTE]
-> The current prerelease line targets `effect@4.0.0-rc.115` exactly (it
-> builds on unstable Effect modules). Install from the `next` dist-tag for
-> Effect v4 prereleases, or `latest` for the Effect v3 line.
+> The current prerelease line targets stable Effect v4 (`effect@^4.0.1`).
+> Install from the `next` dist-tag for Effect v4, or `latest` for the Effect
+> v3 line.
 
 ## Quickstart
 

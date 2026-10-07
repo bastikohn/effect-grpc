@@ -25,11 +25,11 @@
       groupName: "github actions",
     },
     {
-      // These Effect packages follow a coordinated prerelease upgrade policy
-      // (see catalog in pnpm-workspace.yaml and the effect peer dependency):
-      // each bump updates tests, generated code, and package smoke together.
-      // Surface new prereleases on the Dependency Dashboard, but only open
-      // a PR after manual approval there.
+      // These Effect packages follow a coordinated upgrade policy (see
+      // catalog in pnpm-workspace.yaml and the effect peer dependency): each
+      // bump updates tests, generated code, and package smoke together.
+      // Surface new releases on the Dependency Dashboard, but only open a PR
+      // after manual approval there.
       description: "Effect upgrades are manual and coordinated",
       matchPackageNames: [
         "effect",
@@ -37,7 +37,7 @@
         "@effect/opentelemetry",
         "@effect/vitest",
       ],
-      groupName: "effect (coordinated prerelease)",
+      groupName: "effect (coordinated)",
       dependencyDashboardApproval: true,
     },
   ],

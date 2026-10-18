@@ -19,8 +19,9 @@ one transport and registry:
   does not emulate wire framing or native server interceptors.
 - Handlers observe the incoming deadline through
   `GrpcServerContext.remainingTimeoutMs()` but nothing propagates it to
-  outgoing calls automatically; response headers and trailers cannot be set
-  from a handler yet.
+  outgoing calls automatically. Use `GrpcDeadline.callOptions` immediately
+  before an outgoing RPC for [opt-in budget propagation](server-context.md#propagating-the-remaining-budget).
+  Response headers and trailers cannot be set from a handler yet.
 - gRPC has no channel for a client-side error other than cancelling the call.
   If the request `Stream` passed to a generated client method fails, the call
   is cancelled (the server observes `cancelled` or an interrupted handler) and

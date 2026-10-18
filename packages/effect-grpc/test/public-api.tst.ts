@@ -11,6 +11,7 @@ import {
   CodegenSupport,
   GrpcAuth,
   GrpcClientProtocol,
+  GrpcDeadline,
   GrpcHealth,
   GrpcInvoker,
   GrpcMetadata,
@@ -61,6 +62,15 @@ const implementation: UserServiceImplementation = {
 };
 
 describe("public API", () => {
+  it("exposes execution-time deadline options with typed failure", () => {
+    expect(GrpcDeadline.callOptions(context, { timeoutMs: 50 })).type.toBe<
+      Effect.Effect<
+        CodegenSupport.GrpcCallOptions,
+        GrpcStatusError.GrpcStatusError
+      >
+    >();
+  });
+
   it("keeps runtime constructors callable", () => {
     expect(GrpcStatusError.notFound).type.toBeCallableWith("missing");
     expect(GrpcClientProtocol.layer).type.toBeCallableWith({

@@ -102,6 +102,9 @@ const program = Effect.gen(function* () {
   `GrpcNodeServer.serve`/`serveAll`, and a per-call handler context with
   the method identity, the call signal, the remaining deadline, and typed
   values interceptors attach.
+- Opt-in downstream deadline propagation with `GrpcDeadline.callOptions`:
+  read the live incoming budget immediately before an RPC, preserve a tighter
+  caller timeout, and fail before downstream work when the budget is exhausted.
 
 ## Error model
 

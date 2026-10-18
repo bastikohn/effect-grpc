@@ -84,3 +84,9 @@ types, and proto2 required/default behavior — see
 ## License
 
 [Apache-2.0](https://github.com/bastikohn/effect-grpc/blob/main/LICENSE)
+
+Generated modules import `@effect-grpc/effect-grpc/client`, the portable runtime
+entrypoint, and encode bytes without `node:buffer`. Update the runtime and generator
+together, then regenerate existing files before bundling a client for the browser.
+The generated handler factories remain usable by Node servers through the normal
+root runtime entrypoint.

@@ -3,7 +3,7 @@
 /* eslint-disable */
 
 import { Schema } from "effect";
-import { CodegenSupport } from "@effect-grpc/effect-grpc";
+import { CodegenSupport } from "@effect-grpc/effect-grpc/client";
 
 export const FeatureUserSchema = Schema.Struct({
   id: Schema.String,

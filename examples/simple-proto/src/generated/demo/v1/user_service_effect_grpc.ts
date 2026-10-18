@@ -3,7 +3,7 @@
 /* eslint-disable */
 
 import { Context, Effect, Layer, Schema, Stream } from "effect";
-import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc";
+import { CodegenSupport, GrpcInvoker, GrpcMethodRegistry, GrpcServerProtocol, GrpcStatusError } from "@effect-grpc/effect-grpc/client";
 import { UserService } from "./user_service_pb.js";
 
 export const GetUserRequestSchema = Schema.Struct({

@@ -44,7 +44,11 @@
       "default": "./dist/index.mjs"
     },
     "./package.json": "./package.json",
-    "./internal/*": null
+    "./internal/*": null,
+    "./client": {
+      "types": "./dist/client.d.mts",
+      "default": "./dist/client.mjs"
+    }
   },
   "main": "./dist/index.mjs",
   "module": "./dist/index.mjs",

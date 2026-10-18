@@ -18,6 +18,7 @@ import * as GrpcStatusError from "./GrpcStatusError.js";
 import * as MethodRegistry from "./GrpcMethodRegistry.js";
 import * as StreamBridge from "./internal/streamBridge.js";
 import * as GrpcTracing from "./internal/tracing.js";
+import { metadataViolation } from "./internal/invoker.js";
 
 export interface GrpcServerProtocolOptions {
   readonly registry: GrpcMethodRegistry;
@@ -159,6 +160,7 @@ export const make = (
       const headers = Array.from(handlerContext.requestHeader.entries());
       let record: GrpcTracing.StatusRecorder | undefined;
       let outcome: ServerCallOutcome;
+      const call = makeServerContext(entry, handlerContext);
       try {
         outcome = await run(
           Effect.gen(function* () {
@@ -166,7 +168,7 @@ export const make = (
             const recordStatus = serverRecorder(entry, span);
             record = recordStatus;
             const result = yield* Effect.raceFirst(
-              body(makeServerContext(entry, handlerContext)),
+              body(call.context),
               abortFailure(handlerContext.signal),
             ).pipe(Effect.exit);
             if (result._tag === "Failure") {
@@ -201,6 +203,8 @@ export const make = (
         const error = rejectionError(cause, handlerContext.signal);
         record?.(error.code);
         throw GrpcStatusError.toConnectError(error);
+      } finally {
+        call.close();
       }
       if (!outcome.ok) {
         throw GrpcStatusError.toConnectError(outcome.error);
@@ -237,13 +241,12 @@ export const make = (
       let spanExit: Exit.Exit<void, GrpcStatusError.GrpcStatusError> =
         Exit.void;
       let completed = false;
+      const call = makeServerContext(entry, handlerContext);
       // The stream adapters invoke user handler code eagerly, so `body` can
       // throw synchronously. `Stream.suspend` moves that throw into the
       // stream's cause channel, where the pump normalizes it (-> INTERNAL)
       // and the `finally` below still closes the span scope.
-      const responses = Stream.suspend(() =>
-        body(makeServerContext(entry, handlerContext)),
-      );
+      const responses = Stream.suspend(() => body(call.context));
       // The pump spawns the handler fiber with this context, so the scoped
       // span parents the handler's spans.
       const handlerFiberContext = Context.add(context, Tracer.ParentSpan, span);
@@ -270,6 +273,7 @@ export const make = (
         while (true) {
           const next = await pump.next();
           if (next.done) break;
+          call.commitHeaders();
           yield next.value;
         }
         completed = true;
@@ -302,6 +306,7 @@ export const make = (
         try {
           await pump.close();
         } finally {
+          call.close();
           await run(Scope.close(spanScope, spanExit));
         }
       }
@@ -380,16 +385,74 @@ const emptyHandlers: GrpcHandlers = new Map();
 const makeServerContext = (
   entry: GrpcMethodEntry,
   handlerContext: HandlerContext,
-): GrpcServerContext => ({
-  metadata: GrpcMetadata.fromHeaders(handlerContext.requestHeader),
-  method: { tag: entry.tag, kind: entry.kind },
-  signal: handlerContext.signal,
-  remainingTimeoutMs: () => {
-    const remaining = handlerContext.timeoutMs();
-    return remaining === undefined ? undefined : Math.max(0, remaining);
-  },
-  getContextValue: (key) => handlerContext.values.get(key),
-});
+) => {
+  let headersCommitted = false;
+  let closed = false;
+  const write =
+    (target: Headers, isHeader: boolean) =>
+    (
+      metadata: GrpcMetadata.GrpcMetadata,
+    ): Effect.Effect<void, GrpcStatusError.GrpcStatusError> =>
+      Effect.suspend(() => {
+        if (
+          closed ||
+          handlerContext.signal.aborted ||
+          (isHeader && headersCommitted)
+        ) {
+          return Effect.fail(
+            GrpcStatusError.make({
+              code: "failed_precondition",
+              message: "Response metadata is already committed",
+            }),
+          );
+        }
+        const reserved = metadata.find(([key]) => {
+          const lower = key.toLowerCase();
+          return (
+            lower.startsWith("grpc-") ||
+            [
+              "content-type",
+              "content-length",
+              "transfer-encoding",
+              "connection",
+              "te",
+              "trailer",
+            ].includes(lower)
+          );
+        });
+        const violation =
+          metadataViolation(metadata) ??
+          (reserved
+            ? `Reserved response metadata key: ${reserved[0]}`
+            : undefined);
+        if (violation)
+          return Effect.fail(GrpcStatusError.invalidArgument(violation));
+        for (const [key, value] of GrpcMetadata.toHeaders(metadata))
+          target.append(key, value);
+        return Effect.void;
+      });
+  const context: GrpcServerContext = {
+    metadata: GrpcMetadata.fromHeaders(handlerContext.requestHeader),
+    method: { tag: entry.tag, kind: entry.kind },
+    signal: handlerContext.signal,
+    remainingTimeoutMs: () => {
+      const remaining = handlerContext.timeoutMs();
+      return remaining === undefined ? undefined : Math.max(0, remaining);
+    },
+    getContextValue: (key) => handlerContext.values.get(key),
+    writeResponseHeaders: write(handlerContext.responseHeader, true),
+    writeResponseTrailers: write(handlerContext.responseTrailer, false),
+  };
+  return {
+    context,
+    commitHeaders: () => {
+      headersCommitted = true;
+    },
+    close: () => {
+      closed = true;
+    },
+  };
+};
 
 /**
  * Result of a spanned server call. Failures are carried as values so the

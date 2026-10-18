@@ -51,6 +51,8 @@ export const handlerContext = (options?: {
 }): HandlerContext =>
   ({
     requestHeader: new Headers(options?.headers),
+    responseHeader: new Headers(),
+    responseTrailer: new Headers(),
     signal: options?.signal ?? new AbortController().signal,
     timeoutMs: options?.timeoutMs ?? (() => undefined),
     values: options?.values ?? createContextValues(),

@@ -98,11 +98,14 @@ export const refreshingTokenLayer = <E, R, E2, R2>(
         // Never let a failed cycle kill the daemon; try again next interval.
         Effect.ignore,
       );
-      yield* Effect.forkScoped(
-        Effect.repeat(
-          Effect.sleep(options.interval).pipe(Effect.andThen(refreshOnce)),
-          Schedule.forever,
-        ),
+      // `Schedule.spaced` waits the interval after each cycle completes, so
+      // a slow refresh never drifts the following one. The first cycle runs
+      // as soon as the layer is live: an immediate re-mint is one extra call
+      // and proves the refresh path (and its failure log) right away.
+      yield* refreshOnce.pipe(
+        Effect.repeat(Schedule.spaced(options.interval)),
+        Effect.interruptible,
+        Effect.forkScoped,
       );
       return { read: Ref.get(ref) };
     }),

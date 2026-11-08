@@ -1,6 +1,6 @@
 import { PgConnection } from "@effect/sql-pg"
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Fiber, Redacted } from "effect"
+import { Effect, Exit, Fiber, Option, Redacted, Scheduler, Scope, Stream } from "effect"
 import * as TestClock from "effect/testing/TestClock"
 import { mkdtemp, rm } from "node:fs/promises"
 import * as Net from "node:net"
@@ -11,6 +11,10 @@ import type * as Tls from "node:tls"
 import { vi } from "vitest"
 
 const tlsOptions = new WeakMap<Duplex, Tls.ConnectionOptions | undefined>()
+
+vi.mock("node:net", async (importOriginal) => ({
+  ...await importOriginal<typeof Net>()
+}))
 
 // Only simulate TLS for registered streams; other connections use native TLS.
 vi.mock("node:tls", async (importOriginal) => {
@@ -96,6 +100,22 @@ const frontendTags = (message: Buffer): ReadonlyArray<string> => {
   return tags
 }
 
+const frontendPreparedNames = (message: Buffer): ReadonlyArray<string> => {
+  const names: Array<string> = []
+  let offset = 0
+  while (offset < message.length) {
+    const tag = String.fromCharCode(message[offset])
+    const length = message.readInt32BE(offset + 1)
+    if (tag === "P") {
+      const nameStart = offset + 5
+      const nameEnd = message.indexOf(0, nameStart)
+      names.push(message.subarray(nameStart, nameEnd).toString())
+    }
+    offset += 1 + length
+  }
+  return names
+}
+
 const consumeFrontend = (
   socket: Net.Socket,
   onMessage: (tag: string | undefined, message: Buffer) => void
@@ -113,7 +133,7 @@ const consumeFrontend = (
       const message = buffered.subarray(0, messageLength)
       buffered = buffered.subarray(messageLength)
       const tag = startup ? undefined : String.fromCharCode(message[0])
-      startup = false
+      startup = tag === undefined && message.equals(sslRequest)
       onMessage(tag, message)
     }
   })
@@ -193,7 +213,139 @@ const withUnixServer = (
       })
   )
 
+interface KeepAliveConnection {
+  readonly socket: Net.Socket
+  readonly options: Net.NetConnectOpts
+}
+
+const withKeepAliveServer = Effect.fnUntraced(function*(options?: { readonly tls?: boolean }) {
+  const { port } = yield* withTcpServer((socket) => {
+    consumeFrontend(socket, (tag, message) => {
+      if (tag === undefined && message.equals(sslRequest)) socket.write(Buffer.from("S"))
+      else if (tag === undefined && message.equals(cancelRequest)) socket.end()
+      else if (tag === undefined) socket.write(Buffer.concat([authenticationOk, backendKeyData, readyForQuery]))
+      else if (tag === "S") socket.write(emptyQueryResult)
+    })
+  })
+  const connections: Array<KeepAliveConnection> = []
+  const original = Net.connect
+  yield* Effect.acquireRelease(
+    Effect.sync(() =>
+      vi.spyOn(Net, "connect").mockImplementation(
+        ((connectOptions: Net.NetConnectOpts) => {
+          const socket = original(connectOptions)
+          if ("port" in connectOptions && connectOptions.port === port) {
+            connections.push({ socket, options: connectOptions })
+            if (options?.tls) tlsOptions.set(socket, undefined)
+          }
+          return socket
+        }) as typeof Net.connect
+      )
+    ),
+    (spy) => Effect.sync(() => spy.mockRestore())
+  )
+  return { config: { host: "127.0.0.1", port, username: "test" }, connections }
+})
+
 describe("PgConnection in-process server", () => {
+  describe("TCP keepalive", { concurrent: false }, () => {
+    it.live("leaves keepalives disabled by default", () =>
+      Effect.scoped(Effect.gen(function*() {
+        const { config, connections } = yield* withKeepAliveServer()
+        const connection = yield* PgConnection.make(config)
+        yield* connection.interrupt
+        assert.deepStrictEqual(connections.map(({ options }) => options.keepAlive), [undefined, undefined])
+      })))
+
+    it.live("enables keepalive at TCP connect time but not for cancellation", () =>
+      Effect.scoped(Effect.gen(function*() {
+        const { config, connections } = yield* withKeepAliveServer()
+        const connection = yield* PgConnection.make({ ...config, keepAlive: "30 seconds" })
+        yield* connection.interrupt
+        assert.deepStrictEqual(connections.map(({ options }) => [options.keepAlive, options.keepAliveInitialDelay]), [
+          [true, 30_000],
+          [undefined, undefined]
+        ])
+      })))
+
+    it.live("configures keepalive before TLS", () =>
+      Effect.scoped(Effect.gen(function*() {
+        const { config, connections } = yield* withKeepAliveServer({ tls: true })
+        yield* PgConnection.make({
+          ...config,
+          keepAlive: "15 seconds",
+          ssl: { rejectUnauthorized: false }
+        })
+        assert.deepStrictEqual(connections.map(({ options }) => [options.keepAlive, options.keepAliveInitialDelay]), [
+          [true, 15_000]
+        ])
+        assert.strictEqual(tlsOptions.get(connections[0]!.socket)?.rejectUnauthorized, false)
+      })))
+
+    it.effect("leaves caller-supplied streams unconfigured", () =>
+      Effect.gen(function*() {
+        const stream = makeSslStream("S", false)
+        const setKeepAlive = vi.fn()
+        Object.assign(stream.socket, { setKeepAlive })
+        yield* PgConnection.make({
+          username: "test",
+          ssl: true,
+          keepAlive: "30 seconds",
+          stream: () => stream.socket
+        })
+        assert.strictEqual(setKeepAlive.mock.calls.length, 0)
+      }))
+
+    it.live("leaves Unix sockets unconfigured", () =>
+      Effect.scoped(Effect.gen(function*() {
+        const { directory } = yield* withUnixServer((socket) => {
+          consumeFrontend(socket, (tag) => {
+            if (tag === undefined) socket.write(Buffer.concat([authenticationOk, backendKeyData, readyForQuery]))
+          })
+        })
+        const spy = yield* Effect.acquireRelease(
+          Effect.sync(() => vi.spyOn(Net.Socket.prototype, "setKeepAlive")),
+          (spy) => Effect.sync(() => spy.mockRestore())
+        )
+        yield* PgConnection.make({ host: directory, username: "test", keepAlive: "30 seconds" })
+        assert.deepStrictEqual(spy.mock.calls, [])
+      })))
+  })
+
+  it.live("forwards startup defaults and lets explicit fields override URL values", () =>
+    Effect.scoped(Effect.gen(function*() {
+      let parameters: ReadonlyMap<string, string> | undefined
+      const { port } = yield* withTcpServer((socket) => {
+        consumeFrontend(socket, (tag, message) => {
+          if (tag === undefined) {
+            parameters = startupParameters(message)
+            socket.write(Buffer.concat([authenticationOk, backendKeyData, readyForQuery]))
+          }
+        })
+      })
+      const config = {
+        host: "127.0.0.1",
+        port,
+        url: Redacted.make(
+          "postgres://test@localhost/db?application_name=url-app&options=-c%20statement_timeout%3D1234"
+        ),
+        startupParameters: { SEARCH_PATH: "public", CLIENT_ENCODING: "uTf-8", application_name: "named-app" }
+      }
+      yield* PgConnection.make(config)
+      assert.deepStrictEqual(Object.fromEntries(parameters!), {
+        user: "test",
+        database: "db",
+        application_name: "named-app",
+        search_path: "public",
+        client_encoding: "UTF8",
+        options: "-c statement_timeout=1234"
+      })
+
+      yield* PgConnection.make({ ...config, applicationName: "explicit-app", startupOptions: "-c lock_timeout=2345" })
+      assert.strictEqual(parameters!.get("application_name"), "explicit-app")
+      assert.strictEqual(parameters!.get("options"), "-c lock_timeout=2345")
+    })))
+
   it.effect("accepts backend messages over the default limit when configured", () =>
     Effect.gen(function*() {
       const fieldSize = 16 * 1024 * 1024
@@ -282,6 +434,41 @@ describe("PgConnection in-process server", () => {
       assert.deepStrictEqual(frontendTags(writes[1]), ["P", "B", "D", "E", "S", "P", "B", "D", "E", "S"])
     }))
 
+  it.effect("uses distinct prepared statement names across connections", () =>
+    Effect.gen(function*() {
+      const writes: Array<Array<Buffer>> = []
+      const makeStream = () => {
+        const connectionWrites: Array<Buffer> = []
+        const socket: Duplex = new Duplex({
+          read() {},
+          write(chunk: Buffer, _encoding, callback) {
+            connectionWrites.push(Buffer.from(chunk))
+            queueMicrotask(() => {
+              socket.push(
+                connectionWrites.length === 1
+                  ? Buffer.concat([authenticationOk, backendKeyData, readyForQuery])
+                  : emptyQueryResult
+              )
+            })
+            callback()
+          }
+        })
+        writes.push(connectionWrites)
+        return socket
+      }
+
+      const first = yield* PgConnection.make({ username: "test", stream: makeStream })
+      const second = yield* PgConnection.make({ username: "test", stream: makeStream })
+      yield* first.query("SELECT $1", [1])
+      yield* second.query("SELECT $1, $2", [1, 2])
+
+      const firstName = frontendPreparedNames(writes[0][1])
+      const secondName = frontendPreparedNames(writes[1][1])
+      assert.strictEqual(firstName.length, 1)
+      assert.strictEqual(secondName.length, 1)
+      assert.notStrictEqual(firstName[0], secondName[0])
+    }))
+
   it.effect("reuses a prepared name after a pending pipeline query is interrupted", () =>
     Effect.gen(function*() {
       const writes: Array<Buffer> = []
@@ -310,8 +497,9 @@ describe("PgConnection in-process server", () => {
       yield* connection.query("SELECT 1")
 
       assert.strictEqual(writes.length, 2)
-      const nameEnd = writes[1].indexOf(0, 5)
-      assert.strictEqual(writes[1].subarray(5, nameEnd).toString(), "effect1")
+      const names = frontendPreparedNames(writes[1])
+      assert.strictEqual(names.length, 1)
+      assert.match(names[0], /^effect_[0-9a-f]{16}_1$/)
     }))
 
   it.effect("ends a custom stream after writing Terminate", () =>
@@ -334,6 +522,43 @@ describe("PgConnection in-process server", () => {
       assert.isTrue(socket.writableEnded)
       assert.isFalse(socket.destroyed)
     }))
+
+  it.live.each(["statement", "stream"] as const)(
+    "does not start a %s while its pin is being released",
+    (kind) =>
+      Effect.gen(function*() {
+        // Each budget makes the work first yield at a later step of its admission,
+        // so the pin release lands in every gap. Budgets below 3 make no progress.
+        for (let budget = 3; budget <= 40; budget++) {
+          yield* Effect.scoped(Effect.gen(function*() {
+            let writes = 0
+            // Answers startup and never answers a statement.
+            const socket: Duplex = new Duplex({
+              read() {},
+              write(_chunk: Buffer, _encoding, callback) {
+                if (++writes === 1) {
+                  queueMicrotask(() => socket.push(Buffer.concat([authenticationOk, backendKeyData, readyForQuery])))
+                }
+                callback()
+              }
+            })
+            const connection = yield* PgConnection.make({ username: "test", stream: () => socket })
+            const scope = yield* Scope.make()
+            const pinned = yield* Scope.provide(connection.pin, scope)
+            const work = kind === "statement" ? pinned.query("SELECT 1") : Stream.runDrain(pinned.stream("SELECT 1"))
+            const fiber = yield* Effect.forkChild(Effect.provideService(work, Scheduler.MaxOpsBeforeYield, budget), {
+              startImmediately: true
+            })
+            const closing = yield* Effect.forkDetach(Scope.close(scope, Exit.void))
+            const closed = yield* Fiber.await(closing).pipe(Effect.timeoutOption("2 seconds"))
+            if (Option.isNone(closed)) socket.destroy()
+            assert.isTrue(Option.isSome(closed), `pin release waited on a ${kind} at budget ${budget}`)
+            const exit = yield* Fiber.await(fiber).pipe(Effect.timeoutOption("2 seconds"))
+            assert.isTrue(Option.isSome(exit) && Exit.isFailure(exit.value), `${kind} did not end at budget ${budget}`)
+          }))
+        }
+      })
+  )
 
   describe("TLS servername", () => {
     const cases: ReadonlyArray<{
@@ -715,6 +940,32 @@ describe("PgConnection in-process server", () => {
       }
     })))
 
+  it.live("preserves a FATAL ErrorResponse sent before the server closes the connection", () =>
+    Effect.scoped(Effect.gen(function*() {
+      const { port } = yield* withTcpServer((socket) => {
+        consumeFrontend(socket, (tag) => {
+          if (tag === undefined) {
+            socket.write(Buffer.concat([authenticationOk, backendKeyData, readyForQuery]))
+          } else if (tag === "S") {
+            socket.end(errorResponse([
+              ["S", "FATAL"],
+              ["C", "25P04"],
+              ["M", "terminating connection due to transaction timeout"]
+            ]))
+          }
+        })
+      })
+      const connection = yield* PgConnection.make({ host: "127.0.0.1", port, username: "test" })
+
+      const error = yield* Effect.flip(connection.query("SELECT pg_sleep(1)"))
+
+      assert.strictEqual(error.reason._tag, "UnknownError")
+      assert.strictEqual(error.reason.message, "PgConnection: Query failed")
+      assert.instanceOf(error.reason.cause, Error)
+      assert.strictEqual(error.reason.cause.message, "terminating connection due to transaction timeout")
+      assert.strictEqual((error.reason.cause as { readonly code?: string }).code, "25P04")
+    })))
+
   it.live("sends Terminate when the connection scope closes", () =>
     Effect.scoped(Effect.gen(function*() {
       let signalTerminate!: (message: Buffer) => void
@@ -761,6 +1012,34 @@ describe("PgConnection in-process server", () => {
       assert.strictEqual(connection.processId, 1234)
       assert.strictEqual(password, "secret")
     })))
+
+  it.live("resolves a password Effect for each connection", () =>
+    Effect.gen(function*() {
+      const passwords: Array<string> = []
+      const { port } = yield* withTcpServer((socket) => {
+        consumeFrontend(socket, (tag, message) => {
+          if (tag === undefined) {
+            socket.write(authentication(3))
+          } else if (tag === "p") {
+            passwords.push(message.subarray(5, -1).toString())
+            socket.write(Buffer.concat([authenticationOk, backendKeyData, readyForQuery]))
+          }
+        })
+      })
+      let calls = 0
+      const acquire = PgConnection.make({
+        host: "127.0.0.1",
+        port,
+        username: "test",
+        password: Effect.sync(() => Redacted.make(`secret-${++calls}`))
+      })
+
+      yield* Effect.scoped(acquire)
+      yield* acquire
+
+      assert.strictEqual(calls, 2)
+      assert.deepStrictEqual(passwords, ["secret-1", "secret-2"])
+    }))
 
   it.live("authenticates with an MD5 password request", () =>
     Effect.scoped(Effect.gen(function*() {

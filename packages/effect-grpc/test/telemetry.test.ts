@@ -539,6 +539,41 @@ describe("server telemetry", () => {
     );
   });
 
+  it("starts a fresh trace for a malformed traceparent", async () => {
+    const telemetry = makeTestTelemetry();
+
+    const result = await Effect.runPromise(
+      telemetry.provide(
+        Effect.gen(function* () {
+          const call = yield* serverCall(unaryEntry, {
+            kind: "unary",
+            handler: () => Effect.succeed({ ok: true }),
+          });
+
+          const response = yield* Effect.promise(() =>
+            call(
+              {},
+              handlerContext({
+                headers: {
+                  // Effect 4.1's propagator rejects non-lowercase hex ids; the
+                  // call must start a fresh trace instead of adopting the
+                  // malformed parent.
+                  traceparent: `00-${traceId.toUpperCase()}-${parentSpanId}-01`,
+                },
+              }),
+            ),
+          );
+          return response;
+        }),
+      ),
+    );
+
+    expect(result).toEqual({ ok: true });
+    const span = telemetry.expectSpan(unaryEntry.tag);
+    expect(span.traceId).not.toBe(traceId);
+    expect(Option.isNone(span.parent)).toBe(true);
+  });
+
   it("parents downstream client calls made from a server-streaming handler", async () => {
     const telemetry = makeTestTelemetry();
     const { transport, headers } = fakeTransport({

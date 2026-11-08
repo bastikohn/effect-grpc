@@ -467,7 +467,11 @@ const callOptionsFor = (
     span.traceId !== "noop" &&
     span.spanId !== "noop"
   ) {
-    headers.set("traceparent", GrpcTracing.traceparent(span));
+    const propagation = GrpcTracing.propagationHeaders(span);
+    if (!headers.has("b3")) {
+      headers.set("b3", propagation["b3"]);
+    }
+    headers.set("traceparent", propagation["traceparent"]);
   }
   const timeoutMs = callTimeoutMs(options);
   return { headers, signal, ...(timeoutMs === undefined ? {} : { timeoutMs }) };

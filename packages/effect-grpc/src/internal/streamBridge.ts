@@ -123,6 +123,13 @@ export const responseStream = <E>(
  * Server request side: bridges connect's request `AsyncIterable` into the
  * Effect `Stream` a streaming handler consumes, distinguishing a half-close
  * from a cancellation.
+ *
+ * connect's request iterable queues a `return()` issued while a `next()` is
+ * pending until that pull settles — but a handler that stops consuming
+ * mid-pull (timeout, race) tears the stream down exactly then. Effect
+ * 4.1.2's `Stream.fromAsyncIterable` never awaits such a pending `return()`,
+ * so the abandoned pull (which belongs to connect's own call teardown) cannot
+ * wedge the handler's interruption.
  */
 export const requestStream = <E>(options: {
   readonly requests: AsyncIterable<unknown>;
@@ -130,10 +137,7 @@ export const requestStream = <E>(options: {
   readonly onError: (cause: unknown) => E;
   readonly onCancelled: () => E;
 }): Stream.Stream<unknown, E> =>
-  Stream.fromAsyncIterable(
-    detachedCleanup(options.requests),
-    options.onError,
-  ).pipe(
+  Stream.fromAsyncIterable(options.requests, options.onError).pipe(
     // connect-node surfaces a client cancellation as a clean end of the
     // request iterable plus an aborted handler signal; distinguish it from a
     // half-close so handlers do not treat a truncated stream as complete.
@@ -145,35 +149,6 @@ export const requestStream = <E>(options: {
       ),
     ),
   );
-
-/**
- * connect's request iterable strictly queues a `return()` issued while a
- * `next()` is pending until that pull settles — but a handler that stops
- * consuming mid-pull (timeout, race) tears the stream down exactly then, and
- * awaiting the queued cleanup would block the handler's interruption (and
- * with it the whole call) until the client sends another message or goes
- * away. Issue the cleanup without awaiting it: the abandoned pull belongs to
- * connect's own call teardown.
- */
-const detachedCleanup = (
-  iterable: AsyncIterable<unknown>,
-): AsyncIterable<unknown> => ({
-  [Symbol.asyncIterator]: () => {
-    const iterator = iterable[Symbol.asyncIterator]();
-    return {
-      next: () => iterator.next(),
-      return: () => {
-        void Promise.resolve(iterator.return?.(undefined)).catch(
-          () => undefined,
-        );
-        return Promise.resolve<IteratorResult<unknown>>({
-          done: true,
-          value: undefined,
-        });
-      },
-    };
-  },
-});
 
 /**
  * Server response side: pumps a handler's Effect `Stream` into the iterator

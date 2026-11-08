@@ -33,7 +33,7 @@ one transport and registry:
 
 ## Effect Compatibility
 
-This library targets stable Effect v4 (`effect@^4.0.1`). It uses Effect
+This library targets stable Effect v4 (`effect@^4.1.2`, Node >= 22.19). It uses Effect
 modules still marked `@stability unstable` (e.g. `effect/http/HttpTraceContext`
 for trace-context propagation), so Effect upgrades must update tests, generated
 code, and package smoke together.

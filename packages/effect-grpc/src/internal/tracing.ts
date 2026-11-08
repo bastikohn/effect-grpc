@@ -30,8 +30,15 @@ export const serverSpanOptions = (
   attributes: rpcAttributes(entry),
 });
 
-export const traceparent = (span: Tracer.AnySpan): string =>
-  `00-${span.traceId}-${span.spanId}-${span.sampled ? "01" : "00"}`;
+/**
+ * Outbound propagation headers for a call span: W3C `traceparent` plus
+ * compact B3 (`b3`), written by Effect's own propagator. Its `traceparent`
+ * pads 64-bit trace ids to the 128-bit width W3C receivers require — exactly
+ * the ids {@link externalSpanFromHeaders} accepts from compact-B3 peers,
+ * which a hand-rolled header would emit un-padded and silently break.
+ */
+export const propagationHeaders = (span: Tracer.Span): Headers.Headers =>
+  HttpTraceContext.toHeaders(span);
 
 /** Decodes incoming propagation headers into the parent `ExternalSpan`. */
 export const externalSpanFromHeaders = (

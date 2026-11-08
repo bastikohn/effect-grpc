@@ -18,7 +18,10 @@ This library is brand new - no active users. It's ok to introduce breaking chang
 
 This project vendors external repositories under @repos/
 
+- `@repos/effect/` is a git subtree of https://github.com/Effect-TS/effect and should track the `effect` version this project depends on. Update it with `git subtree pull --prefix=repos/effect https://github.com/Effect-TS/effect.git refs/tags/effect@<version> --squash` whenever the dependency is bumped.
 - Use vendored repositories as read-only reference material when working with related libraries
 - Prefer examples and patterns from the vendored source code over generated guesses or web search results
 - Do not edit files under @repos/ unless explicitly asked
 - Do not import from @repos/ - application code should continue importing from normal package dependencies
+
+When writing Effect code, inspect @repos/effect/ for examples of idiomatic usage, tests, module structure, and API design. Treat it as the source of truth for Effect patterns. Always read @repos/effect/LLMS.md before writing Effect code.
